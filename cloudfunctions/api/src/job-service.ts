@@ -92,8 +92,8 @@ export class JobService {
     return job;
   }
 
-  listStaleJobs(createdAtOrBefore: Date): Promise<JobRecord[]> {
-    return this.repository.listStaleJobs(createdAtOrBefore);
+  listStaleJobs(updatedAtOrBefore: Date): Promise<JobRecord[]> {
+    return this.repository.listStaleJobs(updatedAtOrBefore);
   }
 
   finishSucceeded(

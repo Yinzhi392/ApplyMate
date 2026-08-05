@@ -22,6 +22,12 @@ import { DomainError } from "./domain-error.js";
 import type { UserRecord } from "./identity-domain.js";
 import type { IdentityRepository } from "./identity-repository.js";
 import type { IdempotencyService } from "./idempotency-service.js";
+import {
+  GenerationConfirmJdPayloadSchema,
+  GenerationCreatePayloadSchema,
+} from "./generation-domain.js";
+import type { GenerationConfirmationService } from "./generation-confirmation-service.js";
+import type { GenerationWorkflowService } from "./generation-workflow-service.js";
 import { InviteService } from "./invite-service.js";
 import type { JobService } from "./job-service.js";
 import type { QuotaService } from "./quota-service.js";
@@ -77,6 +83,9 @@ export interface IdentityAccessApiDependencies {
   resumes?: ResumeWorkflowService;
   confirmations?: ResumeConfirmationService;
   management?: ResumeManagementService;
+  generation?: GenerationWorkflowService;
+  generationConfirmation?: GenerationConfirmationService;
+  resourceGate?: ApiEntryDependencies["resourceGate"];
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
   now: () => Date;
@@ -518,6 +527,50 @@ export function createIdentityAccessApi(
     });
   }
 
+  const generation = dependencies.generation;
+  if (generation !== undefined) {
+    registry.register("generation.create", async (payload, context) => {
+      const parsed = GenerationCreatePayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "generation.create");
+      agreements.assertActionAgreement(user, "generation.create");
+      assertActivated(user);
+      return success(
+        await generation.createJob(
+          user.userId,
+          user.preferenceFacts,
+          parsed.data,
+          dependencies.now(),
+        ),
+      );
+    });
+  }
+
+  const generationConfirmation = dependencies.generationConfirmation;
+  if (generationConfirmation !== undefined) {
+    registry.register("generation.confirmJd", async (payload, context) => {
+      const parsed = GenerationConfirmJdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "generation.confirmJd");
+      agreements.assertActionAgreement(user, "generation.confirmJd");
+      assertActivated(user);
+      return success(
+        await generationConfirmation.confirm(
+          user.userId,
+          parsed.data.jobId,
+          parsed.data.jobDescription,
+          dependencies.now(),
+        ),
+      );
+    });
+  }
+
   return createApiEntry({
     registry,
     readCloudBaseContext: dependencies.readCloudBaseContext,
@@ -530,5 +583,8 @@ export function createIdentityAccessApi(
             now: dependencies.now,
           },
         }),
+    ...(dependencies.resourceGate === undefined
+      ? {}
+      : { resourceGate: dependencies.resourceGate }),
   });
 }

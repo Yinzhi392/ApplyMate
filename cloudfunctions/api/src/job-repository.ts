@@ -9,6 +9,8 @@ import {
 export interface JobTransitionUpdates {
   result?: Record<string, unknown>;
   error?: JobError;
+  quotaReservationId?: string;
+  clearClaim?: boolean;
 }
 
 export interface JobRepository {
@@ -22,7 +24,7 @@ export interface JobRepository {
     now: Date,
     updates?: JobTransitionUpdates,
   ): Promise<JobRecord | null>;
-  listStaleJobs(createdAtOrBefore: Date): Promise<JobRecord[]>;
+  listStaleJobs(updatedAtOrBefore: Date): Promise<JobRecord[]>;
 }
 
 function cloneJob(job: JobRecord): JobRecord {
@@ -81,6 +83,7 @@ export class InMemoryJobRepository implements JobRepository {
     }
 
     const timestamp = now.toISOString();
+    const { clearClaim = false, ...recordUpdates } = updates;
     const updated: JobRecord = {
       ...job,
       status: nextStatus,
@@ -89,19 +92,23 @@ export class InMemoryJobRepository implements JobRepository {
         { status: nextStatus, enteredAt: timestamp },
       ],
       updatedAt: timestamp,
-      ...updates,
+      ...recordUpdates,
     };
+    if (clearClaim) {
+      delete updated.claimedBy;
+      delete updated.claimedAt;
+    }
     this.#jobs.set(jobId, updated);
     return cloneJob(updated);
   }
 
-  async listStaleJobs(createdAtOrBefore: Date): Promise<JobRecord[]> {
+  async listStaleJobs(updatedAtOrBefore: Date): Promise<JobRecord[]> {
     return Array.from(this.#jobs.values())
       .filter(
         (job) =>
           !isTerminalJobStatus(job.status) &&
           job.status !== "awaiting_user_confirmation" &&
-          new Date(job.createdAt).getTime() <= createdAtOrBefore.getTime(),
+          new Date(job.updatedAt).getTime() <= updatedAtOrBefore.getTime(),
       )
       .map(cloneJob);
   }

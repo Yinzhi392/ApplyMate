@@ -45,6 +45,9 @@ export const GREETING_QUALITY_ERRORS = [
   "UNSOURCED_NUMBER",
   "SENSITIVE_INFORMATION_PRESENT",
   "PROHIBITED_INSTRUCTION_PRESENT",
+  "MODEL_SELF_REFERENCE_PRESENT",
+  "COMPANY_REFERENCE_MISSING",
+  "JOB_TITLE_MISSING",
   "INVALID_UNICODE",
 ] as const;
 
@@ -76,6 +79,14 @@ function containsProhibitedInstruction(value: string): boolean {
     /忽略(?:以上|之前|系统|所有).{0,12}(?:规则|指令|提示)/iu,
     /(?:展示|泄露|输出).{0,12}(?:系统提示|提示词|密钥)/iu,
     /ignore.{0,20}(?:previous|system).{0,20}instructions?/iu,
+  ].some((pattern) => pattern.test(value));
+}
+
+function containsModelSelfReference(value: string): boolean {
+  return [
+    /作为(?:一个)?AI/iu,
+    /我是(?:一个)?(?:AI|人工智能|语言模型)/iu,
+    /as an? (?:ai|language model)/iu,
   ].some((pattern) => pattern.test(value));
 }
 
@@ -131,10 +142,34 @@ export function validateAiGreeting(
   if (containsProhibitedInstruction(body)) {
     errors.add("PROHIBITED_INSTRUCTION_PRESENT");
   }
+  if (containsModelSelfReference(body)) {
+    errors.add("MODEL_SELF_REFERENCE_PRESENT");
+  }
   if (!hasValidUnicode(body)) {
     errors.add("INVALID_UNICODE");
   }
 
+  return { valid: errors.size === 0, errors: Array.from(errors) };
+}
+
+export function validateAiGreetingForJob(
+  input: unknown,
+  registry: EvidenceSourceRegistry,
+  companyDisplayName: string,
+  jobTitle: string,
+): GreetingQualityResult {
+  const result = validateAiGreeting(input, registry);
+  const parsed = GreetingDraftSchema.safeParse(input);
+  if (!parsed.success) {
+    return result;
+  }
+  const errors = new Set(result.errors);
+  if (!parsed.data.body.includes(companyDisplayName)) {
+    errors.add("COMPANY_REFERENCE_MISSING");
+  }
+  if (!parsed.data.body.includes(jobTitle)) {
+    errors.add("JOB_TITLE_MISSING");
+  }
   return { valid: errors.size === 0, errors: Array.from(errors) };
 }
 

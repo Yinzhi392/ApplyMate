@@ -101,4 +101,38 @@ describe("ten-minute stale job cleanup", () => {
       jobs.getJobForUser("user_synthetic_a", job.jobId),
     ).resolves.toMatchObject({ status: "awaiting_user_confirmation" });
   });
+
+  it("starts a fresh ten-minute window when a long-waiting job resumes", async () => {
+    const jobs = new JobService(
+      new InMemoryJobRepository(),
+      () => "job_resumed_confirmation",
+    );
+    const quotas = new QuotaService(new InMemoryQuotaRepository());
+    const createdAt = new Date("2026-08-05T10:00:00.000Z");
+    const resumedAt = new Date("2026-08-05T12:10:00.000Z");
+    const job = await jobs.createJob(
+      "user_resumed",
+      "greeting_generate",
+      createdAt,
+    );
+    await jobs.transitionJob(job.jobId, "parsing", createdAt);
+    await jobs.transitionJob(job.jobId, "awaiting_user_confirmation", createdAt);
+    await quotas.reserve("user_resumed", "quota_resumed", resumedAt);
+    await jobs.transitionJob(job.jobId, "generating", resumedAt, {
+      quotaReservationId: "quota_resumed",
+    });
+    const cleanup = new StaleJobCleanupService(jobs, quotas);
+
+    await expect(cleanup.run(resumedAt)).resolves.toEqual({
+      candidates: 0,
+      failed: 0,
+    });
+    await expect(jobs.getJobForUser("user_resumed", job.jobId)).resolves.toMatchObject({
+      status: "generating",
+    });
+    await expect(quotas.getUsage("user_resumed", resumedAt)).resolves.toMatchObject({
+      reserved: 1,
+      succeeded: 0,
+    });
+  });
 });
