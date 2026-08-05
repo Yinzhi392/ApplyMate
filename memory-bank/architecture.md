@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 任务、幂等与额度 v1.4
+**版本：** 简历解析与管理 v1.5
 
 **日期：** 2026-08-05
 
-**当前状态：** 阶段 4 的本地任务、幂等、额度、派发、超时回收和资源暂停基础设施已实现，等待产品负责人验证。`api` 当前提供可注入的领域接口和内存测试仓储，但尚无 CloudBase 部署入口、生产仓储或真实异步派发器；`worker` 与 `cleanup` 的部署入口仍为空导出，相关执行/回收规则暂由 `api` 领域模块承载并离线测试。未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 5。
+**当前状态：** 阶段 5 的本地简历上传校验、DOCX/PDF 提取、OCR/模型契约、脱敏、结构化解析、等待确认、确认/默认/删除和生命周期清理已实现，等待产品负责人验证。`api`、`worker` 与 `cleanup` 只提供可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 6。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -49,7 +49,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 同一用户、action、requestId 和负载返回同一结果；同 requestId 不同负载返回冲突。
 - 终态幂等映射保留 24 小时。
 
-阶段 4 的当前实现把平台依赖隔离在端口之后：任务、幂等和额度仓储均只有本地内存适配器；派发器只有 `dispatch(jobId)` 契约；worker 执行器采用 44 秒默认内部截止；cleanup 领域服务以创建时间满 10 分钟为包含边界回收任务。以上只能证明领域语义，不能替代 CloudBase 事务、异步任务或定时触发器的真实验证。
+阶段 5 继续把平台依赖隔离在端口之后：任务、幂等、额度、简历和临时文件仓储均只有本地内存适配器；派发器只有 `dispatch(jobId)` 契约；简历 worker 采用 44 秒默认内部截止；cleanup 以 10 分钟、24 小时和 1 小时三个包含边界分别回收僵死任务、未确认草稿和孤立文件。以上只能证明领域语义，不能替代 CloudBase 事务、异步任务、云存储或定时触发器的真实验证。
 
 ## 5. 数据与事实模型
 
@@ -71,14 +71,16 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 ## 7. API 基线
 
-新增并锁定的动作：
+当前已锁定且已由本地 API 组合实现的简历相关动作：
 
 - `agreement.accept`，保存当前协议版本和接受时间
 - `user.updatePreferences`
 - `job.get`，统一查询简历解析与生成任务
-- `generation.confirmJd`，补充 JD 后继续同一任务
+- `resume.parse`，验证输入后创建草稿和 queued 任务并立即返回 `jobId`/`resumeId`
+- `resume.confirm`，重算事实身份、删除原文件并完成解析任务
+- `resume.list`、`resume.setDefault`、`resume.delete`
 
-`resume.parse` 和 `generation.create` 均立即返回 `jobId`；不再使用 `generation.get`。管理员白名单在同意当前协议后免邀请码进入。`admin.quotaAdjust` 仅增加当日临时次数，次日北京时间失效并记录审计。
+`generation.confirmJd`、`generation.create` 和其他阶段 6+ 动作仍只存在于共享契约，尚未注册业务处理器。管理员白名单在同意当前协议后免邀请码进入。`admin.quotaAdjust` 仅增加当日临时次数，次日北京时间失效并记录审计。
 
 ## 8. 决策记录
 
@@ -132,15 +134,26 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - worker 内部截止固定默认 44 秒且拒绝达到平台 45 秒；超时写入唯一失败终态并释放额度，迟到结果不能覆盖。创建满 10 分钟仍无终态的任务由清理服务兜底失败，等待用户确认状态排除。
 - 当前 `InMemoryJobRepository`、`InMemoryIdempotencyRepository` 和 `InMemoryQuotaRepository` 只用于离线验证。真实 CloudBase 事务仓储、异步派发与 cleanup 定时入口仍需外部资源逐项授权。
 
+### 2026-08-05：阶段 5 简历解析与管理
+
+- 临时文件路径只含带版本的内部用户哈希段和随机 fileId；扩展名、MIME、Magic Bytes、所有权、大小、图片数及 PDF 页数均在外发前校验。
+- DOCX 只使用 Mammoth `extractRawText`；文本型 PDF 使用 unpdf，扫描 PDF 明确要求改传截图，不在服务端静默渲染或返回空结果。
+- 图片字节只能经 `TencentOcrAdapter` 进入 OCR provider；OCR/文件提取文字必须通过 `ResumePrivacyGateway` 后才能进入结构化模型。该网关只返回遮盖类型与数量，不返回敏感值。
+- 主模型输出只接受严格 JSON/Schema；无效、截断或错误结构最多调用一次备用模型。事实 ID 和哈希由服务端根据来源类型及规范化文本生成，客户端/模型提供的标识不能在确认时成为权威值。
+- `resume.parse` 只同步创建草稿与任务。worker 清除已处理的粘贴原文并停在等待确认；未确认 profile 由独立访问守卫禁止作为生成证据。
+- `resume.confirm` 是事实进入可信区的边界：重新校验 Schema、重算全部事实身份、拒绝重复事实、删除原文件并完成任务。相同内容重复确认不重复写入。
+- 每用户最多保留三份简历记录。删除默认简历时，按 `confirmedAt/createdAt` 最新优先并以 resumeId 稳定破同分；没有确认简历时默认值为空。
+- cleanup 精确回收满 24 小时的未确认草稿和满 1 小时且不再被任何简历引用的临时文件。真实定时触发、CloudBase 存储删除和事务补偿仍待授权验证。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
 
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 4 当前为 40 个测试文件、133 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 5 当前为 55 个测试文件、187 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
 
 ## 10. 仓库文件职责
 
-以下清单描述阶段 3 结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
+以下清单描述阶段 5 结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
 
 ### 根目录
 
@@ -189,7 +202,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
 - `cloudfunctions/api/src/agreement-service.ts`：协议版本接受、当前版本判断和业务动作门禁。
 - `cloudfunctions/api/src/invite-service.ts`：邀请码规范化哈希、7 天有效期、创建和原子消费。
-- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、任务查询、临时额度及管理员启停 action 的本地 API。
+- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、任务查询、简历解析/确认/管理、临时额度及管理员启停 action 的本地 API。
 - `cloudfunctions/api/src/job-domain.ts`：任务种类、状态历史、认领信息、安全结果和错误的数据类型。
 - `cloudfunctions/api/src/job-repository.ts`：任务仓储端口及支持原子创建、认领、转换和超时扫描的内存实现。
 - `cloudfunctions/api/src/job-service.ts`：任务创建、用户隔离查询、状态转换及幂等终态写入规则。
@@ -201,14 +214,35 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/quota-repository.ts`：额度仓储端口及原子预留、结算、临时增加与审计的内存实现。
 - `cloudfunctions/api/src/quota-service.ts`：额度预留、成功、释放、当日查询和管理员临时增加规则。
 - `cloudfunctions/api/src/resource-gate-service.ts`：OCR、模型、计算/存储三类零付费资源可用性门禁。
+- `cloudfunctions/api/src/temporary-file-domain.ts`：临时文件的所有者、内部存储键、原名、MIME、字节和上传时间记录。
+- `cloudfunctions/api/src/temporary-file-repository.ts`：临时文件仓储端口及支持到期扫描的本地内存实现。
+- `cloudfunctions/api/src/temporary-file-service.ts`：不暴露 OpenID/原名的隔离路径、所有权读取/删除和到期文件查询。
+- `cloudfunctions/api/src/resume-file-validation-service.ts`：PDF、DOCX、JPEG、PNG、WebP 的扩展名/MIME/Magic Bytes 和文件数/大小门禁。
+- `cloudfunctions/api/src/resume-text-validation-service.ts`：粘贴简历的非空、Unicode 与 20,000 可见字符门禁。
+- `cloudfunctions/api/src/resume-domain.ts`：解析/确认请求 Schema、草稿/确认状态和简历记录类型。
+- `cloudfunctions/api/src/resume-repository.ts`：简历仓储端口及支持三份上限、确认状态条件写入、默认原子切换/重选、过期扫描的内存实现。
+- `cloudfunctions/api/src/resume-workflow-service.ts`：`resume.parse` 的输入校验、草稿/任务创建、三份限制和异步派发编排。
+- `cloudfunctions/api/src/validated-temporary-file-adapter.ts`：把所有权和文件门禁后的临时文件以最小字节接口交给 worker/OCR。
+- `cloudfunctions/api/src/resume-parse-execution-service.ts`：认领解析任务、44 秒截止、状态推进、等待确认结果和安全失败写入。
+- `cloudfunctions/api/src/resume-access-service.ts`：只允许已确认简历成为后续生成事实来源的访问守卫。
+- `cloudfunctions/api/src/resume-confirmation-service.ts`：确认 Schema、重算事实身份、拒绝重复事实、删除原文件和完成任务。
+- `cloudfunctions/api/src/resume-management-service.ts`：当前用户的安全列表、默认切换、删除、文件清理和默认重选。
 - `cloudfunctions/api/src/worker-execution-service.ts`：44 秒默认内部截止、取消信号、唯一终态和额度结算。
 - `cloudfunctions/api/src/stale-job-cleanup-service.ts`：创建满 10 分钟的非终态任务回收和额度释放规则。
-- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门；当前没有提供商行为。
+- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门，并说明外部实现仍为替身。
 - `cloudfunctions/worker/tsconfig.json`：worker 的独立构建配置，并引用 shared。
-- `cloudfunctions/worker/src/index.ts`：worker 空入口，无模型或 OCR 行为。
-- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除；当前没有部署或删除行为。
+- `cloudfunctions/worker/src/index.ts`：worker 领域模块的公共导出入口，不实例化外部提供商。
+- `cloudfunctions/worker/src/resume-processing-error.ts`：文件、OCR、模型和提取文本的稳定处理错误码。
+- `cloudfunctions/worker/src/docx-text-extractor.ts`：使用 Mammoth 输出 DOCX 纯文本并归一损坏/空文档错误。
+- `cloudfunctions/worker/src/pdf-text-extractor.ts`：使用 unpdf 检查 10 页上限、提取文本并识别扫描/加密/损坏 PDF。
+- `cloudfunctions/worker/src/tencent-ocr-adapter.ts`：只接受验证图片的 OCR provider 端口、置信门槛、调用元数据和错误归一。
+- `cloudfunctions/worker/src/resume-privacy-gateway.ts`：模型外发前唯一脱敏网关，只暴露遮盖后文本及无值摘要。
+- `cloudfunctions/worker/src/resume-structure-parser.ts`：严格结构化模型输出、一次备用切换及稳定 ResumeProfile 事实生成。
+- `cloudfunctions/worker/src/resume-parse-pipeline.ts`：按输入类型提取有序文本、复用文本边界并串接隐私网关和结构化解析。
+- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除，并说明当前无真实调度。
 - `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
-- `cloudfunctions/cleanup/src/index.ts`：cleanup 空入口，无删除行为。
+- `cloudfunctions/cleanup/src/index.ts`：cleanup 领域模块公共导出入口，不创建定时器或云连接。
+- `cloudfunctions/cleanup/src/resume-cleanup-service.ts`：24 小时草稿与 1 小时孤立文件的精确、幂等回收规则。
 - `docs/README.md`：规定线框、评测、隐私、安全、成本和发布证据的存放范围。
 
 ### 测试与样本
@@ -248,10 +282,25 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/unit/worker-deadline.test.ts`：验证 44 秒内部截止、失败释放、迟到结果隔离和正常成功。
 - `tests/unit/stale-job-cleanup.test.ts`：验证 10 分钟精确回收、重复清理和等待确认排除。
 - `tests/unit/resource-gate.test.ts`：验证三类资源暂停、数据访问保留及完成请求回放。
+- `tests/unit/temporary-file-service.test.ts`：验证隔离路径、同名唯一、所有权隐藏和删除。
+- `tests/unit/resume-file-validation.test.ts`：验证五类文件签名、10MB/6 张边界、伪类型、GIF 和损坏输入。
+- `tests/unit/resume-text-validation.test.ts`：验证空文本、20,000 字精确边界和 Unicode 合法性。
+- `tests/unit/docx-text-extractor.test.ts`：用真实 Mammoth fixture 验证段落、表格、损坏和外部内容。
+- `tests/unit/pdf-text-extractor.test.ts`：用合成 PDF 验证 1/10/11 页、扫描、加密与损坏分支。
+- `tests/unit/resume-structure-parser.test.ts`：验证稳定事实、严格输出、一次备用切换和双失败语义。
+- `tests/unit/resume-parse-pipeline.test.ts`：验证四类提取路由、图片顺序、统一文本边界和模型前脱敏。
 - `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
+- `tests/contract/tencent-ocr-adapter.test.ts`：验证 OCR 成功元数据、所有权、低置信、超时、429 和资源暂停。
+- `tests/contract/resume-privacy-chain.test.ts`：捕获 OCR/模型请求，证明原图只到 OCR 且五类敏感值不进入模型。
 - `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
 - `tests/integration/identity-access.test.ts`：验证管理员启动、同码并发、跨用户隔离、协议变化和账号禁用的完整本地链路。
 - `tests/integration/task-infrastructure.test.ts`：验证重复创建、恢复查询、后台完成、额度结算、跨日并发、45 秒上限和 10 分钟回收的完整本地链路。
+- `tests/integration/resume-parse-api.test.ts`：验证四种解析入口、立即返回、幂等合并和协议/激活门禁。
+- `tests/integration/resume-parse-worker.test.ts`：验证认领、OCR/解析状态、job.get 可编辑结果、安全失败和确认守卫。
+- `tests/integration/resume-confirm.test.ts`：验证修改后事实重算、原文件删除、默认、任务完成、重复确认和跨用户拒绝。
+- `tests/integration/resume-management.test.ts`：验证列表隔离、默认切换/重选、删除和三份上限。
+- `tests/integration/resume-cleanup.test.ts`：验证 24 小时草稿、1 小时孤立文件、引用保护和重复清理。
+- `tests/integration/resume-input-closure.test.ts`：用真实提取器与本地外部替身验证四类输入的解析—确认—默认完整闭环。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。

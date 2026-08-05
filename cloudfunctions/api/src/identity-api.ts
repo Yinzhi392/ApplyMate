@@ -25,6 +25,14 @@ import type { IdempotencyService } from "./idempotency-service.js";
 import { InviteService } from "./invite-service.js";
 import type { JobService } from "./job-service.js";
 import type { QuotaService } from "./quota-service.js";
+import {
+  ResumeConfirmPayloadSchema,
+  ResumeIdPayloadSchema,
+  ResumeParsePayloadSchema,
+} from "./resume-domain.js";
+import type { ResumeConfirmationService } from "./resume-confirmation-service.js";
+import type { ResumeManagementService } from "./resume-management-service.js";
+import type { ResumeWorkflowService } from "./resume-workflow-service.js";
 import { UserService, hashTrustedOpenId } from "./user-service.js";
 
 const EmptyPayloadSchema = z.object({}).strict();
@@ -66,6 +74,9 @@ export interface IdentityAccessApiDependencies {
   idempotency?: IdempotencyService;
   jobs?: JobService;
   quotas?: QuotaService;
+  resumes?: ResumeWorkflowService;
+  confirmations?: ResumeConfirmationService;
+  management?: ResumeManagementService;
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
   now: () => Date;
@@ -414,6 +425,96 @@ export function createIdentityAccessApi(
         limit: usage.limit,
         remaining: usage.remaining,
       });
+    });
+  }
+
+  const resumes = dependencies.resumes;
+  if (resumes !== undefined) {
+    registry.register("resume.parse", async (payload, context) => {
+      const parsed = ResumeParsePayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "resume.parse");
+      agreements.assertActionAgreement(user, "resume.parse");
+      assertActivated(user);
+      const created = await resumes.createParseJob(
+        user.userId,
+        parsed.data,
+        dependencies.now(),
+      );
+      return success(created);
+    });
+  }
+
+  const confirmations = dependencies.confirmations;
+  if (confirmations !== undefined) {
+    registry.register("resume.confirm", async (payload, context) => {
+      const parsed = ResumeConfirmPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "resume.confirm");
+      agreements.assertActionAgreement(user, "resume.confirm");
+      assertActivated(user);
+      return success(
+        await confirmations.confirm(
+          user.userId,
+          parsed.data.resumeId,
+          parsed.data.profile,
+          dependencies.now(),
+        ),
+      );
+    });
+  }
+
+  const management = dependencies.management;
+  if (management !== undefined) {
+    registry.register("resume.list", async (payload, context) => {
+      if (!EmptyPayloadSchema.safeParse(payload).success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "resume.list");
+      agreements.assertActionAgreement(user, "resume.list");
+      assertActivated(user);
+      return success({ resumes: await management.list(user.userId) });
+    });
+    registry.register("resume.setDefault", async (payload, context) => {
+      const parsed = ResumeIdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "resume.setDefault");
+      agreements.assertActionAgreement(user, "resume.setDefault");
+      assertActivated(user);
+      return success(
+        await management.setDefault(
+          user.userId,
+          parsed.data.resumeId,
+          dependencies.now(),
+        ),
+      );
+    });
+    registry.register("resume.delete", async (payload, context) => {
+      const parsed = ResumeIdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "resume.delete");
+      agreements.assertActionAgreement(user, "resume.delete");
+      assertActivated(user);
+      return success(
+        await management.delete(
+          user.userId,
+          parsed.data.resumeId,
+          dependencies.now(),
+        ),
+      );
     });
   }
 

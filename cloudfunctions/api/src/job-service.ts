@@ -61,6 +61,7 @@ export class JobService {
     jobId: string,
     nextStatus: JobStatus,
     now: Date,
+    updates: JobTransitionUpdates = {},
   ): Promise<JobRecord> {
     const current = await this.repository.getJobById(jobId);
     if (current === null) {
@@ -75,6 +76,7 @@ export class JobService {
       current.status,
       nextStatus,
       now,
+      updates,
     );
     if (updated === null) {
       throw new DomainError("CONFLICT", "Job status changed concurrently.");
