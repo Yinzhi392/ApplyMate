@@ -7,7 +7,8 @@ This repository is documentation-first. `memory-bank/design-document.md` is the 
 When implementation is approved, use the planned layout:
 
 - `miniprogram/`: native WeChat client and components.
-- `cloudfunctions/api/`: business actions, AI orchestration, and persistence.
+- `cloudfunctions/api/`: authentication, action routing, job creation/query, and light persistence.
+- `cloudfunctions/worker/`: asynchronous OCR, parsing, generation, and quality gates.
 - `cloudfunctions/cleanup/`: scheduled data deletion.
 - `shared/`: request types, Zod schemas, error codes, and constants.
 - `tests/fixtures/`: synthetic or anonymized resumes, JDs, and adversarial samples.
@@ -38,7 +39,7 @@ Use Vitest with `*.test.ts` names. Cover schema validation, data masking, `factI
 
 ## Commit & Pull Request Guidelines
 
-There is no Git history yet. Adopt Conventional Commits, for example `docs: clarify quota reset`, `feat: add resume parser`, or `fix: release failed quota reservation`.
+The current history uses Conventional Commits. Continue with messages such as `docs: clarify quota reset`, `feat: add resume parser`, or `fix: release failed quota reservation`.
 
 Pull requests should include a concise summary, linked issue when available, affected design sections, test evidence, and UI screenshots for visual changes. Call out privacy, quota, model-cost, or data-lifecycle impacts. Never commit secrets, real resumes, raw JD screenshots, or production exports.
 
