@@ -1,6 +1,6 @@
 # 《投了吗》ApplyMate 产品与系统设计文档
 
-**版本：** MVP v1.2
+**版本：** MVP v1.3
 
 **日期：** 2026-08-05
 
@@ -177,7 +177,7 @@ flowchart LR
 
 主要 action：
 
-- `auth.status`、`invite.activate`、`user.get`、`user.updatePreferences`、`user.delete`
+- `auth.status`、`agreement.accept`、`invite.activate`、`user.get`、`user.updatePreferences`、`user.delete`
 - `resume.parse`、`resume.confirm`、`resume.list`、`resume.setDefault`、`resume.delete`
 - `generation.create`、`generation.confirmJd`、`generation.rewrite`
 - `job.get`

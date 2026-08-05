@@ -7,6 +7,28 @@ import {
 } from "../../shared/src/index.js";
 
 describe("API contract", () => {
+  it("treats agreement.accept as an idempotent write action", () => {
+    expect(
+      ApiRequestSchema.safeParse({
+        action: "agreement.accept",
+        payload: {
+          userAgreementVersion: "ua-v1",
+          privacyPolicyVersion: "pp-v1",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      ApiRequestSchema.safeParse({
+        action: "agreement.accept",
+        payload: {
+          userAgreementVersion: "ua-v1",
+          privacyPolicyVersion: "pp-v1",
+        },
+        requestId: "123e4567-e89b-42d3-a456-426614174000",
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires a UUID requestId for writes", () => {
     expect(
       ApiRequestSchema.safeParse({

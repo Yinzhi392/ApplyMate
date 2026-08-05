@@ -1,6 +1,6 @@
 # 《投了吗》ApplyMate 技术栈选型
 
-**版本：** MVP v1.1
+**版本：** MVP v1.2
 
 **日期：** 2026-08-05
 
@@ -121,6 +121,8 @@ handler → schema → service → repository / provider-adapter → CloudBase /
 - 终态映射保存 24 小时。
 
 `resume.parse`、`generation.create` 立即返回 `jobId`；所有任务统一通过 `job.get` 查询，不保留 `generation.get`。
+
+协议同意通过写动作 `agreement.accept` 保存当前用户协议和隐私政策版本及同一接受时间。身份只从 CloudBase 上下文读取；管理员白名单在服务端转换为身份哈希后判定，任何客户端 OpenID、userId 或管理员标记均不可信。
 
 ## 5. 数据与任务状态
 

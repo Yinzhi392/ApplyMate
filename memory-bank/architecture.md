@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 共享契约 v1.2
+**版本：** 身份与准入 v1.3
 
 **日期：** 2026-08-05
 
-**当前状态：** 阶段 2 共享契约与纯规则已实现并通过开发者侧全量检查，等待产品负责人验证。三个云函数入口仍为空导出；未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 3。
+**当前状态：** 阶段 3 的本地身份、协议、邀请和用户权限闭环已实现并通过开发者侧全量检查，等待产品负责人验证。`api` 当前提供可注入的领域接口和内存测试仓储，但尚无 CloudBase 部署入口或生产仓储；`worker` 与 `cleanup` 仍为空导出。未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 4。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -71,6 +71,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 新增并锁定的动作：
 
+- `agreement.accept`，保存当前协议版本和接受时间
 - `user.updatePreferences`
 - `job.get`，统一查询简历解析与生成任务
 - `generation.confirmJd`，补充 JD 后继续同一任务
@@ -107,6 +108,18 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - API 负载在 Zod 转换前检查原始对象，拒绝原型污染式键、非普通对象、循环/非 JSON 数据、超长内容及无效 Unicode。
 - 当前繁简校验采用保守的常见繁体字符拒绝表，不等同于完整中文转换；阶段 0 模型评测和阶段 6 回归必须继续验证误报/漏报。
 
+### 2026-08-05：阶段 3 身份与准入
+
+- API action 必须显式注册；未知动作和大小写变体拒绝，未预期异常不会暴露路径、堆栈或校验内部信息。
+- 可信 OpenID 只从注入的 CloudBase 上下文端口读取，经带版本域的 SHA-256 生成身份哈希和稳定内部 userId；原 OpenID 不进入用户、邀请或审计记录。
+- 新增 `agreement.accept` 后 API 契约共 25 个 action。协议两类版本以同一时间保存；版本变化会重新阻断业务动作。
+- 阶段 3 只验证写动作必须携带 requestId；请求结果持久幂等、重复负载复用和冲突检测属于阶段 4，当前不得宣称已实现。
+- 管理员白名单只在服务端配置并转换为身份哈希。管理员也必须接受当前协议，但免邀请码，可创建和撤销首批邀请码。
+- 邀请码只保存规范化哈希，默认 7 天有效；消费邀请和激活用户是同一原子仓储操作，因此同码并发只有一次成功。
+- 求职偏好整体替换并复用共享分句/factId 规则；空文本清空，500 个可见字符为硬上限，超限不覆盖旧值。
+- 管理员启停用户时，用户状态和审计记录原子保存。禁用用户目前只能访问 `auth.status` 与 `user.get`；`user.delete` 将在其计划步骤实现后开放。
+- `InMemoryIdentityRepository` 仅是本地可验证适配器；生产 CloudBase 事务实现及真实上下文适配器仍需单独授权，不能据此宣称云端已完成。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
@@ -115,7 +128,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 ## 10. 仓库文件职责
 
-以下清单描述阶段 1 结束时的全部项目文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
+以下清单描述阶段 3 结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
 
 ### 根目录
 
@@ -150,12 +163,21 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `shared/src/job-description.ts`：JD 字段 Schema、重复 ID 检查、0.8 阈值与“贵司”回退。
 - `shared/src/evidence.ts`：逐项陈述/来源 Schema 及当前事实、JD 注册表归属校验。
 - `shared/src/job-status.ts`：八状态常量、中文展示名和固定转换图。
-- `shared/src/api-contract.ts`：24 个 action、读写 requestId 规则、安全负载、统一响应和错误码。
+- `shared/src/api-contract.ts`：25 个 action、读写 requestId 规则、安全负载、统一响应和错误码。
 - `shared/src/greeting.ts`：AI 正文硬质量门及手动编辑非阻断警告。
 - `shared/src/copy-text.ts`：复制正文与指定 AI 标识的确定性组合。
 - `cloudfunctions/api/README.md`：限定 api 只负责身份、验证、任务和轻量读写。
 - `cloudfunctions/api/tsconfig.json`：api 的独立构建配置，并引用 shared。
-- `cloudfunctions/api/src/index.ts`：api 空入口，不调用外部服务。
+- `cloudfunctions/api/src/index.ts`：api 领域模块的公共导出入口，不实例化 CloudBase 或外部服务。
+- `cloudfunctions/api/src/action-registry.ts`：显式 action 注册、调度和安全错误归一。
+- `cloudfunctions/api/src/api-entry.ts`：统一请求校验、客户端身份字段移除和可信上下文 OpenID 读取。
+- `cloudfunctions/api/src/domain-error.ts`：允许安全返回的领域错误类型。
+- `cloudfunctions/api/src/identity-domain.ts`：用户、协议、邀请码和管理员审计记录的数据类型。
+- `cloudfunctions/api/src/identity-repository.ts`：身份领域仓储端口及仅供本地测试的原子内存实现。
+- `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
+- `cloudfunctions/api/src/agreement-service.ts`：协议版本接受、当前版本判断和业务动作门禁。
+- `cloudfunctions/api/src/invite-service.ts`：邀请码规范化哈希、7 天有效期、创建和原子消费。
+- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好及管理员启停 action 的本地 API。
 - `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门。
 - `cloudfunctions/worker/tsconfig.json`：worker 的独立构建配置，并引用 shared。
 - `cloudfunctions/worker/src/index.ts`：worker 空入口，无模型或 OCR 行为。
@@ -181,8 +203,18 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/unit/manual-edit.test.ts`：验证手动警告与 AI 硬失败分离。
 - `tests/unit/copy-text.test.ts`：验证 AI 标识位置和正文独立计数。
 - `tests/unit/adversarial.test.ts`：验证提示注入、原型污染、超长输入和无效 Unicode。
+- `tests/unit/action-registry.test.ts`：验证显式 action、大小写、领域错误和未知异常的安全响应。
+- `tests/unit/trusted-identity.test.ts`：验证只信任上下文 OpenID，并移除客户端伪造身份。
+- `tests/unit/user-lifecycle.test.ts`：验证并发首次创建、身份隔离、哈希存储和禁用访问边界。
+- `tests/unit/agreement-service.test.ts`：验证协议版本、同意时间、旧版本和业务门禁。
+- `tests/unit/identity-status.test.ts`：验证六类准入状态及个人资料安全字段。
+- `tests/unit/invite-service.test.ts`：验证邀请码哈希、过期、撤销、重复使用和并发消费。
+- `tests/unit/admin-bootstrap.test.ts`：验证管理员协议门槛、首批邀请码创建/撤销和用户激活。
+- `tests/unit/user-preferences-api.test.ts`：验证偏好新增、替换、清空、factId 和 500 字边界。
+- `tests/unit/admin-user-status.test.ts`：验证白名单管理员启停、伪造拒绝和原子审计。
 - `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
 - `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
+- `tests/integration/identity-access.test.ts`：验证管理员启动、同码并发、跨用户隔离、协议变化和账号禁用的完整本地链路。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。

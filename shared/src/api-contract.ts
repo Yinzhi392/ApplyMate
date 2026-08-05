@@ -4,6 +4,7 @@ import { countVisibleCharacters, hasValidUnicode } from "./text.js";
 
 export const API_ACTIONS = [
   "auth.status",
+  "agreement.accept",
   "invite.activate",
   "user.get",
   "user.updatePreferences",
@@ -157,6 +158,8 @@ export const API_ERROR_CODES = [
   "JOB_FAILED",
   "INTERNAL_ERROR",
 ] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 export const ApiErrorSchema = z
   .object({
