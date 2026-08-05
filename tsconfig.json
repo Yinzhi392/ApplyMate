@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./shared"
+    },
+    {
+      "path": "./cloudfunctions/api"
+    },
+    {
+      "path": "./cloudfunctions/worker"
+    },
+    {
+      "path": "./cloudfunctions/cleanup"
+    }
+  ]
+}

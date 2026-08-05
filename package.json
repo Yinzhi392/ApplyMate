@@ -1,0 +1,38 @@
+{
+  "name": "applymate",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ApplyMate WeChat mini program and CloudBase service",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20 <25",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "format:check": "node scripts/check-format.mjs",
+    "fixtures:check": "node scripts/check-fixtures.mjs",
+    "env:check": "node scripts/check-env.mjs",
+    "typecheck": "tsc -p tsconfig.check.json --pretty false",
+    "test:unit": "vitest run tests/unit",
+    "test:contract": "vitest run tests/contract",
+    "test:integration": "vitest run tests/integration",
+    "test:model": "vitest run tests/model-evaluation",
+    "test": "vitest run",
+    "clean": "tsc -b --clean",
+    "build": "tsc -b --pretty false",
+    "check": "npm run format:check && npm run fixtures:check && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "mammoth": "1.12.0",
+    "unpdf": "1.8.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudbase/cli": "3.7.1",
+    "@types/node": "24.13.3",
+    "miniprogram-api-typings": "5.2.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

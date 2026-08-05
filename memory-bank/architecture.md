@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 文档基线 v1.0
+**版本：** 工程骨架 v1.1
 
 **日期：** 2026-08-05
 
-**当前状态：** 仅完成文档设计；尚未创建业务代码目录、云环境、外部账号或 AI/OCR 调用。
+**当前状态：** 阶段 1 本地工程骨架已建立，等待产品负责人验证。三个云函数入口均为空导出，尚无业务行为；未创建云环境、外部账号或 AI/OCR 调用。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -87,3 +87,74 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 固化岗位名、文案长度、复制标识、反馈、协议版本、账号删除和指标口径。
 - 将严格零付费设为阶段 0 停止条件。
 - 当前只更新文档，未开始开发或开通任何外部资源。
+
+### 2026-08-05：阶段 1 本地骨架
+
+- 产品负责人明确允许本地阶段 1 先行，但没有豁免阶段 0.4–0.17；真实服务、模型评测、UI 与阶段 2 仍受原门槛约束。
+- 使用单一根级 npm 包和 TypeScript project references，不引入 monorepo 管理器、Web 框架或打包器。
+- shared、api、worker、cleanup 共用严格 TypeScript 基线；小程序暂时只保留目录说明，等待七个线框获批。
+- 测试固定分为 unit、contract、integration、model-evaluation，避免不同风险层混在同一入口。
+- `wx-server-sdk@4.0.2` 安装后审计发现 5 个高危传递依赖，已从阶段 1 移除；CloudBase 运行 SDK 必须在正式接入前重新验证安全版本或安全替代接入方式，未经确认不得加入。
+- fixture 检查把“合成数据声明”变成机器可验证规则：文本需要固定标识，二进制需要 `synthetic=true` 侧车元数据。
+
+## 9. 实际构建与检查图
+
+根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
+
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。环境变量检查单独执行，因为阶段 1 禁止配置真实外部资源。
+
+## 10. 仓库文件职责
+
+以下清单描述阶段 1 结束时的全部项目文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
+
+### 根目录
+
+- `AGENTS.md`：贡献者约束、目录规范、测试要求以及写代码前必须阅读的记忆文档。
+- `.gitignore`：排除依赖、构建、环境密钥、覆盖率和本地工作区产物。
+- `.env.example`：只列外部资源变量和默认关闭的能力开关，不保存真实值。
+- `package.json`：锁定直接依赖和 format、fixture、env、typecheck、test、build、check 命令。
+- `package-lock.json`：锁定完整依赖树，保证 `npm ci` 可重复安装。
+- `tsconfig.base.json`：shared 与三个云函数共用的严格 TypeScript 规则。
+- `tsconfig.json`：构建入口，通过 project references 连接四个可编译模块。
+- `tsconfig.check.json`：对全部 TypeScript 源文件和测试执行无输出类型检查。
+- `vitest.config.mjs`：统一 Vitest 的 Node 环境、测试匹配范围和超时。
+
+### 工具脚本
+
+- `scripts/check-format.mjs`：检查 LF、文件末尾换行、尾随空白、BOM 和 JSON 两空格格式。
+- `scripts/check-fixtures.mjs`：拒绝未声明合成来源的文本 fixture，并要求二进制侧车元数据。
+- `scripts/check-env.mjs`：列出缺失环境变量；不读取或输出密钥值。
+
+### 产品与服务骨架
+
+- `miniprogram/README.md`：说明微信原生客户端的未来职责和线框审批门槛。
+- `shared/README.md`：说明共享 Schema、类型、错误码、状态机和纯规则边界。
+- `shared/tsconfig.json`：共享模块的独立构建配置。
+- `shared/src/index.ts`：共享模块空入口；阶段 2 才加入契约与纯规则。
+- `cloudfunctions/api/README.md`：限定 api 只负责身份、验证、任务和轻量读写。
+- `cloudfunctions/api/tsconfig.json`：api 的独立构建配置，并引用 shared。
+- `cloudfunctions/api/src/index.ts`：api 空入口，不调用外部服务。
+- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门。
+- `cloudfunctions/worker/tsconfig.json`：worker 的独立构建配置，并引用 shared。
+- `cloudfunctions/worker/src/index.ts`：worker 空入口，无模型或 OCR 行为。
+- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除。
+- `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
+- `cloudfunctions/cleanup/src/index.ts`：cleanup 空入口，无删除行为。
+- `docs/README.md`：规定线框、评测、隐私、安全、成本和发布证据的存放范围。
+
+### 测试与样本
+
+- `tests/unit/health.test.ts`：证明纯规则单元测试分组可独立运行。
+- `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
+- `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
+- `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
+- `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
+- `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。
+
+### 记忆库
+
+- `memory-bank/design-document.md`：产品需求和系统边界的最高优先级基线。
+- `memory-bank/tech-stack.md`：实现设计目标的技术选择与不采用项。
+- `memory-bank/implementation-plan.md`：按阶段、步骤和验证项驱动开发。
+- `memory-bank/progress.md`：记录真实完成状态、验证证据、例外授权和阻塞。
+- `memory-bank/architecture.md`：记录实际架构、文件职责、数据流和关键决策演变。
