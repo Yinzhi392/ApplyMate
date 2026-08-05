@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 工程骨架 v1.1
+**版本：** 共享契约 v1.2
 
 **日期：** 2026-08-05
 
-**当前状态：** 阶段 1 本地工程骨架已建立，等待产品负责人验证。三个云函数入口均为空导出，尚无业务行为；未创建云环境、外部账号或 AI/OCR 调用。
+**当前状态：** 阶段 2 共享契约与纯规则已实现并通过开发者侧全量检查，等待产品负责人验证。三个云函数入口仍为空导出；未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 3。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -97,6 +97,16 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `wx-server-sdk@4.0.2` 安装后审计发现 5 个高危传递依赖，已从阶段 1 移除；CloudBase 运行 SDK 必须在正式接入前重新验证安全版本或安全替代接入方式，未经确认不得加入。
 - fixture 检查把“合成数据声明”变成机器可验证规则：文本需要固定标识，二进制需要 `synthetic=true` 侧车元数据。
 
+### 2026-08-05：阶段 2 共享契约
+
+- 共享层保持纯 TypeScript + Zod，不引用 CloudBase、OCR、TokenHub、小程序或数据库 SDK；因此全部核心边界可在离线环境验证。
+- 可见字符按 Unicode 字素计数并排除空白，避免组合 emoji 和组合字符被重复计数；孤立代理字符在 API 输入边界拒绝。
+- `factId` 由版本域、来源类型及 NFC/空白归一后的事实文本生成；文本哈希保留完整 SHA-256，文本或来源变化时二者按规则更新。
+- JD 关键字段确认阈值固定为 0.8；岗位名缺失或已提取关键字段低于阈值时等待确认，公司缺失只产生“贵司”提醒。
+- 逐项证据同时校验 ID 格式和当前任务注册表归属；AI 正文质量门为硬失败，手动文本复用检测结果但仅产生非阻断警告。
+- API 负载在 Zod 转换前检查原始对象，拒绝原型污染式键、非普通对象、循环/非 JSON 数据、超长内容及无效 Unicode。
+- 当前繁简校验采用保守的常见繁体字符拒绝表，不等同于完整中文转换；阶段 0 模型评测和阶段 6 回归必须继续验证误报/漏报。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
@@ -130,7 +140,19 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `miniprogram/README.md`：说明微信原生客户端的未来职责和线框审批门槛。
 - `shared/README.md`：说明共享 Schema、类型、错误码、状态机和纯规则边界。
 - `shared/tsconfig.json`：共享模块的独立构建配置。
-- `shared/src/index.ts`：共享模块空入口；阶段 2 才加入契约与纯规则。
+- `shared/src/index.ts`：共享模块唯一公共导出入口。
+- `shared/src/text.ts`：Unicode 字素级可见字符、非空段落和 Unicode 合法性规则。
+- `shared/src/limits.ts`：文件、页数、文本、简历、事实及 AI 正文的统一边界常量。
+- `shared/src/masking.ts`：手机号、邮箱、身份证、护照式证件号和详细地址的本地遮盖及位置元数据。
+- `shared/src/facts.ts`：事实来源、文本归一、SHA-256 哈希和稳定 `factId`。
+- `shared/src/preferences.ts`：求职偏好分句、去重、500 字限制和 preference 事实生成。
+- `shared/src/resume-schema.ts`：严格 `ResumeProfile` 及各类简历事实 Zod Schema。
+- `shared/src/job-description.ts`：JD 字段 Schema、重复 ID 检查、0.8 阈值与“贵司”回退。
+- `shared/src/evidence.ts`：逐项陈述/来源 Schema 及当前事实、JD 注册表归属校验。
+- `shared/src/job-status.ts`：八状态常量、中文展示名和固定转换图。
+- `shared/src/api-contract.ts`：24 个 action、读写 requestId 规则、安全负载、统一响应和错误码。
+- `shared/src/greeting.ts`：AI 正文硬质量门及手动编辑非阻断警告。
+- `shared/src/copy-text.ts`：复制正文与指定 AI 标识的确定性组合。
 - `cloudfunctions/api/README.md`：限定 api 只负责身份、验证、任务和轻量读写。
 - `cloudfunctions/api/tsconfig.json`：api 的独立构建配置，并引用 shared。
 - `cloudfunctions/api/src/index.ts`：api 空入口，不调用外部服务。
@@ -145,6 +167,20 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 ### 测试与样本
 
 - `tests/unit/health.test.ts`：证明纯规则单元测试分组可独立运行。
+- `tests/unit/text.test.ts`：验证字素计数、空白排除、段落及 250/350 边界。
+- `tests/unit/limits.test.ts`：验证所有 MVP 上限的下界、精确上限和越界。
+- `tests/unit/masking.test.ts`：验证五类敏感信息命中、分隔符、边界和误报。
+- `tests/unit/facts.test.ts`：验证事实来源、归一稳定性、变化与无碰撞样本。
+- `tests/unit/preferences.test.ts`：验证偏好分句、去重、来源和 500 字边界。
+- `tests/unit/resume-schema.test.ts`：验证合法简历和缺 ID、超长、未知字段拒绝。
+- `tests/unit/job-description.test.ts`：验证岗位/公司规则、低置信和字段 ID 唯一性。
+- `tests/unit/evidence.test.ts`：验证无来源、错误/未知 ID 和多来源陈述。
+- `tests/unit/job-status.test.ts`：穷举验证全部 64 个状态组合。
+- `tests/unit/api-contract.test.ts`：验证 action、requestId、负载、响应和错误码。
+- `tests/unit/greeting-quality.test.ts`：验证 AI 正文格式、简体、证据、数字、隐私和 Unicode 硬门。
+- `tests/unit/manual-edit.test.ts`：验证手动警告与 AI 硬失败分离。
+- `tests/unit/copy-text.test.ts`：验证 AI 标识位置和正文独立计数。
+- `tests/unit/adversarial.test.ts`：验证提示注入、原型污染、超长输入和无效 Unicode。
 - `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
 - `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。

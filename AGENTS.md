@@ -2,9 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is documentation-first. `memory-bank/design-document.md` is the product and system-design baseline; `memory-bank/tech-stack.md` records implementation recommendations; `memory-bank/implementation-plan.md` defines the execution sequence. Record milestones in `memory-bank/progress.md`, and keep `memory-bank/architecture.md` aligned with the implemented system.
-
-When implementation is approved, use the planned layout:
+This repository is documentation-led. `memory-bank/design-document.md` is the product baseline, `memory-bank/implementation-plan.md` defines the execution sequence, and `memory-bank/progress.md` records verified work. Keep `memory-bank/architecture.md` aligned with implementation.
 
 - `miniprogram/`: native WeChat client and components.
 - `cloudfunctions/api/`: authentication, action routing, job creation/query, and light persistence.
@@ -14,24 +12,23 @@ When implementation is approved, use the planned layout:
 - `tests/fixtures/`: synthetic or anonymized resumes, JDs, and adversarial samples.
 - `docs/`: privacy, model evaluation, and release checklists.
 
-Do not create application code or cloud resources without explicit approval.
+Only implement the explicitly approved phase. Never create cloud resources without separate approval.
 
 ## Build, Test, and Development Commands
 
-No executable project or package scripts are committed yet. After approved scaffolding, define these scripts in the root `package.json`:
-
-- `npm ci`: install the exact versions in `package-lock.json`.
+- `npm ci --ignore-scripts`: install locked dependencies without lifecycle scripts.
 - `npm run typecheck`: run TypeScript checks without emitting files.
 - `npm test`: run the Vitest suite once.
 - `npm run build`: compile shared code and cloud functions.
+- `npm run check`: run format, fixture, type, test, and build gates.
 
-Use WeChat Developer Tools to preview and test `miniprogram/` on real devices. Until scripts exist, do not report them as passing verification.
+Use WeChat Developer Tools only after the seven wireframes and UI phase are approved.
 
 ## Coding Style & Naming Conventions
 
 Use strict TypeScript and two-space indentation across TypeScript, JSON, WXML, and WXSS. Name variables and functions in `camelCase`, types and components in `PascalCase`, constants in `UPPER_SNAKE_CASE`, and files/directories in `kebab-case`. Keep API action names in dot notation, such as `generation.create`. End runtime-validation declarations with `Schema`, for example `ResumeProfileSchema`.
 
-Keep model IDs and provider details inside the model adapter. Prefer small domain services over large action handlers. Follow ESLint and Prettier configuration once added.
+Keep model IDs and provider details inside the model adapter. Prefer small domain services over large action handlers. Do not add unapproved formatters or frameworks.
 
 ## Testing Guidelines
 

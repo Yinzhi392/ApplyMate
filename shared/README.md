@@ -2,3 +2,4 @@
 
 Shared runtime schemas, request/response types, error codes, state-machine rules, limits, and deterministic pure functions belong here. Provider SDKs, database access, and UI code must not enter this module.
 
+Current modules cover Unicode-aware text rules, input limits, local PII masking, stable facts and preferences, resume/JD/evidence schemas, job transitions, API envelopes, AI/manual greeting checks, and copied-text labeling. Import public contracts through `src/index.ts`.
