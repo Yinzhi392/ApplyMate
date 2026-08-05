@@ -1,10 +1,17 @@
 import {
   ApiRequestSchema,
+  type ApiAction,
   type ApiResponse,
   hasValidUnicode,
 } from "../../../shared/src/index.js";
 
 import { type ActionRegistry } from "./action-registry.js";
+import { DomainError } from "./domain-error.js";
+import type { IdempotencyService } from "./idempotency-service.js";
+import type {
+  FreeResource,
+  ResourceGateService,
+} from "./resource-gate-service.js";
 
 const CLIENT_IDENTITY_FIELDS = new Set([
   "OPENID",
@@ -23,6 +30,18 @@ export interface ApiEntryDependencies {
   readCloudBaseContext: () =>
     | CloudBaseContextSnapshot
     | Promise<CloudBaseContextSnapshot>;
+  idempotency?: {
+    service: IdempotencyService;
+    createCallerKey: (trustedOpenId: string) => string;
+    now: () => Date;
+  };
+  resourceGate?: {
+    service: ResourceGateService;
+    resolveRequirements: (
+      action: ApiAction,
+      payload: Record<string, unknown>,
+    ) => readonly FreeResource[];
+  };
 }
 
 function stripClientIdentityFields(value: unknown): unknown {
@@ -82,25 +101,70 @@ export function createApiEntry(
       };
     }
 
-    const cloudContext = await dependencies.readCloudBaseContext();
-    if (!isTrustedOpenId(cloudContext.OPENID)) {
+    try {
+      const cloudContext = await dependencies.readCloudBaseContext();
+      if (!isTrustedOpenId(cloudContext.OPENID)) {
+        return {
+          ok: false,
+          error: {
+            code: "UNAUTHENTICATED",
+            message: "Authentication required.",
+            retryable: false,
+          },
+        };
+      }
+      const trustedOpenId = cloudContext.OPENID;
+      const dispatch = () => {
+        if (dependencies.resourceGate !== undefined) {
+          dependencies.resourceGate.service.assertAvailable(
+            dependencies.resourceGate.resolveRequirements(
+              parsed.data.action,
+              parsed.data.payload,
+            ),
+          );
+        }
+        return dependencies.registry.dispatch(
+          parsed.data.action,
+          parsed.data.payload,
+          {
+            trustedOpenId,
+            requestId: parsed.data.requestId,
+          },
+        );
+      };
+      if (
+        parsed.data.requestId !== undefined &&
+        dependencies.idempotency !== undefined
+      ) {
+        return await dependencies.idempotency.service.execute(
+          dependencies.idempotency.createCallerKey(trustedOpenId),
+          parsed.data.action,
+          parsed.data.requestId,
+          parsed.data.payload,
+          dependencies.idempotency.now,
+          dispatch,
+        );
+      }
+      return await dispatch();
+    } catch (error) {
+      if (error instanceof DomainError) {
+        return {
+          ok: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            retryable: error.retryable,
+          },
+        };
+      }
       return {
         ok: false,
         error: {
-          code: "UNAUTHENTICATED",
-          message: "Authentication required.",
+          code: "INTERNAL_ERROR",
+          message: "An internal error occurred.",
           retryable: false,
         },
       };
     }
-
-    return dependencies.registry.dispatch(
-      parsed.data.action,
-      parsed.data.payload,
-      {
-        trustedOpenId: cloudContext.OPENID,
-        requestId: parsed.data.requestId,
-      },
-    );
   };
 }

@@ -2,6 +2,6 @@
 
 This function will authenticate the trusted CloudBase identity, validate actions, create or query jobs, and handle lightweight persistence. It must not call OCR or TokenHub directly.
 
-Phase 3 provides the local identity and access domain: explicit action routing, trusted-context identity hashing, agreement acceptance, single-use invitations, preferences, administrator status changes, and audit records. `src/identity-api.ts` composes these actions through injected context and repository ports.
+Phase 4 adds local task, idempotency, quota, dispatch, deadline, stale-job recovery, and free-resource gate domains. `src/identity-api.ts` exposes safe task lookup and administrator quota adjustment; `src/api-entry.ts` composes trusted identity, idempotent write replay, and first-execution resource checks.
 
-`InMemoryIdentityRepository` exists only for deterministic local tests. It proves the required atomic boundaries but is not a production database adapter. A CloudBase transaction-backed repository and deployed handler must not be added until the related cloud resource is separately authorized and its SDK passes the dependency audit.
+All `InMemory*Repository` implementations exist only for deterministic local tests. They prove the required atomic boundaries but are not production database adapters. CloudBase transaction-backed repositories, an asynchronous dispatcher, and a deployed handler must not be added until the related cloud resources are separately authorized and the SDK passes the dependency audit.

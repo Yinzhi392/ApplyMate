@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import {
   ApiResponseSchema,
+  JOB_STATUS_LABELS,
   type ApiAction,
   type ApiResponse,
 } from "../../../shared/src/index.js";
@@ -20,7 +21,10 @@ import {
 import { DomainError } from "./domain-error.js";
 import type { UserRecord } from "./identity-domain.js";
 import type { IdentityRepository } from "./identity-repository.js";
+import type { IdempotencyService } from "./idempotency-service.js";
 import { InviteService } from "./invite-service.js";
+import type { JobService } from "./job-service.js";
+import type { QuotaService } from "./quota-service.js";
 import { UserService, hashTrustedOpenId } from "./user-service.js";
 
 const EmptyPayloadSchema = z.object({}).strict();
@@ -46,9 +50,22 @@ const UserSetEnabledPayloadSchema = z
     reason: z.string().trim().min(1).max(500),
   })
   .strict();
+const JobGetPayloadSchema = z
+  .object({ jobId: z.string().trim().min(1).max(100) })
+  .strict();
+const QuotaAdjustPayloadSchema = z
+  .object({
+    targetUserId: z.string().trim().min(1).max(100),
+    increase: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
 
 export interface IdentityAccessApiDependencies {
   repository: IdentityRepository;
+  idempotency?: IdempotencyService;
+  jobs?: JobService;
+  quotas?: QuotaService;
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
   now: () => Date;
@@ -333,8 +350,84 @@ export function createIdentityAccessApi(
     });
   });
 
+  const jobs = dependencies.jobs;
+  if (jobs !== undefined) {
+    registry.register("job.get", async (payload, context) => {
+      const parsed = JobGetPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "job.get");
+      agreements.assertActionAgreement(user, "job.get");
+      assertActivated(user);
+      const job = await jobs.getJobForUser(
+        user.userId,
+        parsed.data.jobId,
+      );
+      return success({
+        jobId: job.jobId,
+        kind: job.kind,
+        status: job.status,
+        statusLabel: JOB_STATUS_LABELS[job.status],
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        ...(job.result === undefined ? {} : { result: job.result }),
+        ...(job.error === undefined ? {} : { error: job.error }),
+      });
+    });
+  }
+
+  const quotas = dependencies.quotas;
+  if (quotas !== undefined) {
+    registry.register("admin.quotaAdjust", async (payload, context) => {
+      const parsed = QuotaAdjustPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "admin.quotaAdjust");
+      agreements.assertActionAgreement(user, "admin.quotaAdjust");
+      assertAdministrator(user);
+      if (context.requestId === undefined) {
+        throw new Error("Write request is missing an identifier.");
+      }
+      const target = await dependencies.repository.getUserById(
+        parsed.data.targetUserId,
+      );
+      if (target === null) {
+        throw new DomainError("NOT_FOUND", "User was not found.");
+      }
+
+      const usage = await quotas.increaseTemporaryQuota(
+        user.userId,
+        target.userId,
+        parsed.data.increase,
+        parsed.data.reason,
+        context.requestId,
+        dependencies.now(),
+      );
+      return success({
+        targetUserId: target.userId,
+        dateKey: usage.dateKey,
+        temporaryIncrease: usage.temporaryIncrease,
+        limit: usage.limit,
+        remaining: usage.remaining,
+      });
+    });
+  }
+
   return createApiEntry({
     registry,
     readCloudBaseContext: dependencies.readCloudBaseContext,
+    ...(dependencies.idempotency === undefined
+      ? {}
+      : {
+          idempotency: {
+            service: dependencies.idempotency,
+            createCallerKey: hashTrustedOpenId,
+            now: dependencies.now,
+          },
+        }),
   });
 }

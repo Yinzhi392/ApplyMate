@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 身份与准入 v1.3
+**版本：** 任务、幂等与额度 v1.4
 
 **日期：** 2026-08-05
 
-**当前状态：** 阶段 3 的本地身份、协议、邀请和用户权限闭环已实现并通过开发者侧全量检查，等待产品负责人验证。`api` 当前提供可注入的领域接口和内存测试仓储，但尚无 CloudBase 部署入口或生产仓储；`worker` 与 `cleanup` 仍为空导出。未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 4。
+**当前状态：** 阶段 4 的本地任务、幂等、额度、派发、超时回收和资源暂停基础设施已实现，等待产品负责人验证。`api` 当前提供可注入的领域接口和内存测试仓储，但尚无 CloudBase 部署入口、生产仓储或真实异步派发器；`worker` 与 `cleanup` 的部署入口仍为空导出，相关执行/回收规则暂由 `api` 领域模块承载并离线测试。未创建云环境、外部账号、数据库或 AI/OCR 调用。产品负责人确认前不得进入阶段 5。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -48,6 +48,8 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 等待用户确认不预留额度，最多保留 24 小时。
 - 同一用户、action、requestId 和负载返回同一结果；同 requestId 不同负载返回冲突。
 - 终态幂等映射保留 24 小时。
+
+阶段 4 的当前实现把平台依赖隔离在端口之后：任务、幂等和额度仓储均只有本地内存适配器；派发器只有 `dispatch(jobId)` 契约；worker 执行器采用 44 秒默认内部截止；cleanup 领域服务以创建时间满 10 分钟为包含边界回收任务。以上只能证明领域语义，不能替代 CloudBase 事务、异步任务或定时触发器的真实验证。
 
 ## 5. 数据与事实模型
 
@@ -120,11 +122,21 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 管理员启停用户时，用户状态和审计记录原子保存。禁用用户目前只能访问 `auth.status` 与 `user.get`；`user.delete` 将在其计划步骤实现后开放。
 - `InMemoryIdentityRepository` 仅是本地可验证适配器；生产 CloudBase 事务实现及真实上下文适配器仍需单独授权，不能据此宣称云端已完成。
 
+### 2026-08-05：阶段 4 任务、幂等与额度
+
+- 任务固定从 `queued` 创建，保存状态历史；worker 在任何实际处理前原子认领，同一任务重复派发只有一次进入处理。
+- `job.get` 复用阶段 3 的协议、激活和用户隔离门禁，只返回任务类型、中文进度、时间及安全结果/错误，不暴露 userId 或 worker 认领信息。
+- 写请求以可信身份哈希、action、requestId 和规范化负载建立幂等映射；完成结果从完成时起保留 24 小时。同 requestId 不同负载冲突，同进程并发重复合并，处理器异常则释放认领。
+- 免费资源门禁位于首次幂等操作内部、业务处理器之前：新请求在资源暂停时不会创建任务或预留额度；已经完成的相同请求仍可直接回放原结果。
+- 每日额度使用固定 UTC+8 日期键，默认 5 次；`reserved` 与 `succeeded` 原子变更，跨日完成回写原预留日。管理员增加次数只作用当日并与不含 OpenID 的审计原子保存。
+- worker 内部截止固定默认 44 秒且拒绝达到平台 45 秒；超时写入唯一失败终态并释放额度，迟到结果不能覆盖。创建满 10 分钟仍无终态的任务由清理服务兜底失败，等待用户确认状态排除。
+- 当前 `InMemoryJobRepository`、`InMemoryIdempotencyRepository` 和 `InMemoryQuotaRepository` 只用于离线验证。真实 CloudBase 事务仓储、异步派发与 cleanup 定时入口仍需外部资源逐项授权。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
 
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。环境变量检查单独执行，因为阶段 1 禁止配置真实外部资源。
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 4 当前为 40 个测试文件、133 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
 
 ## 10. 仓库文件职责
 
@@ -170,18 +182,31 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/tsconfig.json`：api 的独立构建配置，并引用 shared。
 - `cloudfunctions/api/src/index.ts`：api 领域模块的公共导出入口，不实例化 CloudBase 或外部服务。
 - `cloudfunctions/api/src/action-registry.ts`：显式 action 注册、调度和安全错误归一。
-- `cloudfunctions/api/src/api-entry.ts`：统一请求校验、客户端身份字段移除和可信上下文 OpenID 读取。
+- `cloudfunctions/api/src/api-entry.ts`：统一请求校验、客户端身份字段移除、可信上下文 OpenID 读取、写请求幂等编排和首次执行资源门禁。
 - `cloudfunctions/api/src/domain-error.ts`：允许安全返回的领域错误类型。
 - `cloudfunctions/api/src/identity-domain.ts`：用户、协议、邀请码和管理员审计记录的数据类型。
 - `cloudfunctions/api/src/identity-repository.ts`：身份领域仓储端口及仅供本地测试的原子内存实现。
 - `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
 - `cloudfunctions/api/src/agreement-service.ts`：协议版本接受、当前版本判断和业务动作门禁。
 - `cloudfunctions/api/src/invite-service.ts`：邀请码规范化哈希、7 天有效期、创建和原子消费。
-- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好及管理员启停 action 的本地 API。
-- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门。
+- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、任务查询、临时额度及管理员启停 action 的本地 API。
+- `cloudfunctions/api/src/job-domain.ts`：任务种类、状态历史、认领信息、安全结果和错误的数据类型。
+- `cloudfunctions/api/src/job-repository.ts`：任务仓储端口及支持原子创建、认领、转换和超时扫描的内存实现。
+- `cloudfunctions/api/src/job-service.ts`：任务创建、用户隔离查询、状态转换及幂等终态写入规则。
+- `cloudfunctions/api/src/job-dispatch-service.ts`：API 只派发 jobId 的端口、创建派发服务和 worker 认领协调器。
+- `cloudfunctions/api/src/idempotency-domain.ts`：pending/completed 幂等记录和原子认领结果类型。
+- `cloudfunctions/api/src/idempotency-repository.ts`：幂等仓储端口及支持回放、冲突、放弃和 24 小时清理的内存实现。
+- `cloudfunctions/api/src/idempotency-service.ts`：规范化负载哈希、身份/action/requestId 键哈希和同进程重复请求合并。
+- `cloudfunctions/api/src/quota-domain.ts`：北京时间日期键、默认每日 5 次、预留/用量/临时调整审计类型。
+- `cloudfunctions/api/src/quota-repository.ts`：额度仓储端口及原子预留、结算、临时增加与审计的内存实现。
+- `cloudfunctions/api/src/quota-service.ts`：额度预留、成功、释放、当日查询和管理员临时增加规则。
+- `cloudfunctions/api/src/resource-gate-service.ts`：OCR、模型、计算/存储三类零付费资源可用性门禁。
+- `cloudfunctions/api/src/worker-execution-service.ts`：44 秒默认内部截止、取消信号、唯一终态和额度结算。
+- `cloudfunctions/api/src/stale-job-cleanup-service.ts`：创建满 10 分钟的非终态任务回收和额度释放规则。
+- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门；当前没有提供商行为。
 - `cloudfunctions/worker/tsconfig.json`：worker 的独立构建配置，并引用 shared。
 - `cloudfunctions/worker/src/index.ts`：worker 空入口，无模型或 OCR 行为。
-- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除。
+- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除；当前没有部署或删除行为。
 - `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
 - `cloudfunctions/cleanup/src/index.ts`：cleanup 空入口，无删除行为。
 - `docs/README.md`：规定线框、评测、隐私、安全、成本和发布证据的存放范围。
@@ -212,9 +237,21 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/unit/admin-bootstrap.test.ts`：验证管理员协议门槛、首批邀请码创建/撤销和用户激活。
 - `tests/unit/user-preferences-api.test.ts`：验证偏好新增、替换、清空、factId 和 500 字边界。
 - `tests/unit/admin-user-status.test.ts`：验证白名单管理员启停、伪造拒绝和原子审计。
+- `tests/unit/job-service.test.ts`：验证任务创建、并发认领、固定状态转换、唯一终态和跨用户隐藏。
+- `tests/unit/idempotency-service.test.ts`：验证规范化负载、并发合并、冲突、失败重试及完成后 24 小时保留。
+- `tests/unit/api-idempotency.test.ts`：验证 API 重复写回放且不会再次更新时间。
+- `tests/unit/job-get-api.test.ts`：验证 8 个任务状态的安全中文响应、成功结果和跨用户隐藏。
+- `tests/unit/beijing-quota-date.test.ts`：验证固定 UTC+8 日期键及北京时间零点边界。
+- `tests/unit/quota-service.test.ts`：验证并发 5 次上限、成功/释放幂等结算及跨日归属。
+- `tests/unit/admin-quota-adjust.test.ts`：验证管理员当日临时额度、次日失效、审计和幂等回放。
+- `tests/unit/job-dispatch.test.ts`：验证 API 提前返回及重复派发只处理一次。
+- `tests/unit/worker-deadline.test.ts`：验证 44 秒内部截止、失败释放、迟到结果隔离和正常成功。
+- `tests/unit/stale-job-cleanup.test.ts`：验证 10 分钟精确回收、重复清理和等待确认排除。
+- `tests/unit/resource-gate.test.ts`：验证三类资源暂停、数据访问保留及完成请求回放。
 - `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
 - `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
 - `tests/integration/identity-access.test.ts`：验证管理员启动、同码并发、跨用户隔离、协议变化和账号禁用的完整本地链路。
+- `tests/integration/task-infrastructure.test.ts`：验证重复创建、恢复查询、后台完成、额度结算、跨日并发、45 秒上限和 10 分钟回收的完整本地链路。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。
