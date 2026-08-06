@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** JD 生成与事实质量门 v1.6
+**版本：** 投递记录与改写 v1.7
 
-**日期：** 2026-08-05
+**日期：** 2026-08-06
 
-**当前状态：** 阶段 6 的本地 JD 输入门禁、结构化解析、低置信确认、个性化生成、一次纠错、事实质量门、投递快照、额度结算和残留清理已实现，等待产品负责人验证。`api`、`worker` 与 `cleanup` 仍只提供可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或真实 AI/OCR 调用。30 组草案尚未经产品负责人逐组确认，因此真实模型指标未评测；验证前不得进入阶段 7。
+**当前状态：** 阶段 7 的本地投递记录、手动编辑警告、异步 AI 改写、固定改写模式、复制组合和单条覆盖反馈已实现，等待产品负责人验证。`api`、`worker` 与 `cleanup` 仍只提供可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或真实 AI/OCR 调用。30 组草案尚未经产品负责人逐组确认，因此真实模型指标未评测；验证前不得进入阶段 8。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -71,7 +71,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 ## 7. API 基线
 
-当前已锁定且已由本地 API 组合实现的身份、简历和生成相关动作：
+当前已锁定且已由本地 API 组合实现的身份、简历、生成和投递相关动作：
 
 - `agreement.accept`，保存当前协议版本和接受时间
 - `user.updatePreferences`
@@ -81,8 +81,11 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `resume.list`、`resume.setDefault`、`resume.delete`
 - `generation.create`，验证已确认简历和 JD 输入，创建 queued 任务并立即返回 `jobId`
 - `generation.confirmJd`，仅对本人的等待任务补齐严格 JD、预留额度并继续同一任务
+- `generation.rewrite`，从本人投递记录快照最新手动正文并立即返回异步 `jobId`
+- `application.list`、`application.get`、`application.update`、`application.delete`
+- `feedback.submit`，为本人单条投递记录创建或覆盖唯一反馈
 
-`generation.rewrite`、application CRUD、反馈和其他阶段 7+ 动作仍只存在于共享契约，尚未注册业务处理器。管理员白名单在同意当前协议后免邀请码进入。`admin.quotaAdjust` 仅增加当日临时次数，次日北京时间失效并记录审计。
+`user.delete`、`admin.stats` 和阶段 8+ 清理/运营动作仍只存在于共享契约或后续计划，尚未注册业务处理器。管理员白名单在同意当前协议后免邀请码进入。`admin.quotaAdjust` 仅增加当日临时次数，次日北京时间失效并记录审计。
 
 ## 8. 决策记录
 
@@ -158,15 +161,25 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - application 快照独立于简历仓储；删除简历不会删除历史。重复 worker、45 秒截止与 10 分钟 cleanup 竞争依赖任务终态和额度结算幂等保证计数不为负。
 - 本地完整链路和页面重建后的 `job.get` 恢复已验证。30 组草案仍为待确认，真实模型准确率、合规率、虚构、耗时和成本不得宣称通过。
 
+### 2026-08-06：阶段 7 改写、记录与反馈
+
+- application 成为同一投递的唯一最新文案记录；手动正文、状态和备忘只覆盖该记录并刷新更新时间，不新增重复历史版本。列表按更新时间倒序，所有详情、更新、删除和反馈均先执行用户隔离。
+- 手动文本沿用 AI 检测器但始终允许保存/复制，并额外返回真实可见字符数和段落数；超过 AI 输出 Schema 的长手动文本也必须返回实际计数，不能因为解析失败报告为零。
+- `generation.rewrite` 复用 `ai_jobs` 与每日额度，但使用独立 rewrite 仓储保存任务输入快照。创建任务时固定最新正文与 application 版本；完成前版本不一致即冲突失败，避免后台结果覆盖用户后续编辑。
+- 改写 worker 固定走 queued → parsing → generating → validating → terminal，最多纠错一次。成功覆盖 application 正文/证据并只结算一次，质量、模型、并发冲突或超时失败释放额度且保留原文。
+- 三种预设改写指令由服务端固定；自定义内容只是低优先级不可信数据。整个文本模型请求再次统一脱敏，不允许自定义指令覆盖真实性、隐私、简体中文、长度/段落或逐项证据规则。
+- 复制文本由服务端纯规则生成并随详情返回；实际微信剪贴板调用仍属于阶段 9。feedback 以 applicationId 为唯一业务键，覆盖时保留首次创建时间；删除 application 会同时删除其反馈。
+- 当前仍是内存仓储与合成模型替身，无法证明 CloudBase 事务、真实异步派发、TokenHub 改写质量、真机剪贴板或实际计费结果。阶段 8 在产品负责人验证前不得开始。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
 
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 6 当前为 66 个测试文件、219 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 7 当前为 70 个测试文件、229 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
 
 ## 10. 仓库文件职责
 
-以下清单描述阶段 6 本地实现结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
+以下清单描述阶段 7 本地实现结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
 
 ### 根目录
 
@@ -210,8 +223,12 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/action-registry.ts`：显式 action 注册、调度和安全错误归一。
 - `cloudfunctions/api/src/api-entry.ts`：统一请求校验、客户端身份字段移除、可信上下文 OpenID 读取、写请求幂等编排和首次执行资源门禁。
 - `cloudfunctions/api/src/domain-error.ts`：允许安全返回的领域错误类型。
-- `cloudfunctions/api/src/application-domain.ts`：投递记录、脱敏事实快照、JD 快照、逐项证据和生成结果的数据类型。
-- `cloudfunctions/api/src/application-repository.ts`：application 仓储端口及按 job 创建、读取和竞争补偿删除的内存实现。
+- `cloudfunctions/api/src/application-domain.ts`：投递记录、最新手动正文、状态/备忘、手动警告、脱敏事实/JD 快照和逐项证据的数据类型。
+- `cloudfunctions/api/src/application-repository.ts`：application 仓储端口及按用户列表、详情、版本条件保存、删除和按 job 补偿的内存实现。
+- `cloudfunctions/api/src/application-service.ts`：投递记录用户隔离、筛选排序、手动正文测量/警告、复制组合、状态/备忘更新和关联数据删除。
+- `cloudfunctions/api/src/feedback-domain.ts`：满意/需改进、可选说明和首次/最新时间的数据类型。
+- `cloudfunctions/api/src/feedback-repository.ts`：以 applicationId 为唯一业务键的反馈仓储端口和覆盖式内存实现。
+- `cloudfunctions/api/src/feedback-service.ts`：反馈所有权、500 字边界、创建/覆盖/清空和详情读取规则。
 - `cloudfunctions/api/src/generation-domain.ts`：生成创建/确认请求 Schema、任务输入快照和生成领域状态。
 - `cloudfunctions/api/src/generation-repository.ts`：生成记录仓储端口及状态条件写入、job 查询和残留文件扫描的内存实现。
 - `cloudfunctions/api/src/jd-input-validation-service.ts`：JD 文本的 Unicode/20,000 字门禁及有序图片所有权/文件门禁组合。
@@ -219,6 +236,10 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/generation-preparation-service.ts`：认领初始生成任务、OCR/解析状态、有序提取、图片删除、低置信等待和 44 秒准备截止。
 - `cloudfunctions/api/src/generation-confirmation-service.ts`：`generation.confirmJd` 的所有权/状态/Schema 校验、首次额度预留、同 job 继续派发和失败补偿。
 - `cloudfunctions/api/src/generation-execution-service.ts`：单一总截止、首次生成/一次纠错、确定性质量门、application 快照和终态额度结算。
+- `cloudfunctions/api/src/generation-rewrite-domain.ts`：四类改写输入 Schema、最新正文/application 版本快照和 rewrite 任务状态。
+- `cloudfunctions/api/src/generation-rewrite-repository.ts`：rewrite 任务仓储端口及内存实现。
+- `cloudfunctions/api/src/generation-rewrite-workflow-service.ts`：`generation.rewrite` 的本人记录读取、最新正文快照、任务创建和异步派发。
+- `cloudfunctions/api/src/generation-rewrite-execution-service.ts`：改写认领、额度、44 秒截止、一次纠错、逐项质量门、版本条件覆盖和终态结算。
 - `cloudfunctions/api/src/identity-domain.ts`：用户、协议、邀请码和管理员审计记录的数据类型。
 - `cloudfunctions/api/src/identity-repository.ts`：身份领域仓储端口及仅供本地测试的原子内存实现。
 - `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
@@ -266,6 +287,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/worker/src/jd-parse-pipeline.ts`：按顺序 OCR 或接收粘贴 JD，统一文字边界、本地遮盖和结构化解析。
 - `cloudfunctions/worker/src/greeting-model-gateway.ts`：文本模型主备、单次超时、429/失败/无效输出归一及无正文哈希日志。
 - `cloudfunctions/worker/src/greeting-generation-pipeline.ts`：把事实 ID、脱敏 JD 和纠错上下文转换为不含图片/fileId 的再次遮盖文本请求。
+- `cloudfunctions/worker/src/greeting-rewrite-pipeline.ts`：把固定改写模式、低优先级自定义指令、最新正文和快照转换为再次脱敏的文本模型请求。
 - `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除，并说明当前无真实调度。
 - `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
 - `cloudfunctions/cleanup/src/index.ts`：cleanup 领域模块公共导出入口，不创建定时器或云连接。
@@ -324,6 +346,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/contract/tencent-ocr-adapter.test.ts`：验证 OCR 成功元数据、所有权、低置信、超时、429 和资源暂停。
 - `tests/contract/resume-privacy-chain.test.ts`：捕获 OCR/模型请求，证明原图只到 OCR 且五类敏感值不进入模型。
 - `tests/contract/greeting-privacy-chain.test.ts`：捕获首次/纠错文本请求，证明受保护值、图片和 fileId 不进入模型。
+- `tests/contract/greeting-rewrite-pipeline.test.ts`：验证三种预设指令、自定义指令优先级和改写正文/事实/指令的统一脱敏。
 - `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
 - `tests/integration/identity-access.test.ts`：验证管理员启动、同码并发、跨用户隔离、协议变化和账号禁用的完整本地链路。
 - `tests/integration/task-infrastructure.test.ts`：验证重复创建、恢复查询、后台完成、额度结算、跨日并发、45 秒上限和 10 分钟回收的完整本地链路。
@@ -340,6 +363,9 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/integration/generation-file-cleanup.test.ts`：验证 post-OCR 残留文件重试和引用清除。
 - `tests/integration/generation-quota-race.test.ts`：验证重复 worker 与 10 分钟 cleanup 竞争下唯一终态和额度非负。
 - `tests/integration/generation-full-chain.test.ts`：验证创建、解析、生成、快照、删除原简历和页面重建恢复的完整本地闭环。
+- `tests/integration/application-management.test.ts`：验证投递筛选排序、跨用户隐藏、手动警告、状态/备忘、复制组合和删除。
+- `tests/integration/application-feedback.test.ts`：验证每条记录一条可覆盖反馈、500 字边界、清空、隔离和级联删除。
+- `tests/integration/generation-rewrite.test.ts`：验证最新正文快照、异步幂等、一次纠错、硬质量门、模型错误、额度和失败不覆盖。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。

@@ -19,14 +19,18 @@ import {
   type ApiEntryDependencies,
 } from "./api-entry.js";
 import { DomainError } from "./domain-error.js";
+import type { FeedbackService } from "./feedback-service.js";
 import type { UserRecord } from "./identity-domain.js";
 import type { IdentityRepository } from "./identity-repository.js";
 import type { IdempotencyService } from "./idempotency-service.js";
+import type { ApplicationService } from "./application-service.js";
 import {
   GenerationConfirmJdPayloadSchema,
   GenerationCreatePayloadSchema,
 } from "./generation-domain.js";
 import type { GenerationConfirmationService } from "./generation-confirmation-service.js";
+import { GenerationRewritePayloadSchema } from "./generation-rewrite-domain.js";
+import type { GenerationRewriteWorkflowService } from "./generation-rewrite-workflow-service.js";
 import type { GenerationWorkflowService } from "./generation-workflow-service.js";
 import { InviteService } from "./invite-service.js";
 import type { JobService } from "./job-service.js";
@@ -74,6 +78,33 @@ const QuotaAdjustPayloadSchema = z
     reason: z.string().trim().min(1).max(500),
   })
   .strict();
+const ApplicationListPayloadSchema = z
+  .object({
+    status: z.enum(["not_applied", "applied"]).optional(),
+  })
+  .strict();
+const ApplicationIdPayloadSchema = z
+  .object({ applicationId: z.string().trim().min(1).max(100) })
+  .strict();
+const ApplicationUpdatePayloadSchema = z
+  .object({
+    applicationId: z.string().trim().min(1).max(100),
+    greetingBody: z.string().optional(),
+    status: z.enum(["not_applied", "applied"]).optional(),
+    memo: z.string().optional(),
+  })
+  .strict()
+  .refine(
+    ({ greetingBody, status, memo }) =>
+      greetingBody !== undefined || status !== undefined || memo !== undefined,
+  );
+const FeedbackSubmitPayloadSchema = z
+  .object({
+    applicationId: z.string().trim().min(1).max(100),
+    rating: z.enum(["satisfied", "needs_improvement"]),
+    note: z.string().optional(),
+  })
+  .strict();
 
 export interface IdentityAccessApiDependencies {
   repository: IdentityRepository;
@@ -85,6 +116,9 @@ export interface IdentityAccessApiDependencies {
   management?: ResumeManagementService;
   generation?: GenerationWorkflowService;
   generationConfirmation?: GenerationConfirmationService;
+  rewrite?: GenerationRewriteWorkflowService;
+  applications?: ApplicationService;
+  feedback?: FeedbackService;
   resourceGate?: ApiEntryDependencies["resourceGate"];
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
@@ -568,6 +602,119 @@ export function createIdentityAccessApi(
           dependencies.now(),
         ),
       );
+    });
+  }
+
+  const rewrite = dependencies.rewrite;
+  if (rewrite !== undefined) {
+    registry.register("generation.rewrite", async (payload, context) => {
+      const parsed = GenerationRewritePayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "generation.rewrite");
+      agreements.assertActionAgreement(user, "generation.rewrite");
+      assertActivated(user);
+      return success(
+        await rewrite.createJob(user.userId, parsed.data, dependencies.now()),
+      );
+    });
+  }
+
+  const feedback = dependencies.feedback;
+  const applications = dependencies.applications;
+  if (applications !== undefined) {
+    registry.register("application.list", async (payload, context) => {
+      const parsed = ApplicationListPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "application.list");
+      agreements.assertActionAgreement(user, "application.list");
+      assertActivated(user);
+      return success({
+        applications: await applications.list(user.userId, parsed.data),
+      });
+    });
+    registry.register("application.get", async (payload, context) => {
+      const parsed = ApplicationIdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "application.get");
+      agreements.assertActionAgreement(user, "application.get");
+      assertActivated(user);
+      const detail = await applications.get(
+        user.userId,
+        parsed.data.applicationId,
+      );
+      const applicationFeedback =
+        feedback === undefined
+          ? null
+          : await feedback.getForApplication(
+              user.userId,
+              parsed.data.applicationId,
+            );
+      return success({
+        ...detail,
+        ...(applicationFeedback === null
+          ? {}
+          : { feedback: applicationFeedback }),
+      });
+    });
+    registry.register("application.update", async (payload, context) => {
+      const parsed = ApplicationUpdatePayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "application.update");
+      agreements.assertActionAgreement(user, "application.update");
+      assertActivated(user);
+      const { applicationId, ...update } = parsed.data;
+      return success(
+        await applications.update(
+          user.userId,
+          applicationId,
+          update,
+          dependencies.now(),
+        ),
+      );
+    });
+    registry.register("application.delete", async (payload, context) => {
+      const parsed = ApplicationIdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "application.delete");
+      agreements.assertActionAgreement(user, "application.delete");
+      assertActivated(user);
+      await applications.delete(user.userId, parsed.data.applicationId);
+      return success({ deletedApplicationId: parsed.data.applicationId });
+    });
+  }
+
+  if (feedback !== undefined) {
+    registry.register("feedback.submit", async (payload, context) => {
+      const parsed = FeedbackSubmitPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "feedback.submit");
+      agreements.assertActionAgreement(user, "feedback.submit");
+      assertActivated(user);
+      return success({
+        feedback: await feedback.submit(
+          user.userId,
+          parsed.data,
+          dependencies.now(),
+        ),
+      });
     });
   }
 

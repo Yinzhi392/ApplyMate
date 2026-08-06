@@ -1,0 +1,34 @@
+import type { RewriteRecord } from "./generation-rewrite-domain.js";
+
+export interface RewriteRepository {
+  create(record: RewriteRecord): Promise<void>;
+  getByJobId(jobId: string): Promise<RewriteRecord | null>;
+  save(record: RewriteRecord): Promise<void>;
+}
+
+function cloneRewrite(record: RewriteRecord): RewriteRecord {
+  return structuredClone(record);
+}
+
+export class InMemoryRewriteRepository implements RewriteRepository {
+  readonly #records = new Map<string, RewriteRecord>();
+
+  async create(record: RewriteRecord): Promise<void> {
+    if (this.#records.has(record.jobId)) {
+      throw new Error("Rewrite job identifier must be unique.");
+    }
+    this.#records.set(record.jobId, cloneRewrite(record));
+  }
+
+  async getByJobId(jobId: string): Promise<RewriteRecord | null> {
+    const record = this.#records.get(jobId);
+    return record === undefined ? null : cloneRewrite(record);
+  }
+
+  async save(record: RewriteRecord): Promise<void> {
+    if (!this.#records.has(record.jobId)) {
+      throw new Error("Cannot save an unknown rewrite record.");
+    }
+    this.#records.set(record.jobId, cloneRewrite(record));
+  }
+}

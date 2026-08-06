@@ -2,6 +2,7 @@ export * from "./docx-text-extractor.js";
 export * from "./generation-processing-error.js";
 export * from "./greeting-generation-pipeline.js";
 export * from "./greeting-model-gateway.js";
+export * from "./greeting-rewrite-pipeline.js";
 export * from "./jd-parse-pipeline.js";
 export * from "./jd-structure-parser.js";
 export * from "./pdf-text-extractor.js";

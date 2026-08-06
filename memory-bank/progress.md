@@ -2,11 +2,34 @@
 
 ## 当前状态
 
-**日期：** 2026-08-05
+**日期：** 2026-08-06
 
-**阶段：** 阶段 6——JD 识别、生成与事实质量门（本地开发完成，等待产品负责人验证）
+**阶段：** 阶段 7——改写、手动编辑、记录与反馈（本地开发完成，等待产品负责人验证）
 
-**结论：** 阶段 6 的本地领域逻辑、可注入外部端口、合成质量门和恢复链路已完成。没有创建或调用未授权 CloudBase、腾讯 OCR 或 TokenHub 资源；30 组真实模型验收仍受阶段 0 人工真值和外部资源授权阻塞。当前停在阶段 6，产品负责人明确验证前不得进入阶段 7。
+**结论：** 阶段 7 的本地投递记录、手动编辑、异步改写、复制组合与反馈闭环已完成。没有创建或调用 CloudBase、腾讯 OCR、TokenHub 等未授权真实资源；阶段 0 的人工真值、真实模型评测和外部资源授权仍未完成。当前停在阶段 7，产品负责人验证前不得进入阶段 8。
+
+## 阶段 7 逐步记录
+
+- **7.0 启动与基线：** 已重新完整阅读根目录 `AGENTS.md` 和 `memory-bank/` 五份文档，确认阶段 6 提交为 `99b4edc`、工作区干净。基线 `npm run check` 通过格式、样本隔离、严格类型、66 个测试文件共 219 项测试和四模块构建；已创建 `phase-7-applications-rewrite` 分支。阶段 0 与阶段 6 的真实 30 组模型验收仍未完成，不会把本阶段的合成测试描述为真实云端或模型结论。
+- **7.1 投递记录隔离：** 已建立 application 领域服务及仓储的按用户列表、详情、更新和删除能力，并接入四个既定 API action。列表支持未投递/已投递筛选，按 `updatedAt` 倒序且以 applicationId 稳定破同分；他人详情、更新和删除统一 NOT_FOUND。新增集成测试先因服务缺失失败，完成后 2 项场景通过。
+- **7.2 手动文本：** `application.update` 保存同一记录的最新正文，复用事实/JD 快照计算可见字符数、段落数和事实质量警告；警告持久化但 `canSave`/`canCopy` 始终为 true。无来源年份会返回 `UNSOURCED_NUMBER` 但仍保存，原有合法正文无误警告；空正文、无效 Unicode 和超过 API 总文本边界的输入才作为无效请求拒绝。
+- **7.7 状态与备忘：** 同一 application 可反复更新未投递/已投递、正文和最多 500 个可见字符的备忘；空备忘会清除字段，每次有效更新刷新 `updatedAt` 并立即影响列表排序，不创建重复记录。
+- **7.3 最新文本改写：** 已建立 `generation.rewrite` 异步任务、独立 rewrite 记录和派发边界。API 创建任务时从 application 读取并快照用户刚保存的最新正文与 `updatedAt`；重复 requestId 只创建/派发一个 job。worker 保存结果前再次比较正文和更新时间，若用户在运行期间继续编辑则冲突失败，不覆盖更新后的文本。
+- **7.4 改写质量与额度：** 改写 worker 复用固定任务状态、44 秒内部截止、逐项事实/JD 注册表、岗位名/公司称呼、简体中文、250–350 字和 2–3 段硬门。首稿失败只纠错一次；成功更新同一 application 并把一次预留转为成功，双失败释放预留且保留用户原文。合成测试覆盖一次纠错成功和恶意输出双失败，额度分别为 1 与 0。
+- **7.5 改写模式边界：** 已固定“缩短、增加细节、换一种表达”三类服务器指令；自定义模式最多 500 个可见字符，并被放入不可信 `userInstruction` 数据字段。模型上下文始终同时携带不可覆盖的真实性、隐私、简体中文、长度/段落和逐项证据规则；捕获测试证明最新正文、事实和自定义指令中的手机号、邮箱与详细地址会在模型前遮盖。
+- **7.6 复制组合：** `application.get` 依据当前最新正文返回确定性 `copyText`，严格为去除正文尾部空白后另起一行附加“AI生成内容，请核对真实性”；共享边界测试继续证明标识不计入正文长度。真机剪贴板读写属于阶段 9 界面，不在本阶段擅自创建小程序页面。
+- **7.8 单条覆盖反馈：** 已建立 feedback 领域、仓储、服务和 `feedback.submit`。每个 application 仅保留一条反馈，满意/需改进可覆盖，首次 `createdAt` 保留、`updatedAt` 更新；说明允许清空，精确 500 字通过、501 字拒绝且不覆盖旧值，跨用户统一 NOT_FOUND。`application.get` 会返回当前反馈。
+- **7.9 历史与单条删除：** 阶段 6 的完整闭环回归继续证明删除简历后投递事实/JD 快照仍可访问；删除 application 后正文、证据、快照和关联反馈均无法再读取，其他记录不受影响。相关 6 个测试文件共 11 项测试通过。
+- **7.10 回归与里程碑：** 已完成手动警告、复制标识、最新文本改写、一次纠错、稳定模型错误、额度结算、记录隔离、反馈覆盖和历史生命周期回归。`npm run check` 通过格式、样本隔离、严格类型、70 个测试文件共 229 项测试和四模块构建，`git diff --check` 无错误；架构与实施计划已同步。未增加依赖，未修改 `package.json`/锁文件，未发起真实外部请求。
+
+## 阶段 7 验证交接
+
+- 产品负责人执行 `npm run check`，预期看到 70 个测试文件、229 项测试全部通过。
+- 可执行 `npx vitest run tests/integration/application-management.test.ts tests/integration/application-feedback.test.ts`，查看记录隔离、手动警告、状态/备忘、复制组合、反馈覆盖和删除。
+- 可执行 `npx vitest run tests/integration/generation-rewrite.test.ts tests/contract/greeting-rewrite-pipeline.test.ts`，查看最新文本改写、一次纠错、额度、稳定模型错误、自定义指令边界和统一脱敏。
+- 可执行 `npx vitest run tests/integration/generation-full-chain.test.ts`，复核删除简历后历史快照仍存在。
+- 当前 CloudBase 仓储、真实异步派发和 TokenHub 均为端口或本地替身；真机剪贴板属于阶段 9，不能据此认定真实云端改写、计费或设备行为已通过。
+- 等待产品负责人验证；未获得明确通过前，不得开始阶段 8。
 
 ## 阶段 6 逐步记录
 
@@ -129,14 +152,14 @@
 ## 当前等待
 
 - 阶段 0.4–0.17 尚未完成，包括 30 组逐组确认、平台逐项授权、零付费验证、真实 OCR/模型评测和七个线框确认。
-- 本次阶段 6 只完成本地领域逻辑，不表示阶段 0 门槛、真实 CloudBase/OCR/TokenHub 集成或 30 组质量指标已经通过。
-- 阶段 6 等待产品负责人运行并确认测试；确认前不得开始阶段 7。
+- 本次阶段 7 只完成本地领域逻辑，不表示阶段 0 门槛、真实 CloudBase/OCR/TokenHub 集成、30 组质量指标或真机剪贴板已经通过。
+- 阶段 7 等待产品负责人运行并确认测试；确认前不得开始阶段 8。
 
 ## 当前执行
 
 1. 已重新完整阅读 architecture、design、implementation-plan、progress 和 tech-stack。
-2. 已从阶段 5 提交 `61ebdb9` 创建 `phase-6-generation-quality` 分支，不直接在 main 开发。
-3. 阶段 6.1–6.15 和 6.16 本地闭环已按测试先行完成；6.9/6.16 的正式 30 组验收保持未勾选，当前只等待产品负责人测试，不开始阶段 7。
+2. 已从阶段 6 提交 `99b4edc` 创建 `phase-7-applications-rewrite` 分支，不直接在 main 开发。
+3. 阶段 7.1–7.10 已按测试先行完成；阶段 0 与阶段 6 的真实 30 组验收仍保持未完成，当前只等待产品负责人测试，不开始阶段 8。
 
 ## 阶段 1 逐步记录
 
@@ -189,7 +212,7 @@
 
 1. 执行 `npm ci --ignore-scripts`。
 2. 执行 `npm run check`。
-3. 可选执行 `npx vitest run tests/integration/task-infrastructure.test.ts` 查看阶段 4 完整本地链路。
-4. 可选分别执行 `npm run test:unit` 和 `npm run typecheck` 查看任务、幂等、额度与安全边界。
-5. 可选执行 `npm run env:check`；未配置外部资源时预期列出缺失变量并返回失败，这不代表阶段 4 失败。
-6. 测试通过后明确回复；在此之前不得开始阶段 5。
+3. 可选执行 `npx vitest run tests/integration/application-management.test.ts tests/integration/application-feedback.test.ts` 查看记录与反馈闭环。
+4. 可选执行 `npx vitest run tests/integration/generation-rewrite.test.ts tests/contract/greeting-rewrite-pipeline.test.ts` 查看改写、额度、质量门和隐私边界。
+5. 可选执行 `npm run env:check`；未配置外部资源时预期列出缺失变量并返回失败，这不代表阶段 7 失败。
+6. 测试通过后明确回复；在此之前不得开始阶段 8。

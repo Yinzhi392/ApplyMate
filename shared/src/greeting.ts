@@ -61,6 +61,8 @@ export interface GreetingQualityResult {
 export interface ManualGreetingEvaluation {
   canSave: true;
   canCopy: true;
+  visibleCharacterCount: number;
+  paragraphCount: number;
   warnings: GreetingQualityError[];
 }
 
@@ -178,10 +180,22 @@ export function evaluateManualGreeting(
   registry: EvidenceSourceRegistry,
 ): ManualGreetingEvaluation {
   const result = validateAiGreeting(input, registry);
+  const parsed = GreetingDraftSchema.safeParse(input);
+  const bodyDescriptor =
+    input !== null && typeof input === "object"
+      ? Object.getOwnPropertyDescriptor(input, "body")
+      : undefined;
+  const body = parsed.success
+    ? parsed.data.body
+    : typeof bodyDescriptor?.value === "string"
+      ? bodyDescriptor.value
+      : "";
 
   return {
     canSave: true,
     canCopy: true,
+    visibleCharacterCount: countVisibleCharacters(body),
+    paragraphCount: splitNonEmptyParagraphs(body).length,
     warnings: result.errors,
   };
 }

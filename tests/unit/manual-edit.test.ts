@@ -42,4 +42,15 @@ describe("manual greeting warnings", () => {
     expect(result.errors).toContain("BODY_LENGTH_INVALID");
     expect(result.errors).toContain("UNSOURCED_NUMBER");
   });
+
+  it("still reports real measurements when a manual body exceeds the AI schema size", () => {
+    const oversized = { ...draft, body: "字".repeat(5_001) };
+
+    const result = evaluateManualGreeting(oversized, registry);
+
+    expect(result.canSave).toBe(true);
+    expect(result.visibleCharacterCount).toBe(5_001);
+    expect(result.paragraphCount).toBe(1);
+    expect(result.warnings).toContain("INVALID_GREETING_SCHEMA");
+  });
 });
