@@ -10,6 +10,8 @@ import {
 } from "../../../shared/src/index.js";
 
 import { ActionRegistry, type ApiExecutionContext } from "./action-registry.js";
+import { AccountDeletionService } from "./account-deletion-service.js";
+import type { AdminStatsService } from "./admin-stats-service.js";
 import {
   AgreementService,
   type AgreementVersions,
@@ -105,12 +107,22 @@ const FeedbackSubmitPayloadSchema = z
     note: z.string().optional(),
   })
   .strict();
+const UserDeletePayloadSchema = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("request") }).strict(),
+  z
+    .object({
+      operation: z.literal("confirm"),
+      confirmationToken: z.string().min(16).max(256),
+    })
+    .strict(),
+]);
 
 export interface IdentityAccessApiDependencies {
   repository: IdentityRepository;
   idempotency?: IdempotencyService;
   jobs?: JobService;
   quotas?: QuotaService;
+  adminStats?: AdminStatsService;
   resumes?: ResumeWorkflowService;
   confirmations?: ResumeConfirmationService;
   management?: ResumeManagementService;
@@ -124,6 +136,7 @@ export interface IdentityAccessApiDependencies {
   adminOpenIds: readonly string[];
   now: () => Date;
   generateInviteCode?: () => string;
+  generateDeletionToken?: () => string;
   readCloudBaseContext: ApiEntryDependencies["readCloudBaseContext"];
 }
 
@@ -186,6 +199,10 @@ export function createIdentityAccessApi(
     dependencies.currentVersions,
   );
   const invites = new InviteService(dependencies.repository);
+  const accountDeletion = new AccountDeletionService(
+    dependencies.repository,
+    dependencies.generateDeletionToken,
+  );
   const adminIdentityHashes = new Set(
     dependencies.adminOpenIds.map(hashTrustedOpenId),
   );
@@ -285,6 +302,9 @@ export function createIdentityAccessApi(
     assertEnabled(user, "admin.inviteCreate");
     agreements.assertActionAgreement(user, "admin.inviteCreate");
     assertAdministrator(user);
+    if (context.requestId === undefined) {
+      throw new Error("Write request is missing an identifier.");
+    }
 
     const code =
       dependencies.generateInviteCode?.() ??
@@ -293,6 +313,7 @@ export function createIdentityAccessApi(
       user.userId,
       code,
       dependencies.now(),
+      `audit_${context.requestId}`,
     );
     return success({
       inviteId: invite.inviteId,
@@ -310,14 +331,16 @@ export function createIdentityAccessApi(
     assertEnabled(user, "admin.inviteRevoke");
     agreements.assertActionAgreement(user, "admin.inviteRevoke");
     assertAdministrator(user);
+    if (context.requestId === undefined) {
+      throw new Error("Write request is missing an identifier.");
+    }
 
-    const revoked = await dependencies.repository.revokeInvite(
+    const revoked = await invites.revokeInvite(
+      user.userId,
       parsed.data.inviteId,
       dependencies.now(),
+      `audit_${context.requestId}`,
     );
-    if (revoked === null) {
-      throw new DomainError("NOT_FOUND", "Invitation was not found.");
-    }
     return success({ inviteId: revoked.inviteId, status: revoked.status });
   });
 
@@ -368,6 +391,30 @@ export function createIdentityAccessApi(
     });
   });
 
+  registry.register("user.delete", async (payload, context) => {
+    const parsed = UserDeletePayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return invalidRequest();
+    }
+    const user = await currentUser(context);
+    if (parsed.data.operation === "request") {
+      return success(
+        await accountDeletion.requestConfirmation(user, dependencies.now()),
+      );
+    }
+    const deleted = await accountDeletion.confirm(
+      user,
+      parsed.data.confirmationToken,
+      dependencies.now(),
+    );
+    return success({
+      deletionStatus: deleted.deletionStatus,
+      accountStatus: deleted.accountStatus,
+      deletionRequestedAt: deleted.deletionRequestedAt,
+      deletionDeadlineAt: deleted.deletionDeadlineAt,
+    });
+  });
+
   registry.register("admin.userSetEnabled", async (payload, context) => {
     const parsed = UserSetEnabledPayloadSchema.safeParse(payload);
     if (!parsed.success) {
@@ -381,6 +428,18 @@ export function createIdentityAccessApi(
       throw new Error("Write request is missing an identifier.");
     }
 
+    const target = await dependencies.repository.getUserById(
+      parsed.data.targetUserId,
+    );
+    if (target === null) {
+      throw new DomainError("NOT_FOUND", "User was not found.");
+    }
+    if (parsed.data.enabled && target.deletionStatus === "pending") {
+      throw new DomainError(
+        "CONFLICT",
+        "Account deletion cannot be reversed.",
+      );
+    }
     const now = dependencies.now();
     const updated = await dependencies.repository.setUserEnabledWithAudit(
       parsed.data.targetUserId,
@@ -468,6 +527,20 @@ export function createIdentityAccessApi(
         limit: usage.limit,
         remaining: usage.remaining,
       });
+    });
+  }
+
+  const adminStats = dependencies.adminStats;
+  if (adminStats !== undefined) {
+    registry.register("admin.stats", async (payload, context) => {
+      if (!EmptyPayloadSchema.safeParse(payload).success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "admin.stats");
+      agreements.assertActionAgreement(user, "admin.stats");
+      assertAdministrator(user);
+      return success(await adminStats.get(dependencies.now()));
     });
   }
 

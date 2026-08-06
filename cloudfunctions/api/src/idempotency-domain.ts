@@ -4,6 +4,7 @@ export type IdempotencyStatus = "pending" | "completed";
 
 export interface IdempotencyRecord {
   keyHash: string;
+  callerKeyHash: string;
   action: ApiAction;
   requestId: string;
   payloadHash: string;

@@ -1,4 +1,6 @@
 export * from "./action-registry.js";
+export * from "./account-deletion-service.js";
+export * from "./admin-stats-service.js";
 export * from "./application-domain.js";
 export * from "./application-repository.js";
 export * from "./application-service.js";
@@ -30,6 +32,8 @@ export * from "./job-domain.js";
 export * from "./job-dispatch-service.js";
 export * from "./job-repository.js";
 export * from "./job-service.js";
+export * from "./operations-domain.js";
+export * from "./operations-repository.js";
 export * from "./quota-domain.js";
 export * from "./quota-repository.js";
 export * from "./quota-service.js";

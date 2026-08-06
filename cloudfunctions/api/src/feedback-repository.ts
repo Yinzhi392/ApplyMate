@@ -5,6 +5,7 @@ export interface FeedbackRepository {
   listByUser(userId: string): Promise<FeedbackRecord[]>;
   upsert(record: FeedbackRecord): Promise<void>;
   deleteByApplicationId(applicationId: string): Promise<void>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneFeedback(record: FeedbackRecord): FeedbackRecord {
@@ -37,5 +38,15 @@ export class InMemoryFeedbackRepository implements FeedbackRepository {
 
   async deleteByApplicationId(applicationId: string): Promise<void> {
     this.#records.delete(applicationId);
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [applicationId, record] of this.#records) {
+      if (record.userId === userId && this.#records.delete(applicationId)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

@@ -12,6 +12,7 @@ export interface ApplicationRepository {
   ): Promise<ApplicationRecord | null>;
   deleteForUser(applicationId: string, userId: string): Promise<boolean>;
   deleteByJobId(jobId: string): Promise<boolean>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneApplication(record: ApplicationRecord): ApplicationRecord {
@@ -93,5 +94,18 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
     }
     this.#jobIndex.delete(jobId);
     return this.#records.delete(applicationId);
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [applicationId, record] of this.#records) {
+      if (record.userId === userId) {
+        this.#jobIndex.delete(record.jobId);
+        if (this.#records.delete(applicationId)) {
+          deleted += 1;
+        }
+      }
+    }
+    return deleted;
   }
 }

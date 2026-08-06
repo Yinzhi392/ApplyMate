@@ -2,6 +2,7 @@ import {
   getDailyQuotaLimit,
   type DailyUsageRecord,
   type QuotaAdjustmentAuditRecord,
+  type QuotaAdminStats,
   type QuotaReservationRecord,
   type QuotaReservationStatus,
 } from "./quota-domain.js";
@@ -23,6 +24,10 @@ export interface QuotaRepository {
     audit: QuotaAdjustmentAuditRecord,
     now: Date,
   ): Promise<DailyUsageRecord>;
+  deleteByUserId(userId: string): Promise<number>;
+  listAuditRecords(): QuotaAdjustmentAuditRecord[];
+  getAdminStats(dateKey: string): Promise<QuotaAdminStats>;
+  cleanupAuditLogsBefore(cutoff: Date): Promise<number>;
 }
 
 function usageKey(userId: string, dateKey: string): string {
@@ -165,5 +170,54 @@ export class InMemoryQuotaRepository implements QuotaRepository {
     this.#usage.set(key, updated);
     this.#auditRecords.set(audit.auditId, cloneAudit(audit));
     return cloneUsage(updated);
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [key, usage] of this.#usage) {
+      if (usage.userId === userId && this.#usage.delete(key)) {
+        deleted += 1;
+      }
+    }
+    for (const [reservationId, reservation] of this.#reservations) {
+      if (reservation.userId === userId) {
+        this.#reservations.delete(reservationId);
+      }
+    }
+    for (const [auditId, audit] of this.#auditRecords) {
+      if (audit.actorUserId === userId || audit.targetUserId === userId) {
+        this.#auditRecords.delete(auditId);
+      }
+    }
+    return deleted;
+  }
+
+  async getAdminStats(dateKey: string): Promise<QuotaAdminStats> {
+    const usage = Array.from(this.#usage.values()).filter(
+      (record) => record.dateKey === dateKey,
+    );
+    return {
+      users: usage.length,
+      reserved: usage.reduce((total, record) => total + record.reserved, 0),
+      succeeded: usage.reduce((total, record) => total + record.succeeded, 0),
+      temporaryIncrease: usage.reduce(
+        (total, record) => total + record.temporaryIncrease,
+        0,
+      ),
+      auditEvents: this.#auditRecords.size,
+    };
+  }
+
+  async cleanupAuditLogsBefore(cutoff: Date): Promise<number> {
+    let deleted = 0;
+    for (const [auditId, audit] of this.#auditRecords) {
+      if (
+        new Date(audit.createdAt).getTime() < cutoff.getTime() &&
+        this.#auditRecords.delete(auditId)
+      ) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

@@ -4,6 +4,7 @@ import type {
   IdempotencyClaimResult,
   IdempotencyRecord,
 } from "./idempotency-domain.js";
+import { hashIdempotencyCallerKey } from "./idempotency-service.js";
 
 export interface IdempotencyRepository {
   claim(
@@ -18,6 +19,7 @@ export interface IdempotencyRepository {
   ): Promise<void>;
   abandon(keyHash: string, payloadHash: string): Promise<void>;
   cleanupExpired(now: Date): Promise<number>;
+  deleteForCallerKey(callerKey: string): Promise<number>;
 }
 
 function cloneRecord(record: IdempotencyRecord): IdempotencyRecord {
@@ -102,5 +104,16 @@ export class InMemoryIdempotencyRepository
       }
     }
     return removed;
+  }
+
+  async deleteForCallerKey(callerKey: string): Promise<number> {
+    const callerKeyHash = hashIdempotencyCallerKey(callerKey);
+    let deleted = 0;
+    for (const [keyHash, record] of this.#records) {
+      if (record.callerKeyHash === callerKeyHash && this.#records.delete(keyHash)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

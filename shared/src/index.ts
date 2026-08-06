@@ -10,3 +10,4 @@ export * from "./masking.js";
 export * from "./preferences.js";
 export * from "./resume-schema.js";
 export * from "./text.js";
+export * from "./beijing-date.js";

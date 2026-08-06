@@ -9,6 +9,7 @@ export interface GenerationRepository {
     expectedStatus: GenerationRecord["status"],
   ): Promise<GenerationRecord | null>;
   listFileCleanupCandidates(): Promise<GenerationRecord[]>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneGeneration(record: GenerationRecord): GenerationRecord {
@@ -56,5 +57,15 @@ export class InMemoryGenerationRepository implements GenerationRepository {
           status !== "processing" && temporaryFileIds.length > 0,
       )
       .map(cloneGeneration);
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [jobId, record] of this.#records) {
+      if (record.userId === userId && this.#records.delete(jobId)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

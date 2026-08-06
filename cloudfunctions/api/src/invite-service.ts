@@ -24,6 +24,7 @@ export class InviteService {
     createdByUserId: string,
     plaintextCode: string,
     now: Date,
+    auditId?: string,
   ): Promise<InviteRecord> {
     const normalizedCode = normalizeInviteCode(plaintextCode);
     if (!INVITE_CODE_PATTERN.test(normalizedCode)) {
@@ -45,8 +46,37 @@ export class InviteService {
         now.getTime() + INVITE_LIFETIME_MILLISECONDS,
       ).toISOString(),
     };
-    await this.repository.saveInvite(invite);
+    if (auditId === undefined) {
+      await this.repository.saveInvite(invite);
+    } else {
+      await this.repository.saveInviteWithAudit(invite, {
+        auditId,
+        action: "admin.inviteCreate",
+        actorUserId: createdByUserId,
+        targetInviteId: invite.inviteId,
+        createdAt: now.toISOString(),
+      });
+    }
     return invite;
+  }
+
+  async revokeInvite(
+    actorUserId: string,
+    inviteId: string,
+    now: Date,
+    auditId: string,
+  ): Promise<InviteRecord> {
+    const revoked = await this.repository.revokeInviteWithAudit(inviteId, now, {
+      auditId,
+      action: "admin.inviteRevoke",
+      actorUserId,
+      targetInviteId: inviteId,
+      createdAt: now.toISOString(),
+    });
+    if (revoked === null) {
+      throw new DomainError("NOT_FOUND", "Invitation was not found.");
+    }
+    return revoked;
   }
 
   async activateInvite(

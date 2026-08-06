@@ -5,6 +5,7 @@ export interface TemporaryFileRepository {
   getFileById(fileId: string): Promise<TemporaryFileRecord | null>;
   deleteFile(fileId: string): Promise<boolean>;
   listFilesUploadedAtOrBefore(cutoff: Date): Promise<TemporaryFileRecord[]>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneFile(file: TemporaryFileRecord): TemporaryFileRecord {
@@ -41,5 +42,15 @@ export class InMemoryTemporaryFileRepository
         (file) => new Date(file.uploadedAt).getTime() <= cutoff.getTime(),
       )
       .map(cloneFile);
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [fileId, file] of this.#files) {
+      if (file.ownerUserId === userId && this.#files.delete(fileId)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

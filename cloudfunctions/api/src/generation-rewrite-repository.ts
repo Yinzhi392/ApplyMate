@@ -4,6 +4,7 @@ export interface RewriteRepository {
   create(record: RewriteRecord): Promise<void>;
   getByJobId(jobId: string): Promise<RewriteRecord | null>;
   save(record: RewriteRecord): Promise<void>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneRewrite(record: RewriteRecord): RewriteRecord {
@@ -30,5 +31,15 @@ export class InMemoryRewriteRepository implements RewriteRepository {
       throw new Error("Cannot save an unknown rewrite record.");
     }
     this.#records.set(record.jobId, cloneRewrite(record));
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [jobId, record] of this.#records) {
+      if (record.userId === userId && this.#records.delete(jobId)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

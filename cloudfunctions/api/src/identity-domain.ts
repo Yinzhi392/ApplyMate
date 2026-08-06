@@ -18,8 +18,20 @@ export interface UserRecord {
   agreements: Partial<Record<AgreementType, AgreementAcceptance>>;
   preferenceText: string;
   preferenceFacts: PreferenceFact[];
+  deletionStatus?: "pending";
+  deletionRequestedAt?: string;
+  deletionDeadlineAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DeletionConfirmationRecord {
+  confirmationId: string;
+  userId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  consumedAt?: string;
 }
 
 export interface InviteRecord {
@@ -34,7 +46,7 @@ export interface InviteRecord {
   revokedAt?: string;
 }
 
-export interface AuditRecord {
+export interface UserStatusAuditRecord {
   auditId: string;
   action: "admin.userSetEnabled";
   actorUserId: string;
@@ -42,6 +54,43 @@ export interface AuditRecord {
   enabled: boolean;
   reason: string;
   createdAt: string;
+}
+
+export interface InviteCreateAuditRecord {
+  auditId: string;
+  action: "admin.inviteCreate";
+  actorUserId: string;
+  targetInviteId: string;
+  createdAt: string;
+}
+
+export interface InviteRevokeAuditRecord {
+  auditId: string;
+  action: "admin.inviteRevoke";
+  actorUserId: string;
+  targetInviteId: string;
+  createdAt: string;
+}
+
+export type AuditRecord =
+  | UserStatusAuditRecord
+  | InviteCreateAuditRecord
+  | InviteRevokeAuditRecord;
+
+export interface IdentityAdminStats {
+  users: {
+    total: number;
+    enabled: number;
+    disabled: number;
+    pendingDeletion: number;
+  };
+  invitations: {
+    total: number;
+    active: number;
+    consumed: number;
+    revoked: number;
+  };
+  auditEvents: number;
 }
 
 const DISABLED_ACCOUNT_ACTIONS = new Set([

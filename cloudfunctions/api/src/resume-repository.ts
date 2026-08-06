@@ -26,6 +26,7 @@ export interface ResumeRepository {
   ): Promise<{ deleted: ResumeRecord; nextDefault: ResumeRecord | null } | null>;
   listUnconfirmedUpdatedAtOrBefore(cutoff: Date): Promise<ResumeRecord[]>;
   listReferencedTemporaryFileIds(): Promise<Set<string>>;
+  deleteByUserId(userId: string): Promise<number>;
 }
 
 function cloneResume(resume: ResumeRecord): ResumeRecord {
@@ -182,5 +183,15 @@ export class InMemoryResumeRepository implements ResumeRepository {
         ({ temporaryFileIds }) => temporaryFileIds,
       ),
     );
+  }
+
+  async deleteByUserId(userId: string): Promise<number> {
+    let deleted = 0;
+    for (const [resumeId, resume] of this.#resumes) {
+      if (resume.userId === userId && this.#resumes.delete(resumeId)) {
+        deleted += 1;
+      }
+    }
+    return deleted;
   }
 }

@@ -41,6 +41,10 @@ export function createIdempotencyKeyHash(
   );
 }
 
+export function hashIdempotencyCallerKey(callerKey: string): string {
+  return hashValue(`applymate-idempotency-caller-v1\0${callerKey}`);
+}
+
 export class IdempotencyService {
   readonly #inFlight = new Map<string, Promise<ApiResponse>>();
 
@@ -59,6 +63,7 @@ export class IdempotencyService {
     const payloadHash = hashIdempotencyPayload(payload);
     const candidate: IdempotencyRecord = {
       keyHash,
+      callerKeyHash: hashIdempotencyCallerKey(callerKey),
       action,
       requestId,
       payloadHash,

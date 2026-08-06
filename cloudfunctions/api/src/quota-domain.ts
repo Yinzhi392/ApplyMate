@@ -36,12 +36,12 @@ export interface QuotaAdjustmentAuditRecord {
   createdAt: string;
 }
 
-const BEIJING_OFFSET_MILLISECONDS = 8 * 60 * 60 * 1_000;
-
-export function getBeijingDateKey(now: Date): string {
-  return new Date(now.getTime() + BEIJING_OFFSET_MILLISECONDS)
-    .toISOString()
-    .slice(0, 10);
+export interface QuotaAdminStats {
+  users: number;
+  reserved: number;
+  succeeded: number;
+  temporaryIncrease: number;
+  auditEvents: number;
 }
 
 export function getDailyQuotaLimit(temporaryIncrease: number): number {
@@ -50,3 +50,6 @@ export function getDailyQuotaLimit(temporaryIncrease: number): number {
   }
   return DEFAULT_DAILY_AI_LIMIT + temporaryIncrease;
 }
+import { getBeijingDateKey } from "../../../shared/src/index.js";
+
+export { getBeijingDateKey };
