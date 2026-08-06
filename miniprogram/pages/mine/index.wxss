@@ -1,0 +1,44 @@
+.account-summary {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  margin-bottom: 36rpx;
+  padding: 24rpx 0;
+}
+
+.account-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.menu-title {
+  font-weight: 620;
+}
+
+.menu-action {
+  color: var(--color-primary);
+  font-size: 25rpx;
+}
+
+.admin-entry {
+  margin-top: 28rpx;
+  border-color: #b9d1c8;
+}
+
+.danger-zone {
+  margin-top: 56rpx;
+  padding-top: 28rpx;
+  border-top: 1rpx solid #ddc3bf;
+}
+
+.danger-zone .muted {
+  margin: 10rpx 0 20rpx;
+}

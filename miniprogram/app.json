@@ -17,14 +17,14 @@
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#f7f6f2",
+    "navigationBarBackgroundColor": "#f5f6f2",
     "navigationBarTitleText": "投了吗",
     "navigationBarTextStyle": "black"
   },
   "tabBar": {
-    "color": "#65747a",
-    "selectedColor": "#2e776e",
-    "backgroundColor": "#fffefa",
+    "color": "#5d6d72",
+    "selectedColor": "#2f756c",
+    "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
       {

@@ -1,6 +1,6 @@
 import {
-  MAX_IMAGE_COUNT,
   MAX_IMAGE_TOTAL_BYTES,
+  MAX_RESUME_IMAGE_COUNT,
   MAX_SINGLE_FILE_BYTES,
 } from "../../../shared/src/index.js";
 
@@ -83,7 +83,7 @@ export class ResumeFileValidationService {
     if (
       files.length === 0 ||
       (kind === "images"
-        ? files.length > MAX_IMAGE_COUNT
+        ? files.length > MAX_RESUME_IMAGE_COUNT
         : files.length !== 1)
     ) {
       invalidFile();

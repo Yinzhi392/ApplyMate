@@ -1,15 +1,25 @@
 <view class="page">
-  <view class="title">求职偏好</view>
-  <view class="subtitle">例如远程、到岗时间或每周可工作天数。系统会按句子拆成可追溯事实。</view>
-  <view class="card">
+  <view class="page-header">
+    <view class="title">求职偏好</view>
+    <view class="subtitle">例如远程、到岗时间或每周可工作天数。系统会按句子拆成可追溯事实。</view>
+  </view>
+
+  <view class="form-section preference-editor">
     <textarea class="textarea" value="{{text}}" maxlength="520" placeholder="例：希望远程。可以立即到岗。每周工作 4 天。" bindinput="updateText" />
     <view class="counter">{{visibleCharacters}} / 500</view>
     <view wx:if="{{message}}" class="error">{{message}}</view>
-    <view wx:if="{{segments.length}}" class="section-title">将保存为</view>
-    <view wx:for="{{segments}}" wx:key="*this" class="pill">{{item}}</view>
+    <view wx:if="{{segments.length}}" class="segment-preview">
+      <view class="section-title">将保存为</view>
+      <view class="segment-list">
+        <view wx:for="{{segments}}" wx:key="*this" class="segment-item">{{item}}</view>
+      </view>
+    </view>
   </view>
+
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <button class="button" disabled="{{loading || !valid}}" bindtap="save">保存偏好</button>
-  <button class="button button-secondary" disabled="{{loading}}" bindtap="clear">清空偏好</button>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadPreferences">重新尝试</button>
+  <view class="sticky-action">
+    <button class="button" disabled="{{loading || !valid}}" bindtap="save">保存偏好</button>
+    <button class="button button-secondary" disabled="{{loading}}" bindtap="clear">清空偏好</button>
+    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadPreferences">重新尝试</button>
+  </view>
 </view>

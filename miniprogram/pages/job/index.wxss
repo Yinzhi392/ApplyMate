@@ -1,0 +1,40 @@
+.job-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 480rpx;
+  padding: 40rpx 32rpx;
+  border: 1rpx solid var(--color-border);
+  border-radius: 22rpx;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.progress-line {
+  width: 180rpx;
+  height: 8rpx;
+  margin: 0 auto 30rpx;
+  overflow: hidden;
+  border-radius: 4rpx;
+  background: #dfe6e2;
+}
+
+.progress-line::after {
+  display: block;
+  width: 58%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+  content: "";
+}
+
+.job-status {
+  font-size: 38rpx;
+  font-weight: 680;
+}
+
+.job-help {
+  margin-top: 12rpx;
+  color: var(--color-text-secondary);
+  font-size: 26rpx;
+}

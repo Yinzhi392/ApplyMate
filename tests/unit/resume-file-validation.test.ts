@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_IMAGE_COUNT,
+  MAX_RESUME_IMAGE_COUNT,
   MAX_IMAGE_TOTAL_BYTES,
   MAX_SINGLE_FILE_BYTES,
 } from "../../shared/src/index.js";
@@ -93,10 +93,10 @@ describe("resume file validation", () => {
   it("enforces file count, per-file size, and aggregate image size", () => {
     const validator = new ResumeFileValidationService();
     const jpeg = Buffer.from([0xff, 0xd8, 0xff]);
-    const sixImages = Array.from({ length: MAX_IMAGE_COUNT }, (_, index) =>
+    const sixImages = Array.from({ length: MAX_RESUME_IMAGE_COUNT }, (_, index) =>
       file(`resume-${index}.jpg`, "image/jpeg", jpeg, index),
     );
-    expect(validator.validate("images", sixImages)).toHaveLength(MAX_IMAGE_COUNT);
+    expect(validator.validate("images", sixImages)).toHaveLength(MAX_RESUME_IMAGE_COUNT);
 
     expect(() =>
       validator.validate("images", [

@@ -1,0 +1,43 @@
+.login-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-block {
+  margin-bottom: 56rpx;
+}
+
+.brand-name {
+  color: var(--color-primary);
+  font-size: 24rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+}
+
+.login-panel {
+  padding: 32rpx;
+}
+
+.agreement-row {
+  align-items: flex-start;
+  margin-top: 26rpx;
+  padding: 22rpx 0;
+  border-top: 1rpx solid var(--color-border);
+  font-size: 26rpx;
+  line-height: 1.65;
+}
+
+.agreement-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 5rpx;
+}
+
+.invite-field {
+  margin-top: 26rpx;
+}
+
+.login-action {
+  margin-top: 28rpx;
+}

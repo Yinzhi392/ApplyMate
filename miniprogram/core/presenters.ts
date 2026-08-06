@@ -67,19 +67,10 @@ export interface HomeResumeSummary {
   name: string;
 }
 
-export interface HomeApplicationSummary {
-  applicationId: string;
-  jobTitle: string;
-  companyName: string;
-  status: "not_applied" | "applied";
-  updatedAt: string;
-}
-
 export interface HomeState {
   defaultResume: HomeResumeSummary | null;
   remainingQuota: number;
   resourcePauseReason: string;
-  recentApplications: readonly HomeApplicationSummary[];
 }
 
 export interface HomeView extends HomeState {
@@ -87,7 +78,6 @@ export interface HomeView extends HomeState {
   generationEnabled: boolean;
   pauseTitle: string;
   pauseDescription: string;
-  emptyRecentRecords: boolean;
 }
 
 export function createHomeView(state: HomeState): HomeView {
@@ -112,6 +102,5 @@ export function createHomeView(state: HomeState): HomeView {
     generationEnabled,
     pauseTitle,
     pauseDescription,
-    emptyRecentRecords: state.recentApplications.length === 0,
   };
 }

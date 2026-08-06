@@ -1,21 +1,28 @@
 <view class="page">
-  <view class="title">逐项确认简历</view>
-  <view class="subtitle">这里的内容会成为 AI 可引用的事实。请删除错误内容，并修正识别偏差。</view>
+  <view class="page-header">
+    <view class="title">逐项确认简历</view>
+    <view class="subtitle">这些内容会成为 AI 可引用的事实。请删除错误内容，并修正识别偏差。</view>
+  </view>
+
   <view wx:if="{{loading}}" class="status">加载中，正在恢复解析结果。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}" class="card">
+  <view wx:if="{{!loading}}" class="profile-name-section">
     <label class="field-label" for="profile-name">姓名或简历名称</label>
     <input id="profile-name" class="input" value="{{profileName}}" bindinput="updateName" />
   </view>
 
-  <view wx:for="{{facts}}" wx:key="key" class="card">
-    <view class="pill">{{item.label}}</view>
-    <textarea class="textarea" value="{{item.text}}" data-section="{{item.section}}" data-index="{{item.index}}" bindinput="updateFact" />
-    <view class="safe-note">事实标识：{{item.factId}}</view>
+  <view wx:if="{{facts.length}}" class="fact-list">
+    <view wx:for="{{facts}}" wx:key="key" class="fact-item">
+      <view class="pill">{{item.label}}</view>
+      <textarea class="textarea" value="{{item.text}}" data-section="{{item.section}}" data-index="{{item.index}}" bindinput="updateFact" />
+      <view class="safe-note fact-id">事实标识：{{item.factId}}</view>
+    </view>
   </view>
 
   <view wx:if="{{facts.length === 0 && !loading}}" class="warning">没有识别到可确认事实，请返回并换一种输入方式。</view>
-  <button class="button" disabled="{{loading || facts.length === 0}}" bindtap="confirm">确认并保存</button>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadProfile">重新尝试</button>
+  <view class="sticky-action">
+    <button class="button" disabled="{{loading || facts.length === 0}}" bindtap="confirm">确认并保存</button>
+    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadProfile">重新尝试</button>
+  </view>
 </view>

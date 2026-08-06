@@ -1,30 +1,32 @@
-<view class="page">
-  <view class="eyebrow">APPLYMATE</view>
-  <view class="title">投了吗</view>
-  <view class="subtitle">让每一次开场，都有真实经历支撑。</view>
+<view class="page login-page">
+  <view class="brand-block">
+    <view class="brand-name">APPLYMATE</view>
+    <view class="title">投了吗</view>
+    <view class="subtitle">让每一次开场，都有真实经历支撑。</view>
+  </view>
 
   <view wx:if="{{loading}}" class="status">加载中，请稍候。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}" class="card">
+  <view wx:if="{{!loading}}" class="surface login-panel">
     <view class="section-title">{{title}}</view>
     <view class="muted">{{description}}</view>
 
-    <label wx:if="{{showAgreement}}" class="list-item row">
-      <checkbox checked="{{agreementChecked}}" bindtap="toggleAgreement" color="#2e776e" />
-      <view>我已阅读并同意<text class="link" data-document="用户协议" bindtap="showDocument">用户协议</text>和<text class="link" data-document="隐私政策" bindtap="showDocument">隐私政策</text></view>
+    <label wx:if="{{showAgreement}}" class="row agreement-row">
+      <checkbox checked="{{agreementChecked}}" bindtap="toggleAgreement" color="#2f756c" />
+      <view>我已阅读并同意<text class="agreement-link" data-document="用户协议" catchtap="showDocument">用户协议</text>和<text class="agreement-link" data-document="隐私政策" catchtap="showDocument">隐私政策</text></view>
     </label>
 
-    <view wx:if="{{showInviteInput}}">
+    <view wx:if="{{showInviteInput}}" class="invite-field">
       <label class="field-label" for="invite-code">邀请码</label>
       <input id="invite-code" class="input" value="{{inviteCode}}" placeholder="请输入邀请码" bindinput="updateInviteCode" />
       <view wx:if="{{isDemo}}" class="safe-note">本地界面验证邀请码：APPLYMATE</view>
     </view>
 
-    <button class="button" disabled="{{actionDisabled}}" bindtap="submit">{{actionLabel}}</button>
+    <button class="button login-action" disabled="{{actionDisabled}}" bindtap="submit">{{actionLabel}}</button>
     <view class="safe-note">{{helperText}}</view>
   </view>
 
   <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，状态可能未更新。请检查网络后重新尝试。</view>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadStatus">重新尝试</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary login-action" bindtap="loadStatus">重新尝试</button>
 </view>

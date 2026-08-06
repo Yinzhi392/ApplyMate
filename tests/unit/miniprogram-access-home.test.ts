@@ -34,40 +34,31 @@ describe("mini-program access and home presenters", () => {
     expect(view.showInviteInput).toBe(false);
   });
 
-  it("covers empty resume, exhausted quota, paused resources and recent records", () => {
-    expect(createHomeView({
+  it("covers empty resume, exhausted quota and paused resources without record data", () => {
+    const emptyResume = createHomeView({
       defaultResume: null,
       remainingQuota: 5,
       resourcePauseReason: "",
-      recentApplications: [],
-    })).toMatchObject({
+    });
+    expect(emptyResume).toMatchObject({
       primaryActionLabel: "先添加简历",
       generationEnabled: false,
-      emptyRecentRecords: true,
     });
+    expect(emptyResume).not.toHaveProperty("recentApplications");
 
     expect(createHomeView({
       defaultResume: { resumeId: "resume_demo0001", name: "产品简历" },
       remainingQuota: 0,
       resourcePauseReason: "",
-      recentApplications: [],
     })).toMatchObject({ generationEnabled: false, pauseTitle: "今日次数已用完" });
 
     expect(createHomeView({
       defaultResume: { resumeId: "resume_demo0001", name: "产品简历" },
       remainingQuota: 4,
       resourcePauseReason: "模型免费额度已暂停",
-      recentApplications: [{
-        applicationId: "application_1",
-        jobTitle: "AI 产品实习生",
-        companyName: "贵司",
-        status: "not_applied",
-        updatedAt: "2026-08-06T00:00:00.000Z",
-      }],
     })).toMatchObject({
       generationEnabled: false,
       pauseTitle: "AI 服务暂不可用",
-      emptyRecentRecords: false,
     });
   });
 });

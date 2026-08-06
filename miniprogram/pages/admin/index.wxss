@@ -1,0 +1,46 @@
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rpx;
+  overflow: hidden;
+  border: 1rpx solid var(--color-border);
+  border-radius: 18rpx;
+  background: var(--color-border);
+}
+
+.stat-item {
+  padding: 24rpx 12rpx;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.stat-label {
+  margin-top: 5rpx;
+  color: var(--color-text-secondary);
+  font-size: 22rpx;
+}
+
+.admin-section {
+  margin-top: 42rpx;
+}
+
+.admin-section .section-title {
+  margin-bottom: 18rpx;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.admin-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}

@@ -1,10 +1,23 @@
-import { moveItem, validateImageSelection, type SelectedImage } from "../../core/input-rules.js";
+import {
+  MAX_JD_IMAGE_COUNT,
+  appendJdImages,
+  buildActiveGenerationInput,
+  removeJdImage,
+  reorderJdImage,
+  updateGenerationDraft,
+  type GenerationDraft,
+  type GenerationInputMode,
+  type SelectedImage,
+} from "../../core/input-rules.js";
 import { createRequestId } from "../../services/api-client.js";
 import { isWeakNetwork, messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 type PickerEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
+type TouchEvent = WechatMiniprogram.BaseEvent & {
+  touches: Array<{ clientY: number }>;
+};
 
 interface ResumeOption {
   isDefault: boolean;
@@ -16,8 +29,13 @@ interface ResumeOption {
 Page({
   data: {
     errorMessage: "",
+    dragStartY: 0,
+    dragTargetIndex: -1,
+    draggingIndex: -1,
     images: [] as SelectedImage[],
+    inputMode: "images" as GenerationInputMode,
     loading: false,
+    maxImageCount: MAX_JD_IMAGE_COUNT,
     requestId: "",
     resumeIndex: 0,
     resumeNames: [] as string[],
@@ -46,33 +64,114 @@ Page({
   },
 
   changeResume(event: PickerEvent): void {
-    this.setData({ resumeIndex: Number(event.detail.value) });
+    this.applyDraftChanges({ resumeIndex: Number(event.detail.value) });
   },
 
   updateText(event: TextInputEvent): void {
-    this.setData({ text: event.detail.value });
+    this.applyDraftChanges({ text: event.detail.value });
+  },
+
+  changeInputMode(event: WechatMiniprogram.BaseEvent): void {
+    const inputMode = String(event.currentTarget.dataset.mode);
+    if (inputMode === "images" || inputMode === "text") {
+      this.applyDraftChanges({ inputMode });
+      this.setData({ errorMessage: "" });
+    }
+  },
+
+  getDraft(): GenerationDraft {
+    return {
+      images: this.data.images,
+      inputMode: this.data.inputMode,
+      requestId: this.data.requestId,
+      resumeIndex: this.data.resumeIndex,
+      text: this.data.text,
+    };
+  },
+
+  applyDraftChanges(changes: Partial<Omit<GenerationDraft, "requestId">>): void {
+    this.setData(updateGenerationDraft(this.getDraft(), changes));
   },
 
   async chooseImages(): Promise<void> {
+    const remaining = MAX_JD_IMAGE_COUNT - this.data.images.length;
+    if (remaining <= 0) {
+      this.setData({ errorMessage: "岗位截图最多选择 5 张。" });
+      return;
+    }
     try {
-      const response = await wx.chooseMedia({ count: 6, mediaType: ["image"], sourceType: ["album", "camera"] });
+      const response = await wx.chooseMedia({
+        count: remaining,
+        mediaType: ["image"],
+        sourceType: ["album", "camera"],
+      });
       const images = response.tempFiles.map(({ size, tempFilePath }) => ({ path: tempFilePath, size }));
-      const validation = validateImageSelection(images);
-      if (!validation.valid) {
-        this.setData({ errorMessage: validation.message });
+      const result = appendJdImages(this.getDraft(), images);
+      if (!result.valid) {
+        this.setData({ errorMessage: result.message });
         return;
       }
-      this.setData({ errorMessage: "", images });
+      this.setData({ ...result.draft, errorMessage: "" });
     } catch (error) {
+      if (error instanceof Error && /cancel/u.test(error.message)) {
+        return;
+      }
       this.setData({ errorMessage: messageFrom(error) });
     }
   },
 
-  moveImage(event: WechatMiniprogram.BaseEvent): void {
+  removeImage(event: WechatMiniprogram.BaseEvent): void {
     const index = Number(event.currentTarget.dataset.index);
-    const direction = String(event.currentTarget.dataset.direction);
-    const toIndex = direction === "up" ? index - 1 : index + 1;
-    this.setData({ images: moveItem(this.data.images, index, toIndex) });
+    this.setData({ ...removeJdImage(this.getDraft(), index), errorMessage: "" });
+  },
+
+  startImageDrag(event: TouchEvent): void {
+    const index = Number(event.currentTarget.dataset.index);
+    const touch = event.touches[0];
+    if (touch === undefined || index < 0 || index >= this.data.images.length) {
+      return;
+    }
+    this.setData({
+      dragStartY: touch.clientY,
+      dragTargetIndex: index,
+      draggingIndex: index,
+    });
+  },
+
+  dragImage(event: TouchEvent): void {
+    const touch = event.touches[0];
+    if (touch === undefined || this.data.draggingIndex < 0) {
+      return;
+    }
+    const rowHeight = wx.getWindowInfo().windowWidth / 750 * 144;
+    const distance = touch.clientY - this.data.dragStartY;
+    const target = Math.max(
+      0,
+      Math.min(
+        this.data.images.length - 1,
+        this.data.draggingIndex + Math.round(distance / rowHeight),
+      ),
+    );
+    if (target !== this.data.dragTargetIndex) {
+      this.setData({ dragTargetIndex: target });
+    }
+  },
+
+  finishImageDrag(): void {
+    if (this.data.draggingIndex < 0 || this.data.dragTargetIndex < 0) {
+      return;
+    }
+    const draft = reorderJdImage(
+      this.getDraft(),
+      this.data.draggingIndex,
+      this.data.dragTargetIndex,
+    );
+    this.setData({
+      ...draft,
+      dragStartY: 0,
+      dragTargetIndex: -1,
+      draggingIndex: -1,
+    });
   },
 
   async submit(): Promise<void> {
@@ -81,25 +180,21 @@ Page({
       this.setData({ errorMessage: "请先添加并确认一份简历。" });
       return;
     }
-    if (this.data.images.length === 0 && this.data.text.trim() === "") {
-      this.setData({ errorMessage: "请上传岗位截图或粘贴岗位文字。" });
-      return;
-    }
-    const imageValidation = this.data.images.length === 0
-      ? { valid: true as const }
-      : validateImageSelection(this.data.images);
-    if (!imageValidation.valid) {
-      this.setData({ errorMessage: imageValidation.message });
+    const activeInput = buildActiveGenerationInput(this.getDraft());
+    if (activeInput === undefined) {
+      this.setData({
+        errorMessage: this.data.inputMode === "images"
+          ? "请至少添加 1 张岗位截图。"
+          : "请先粘贴岗位文字。",
+      });
       return;
     }
     const requestId = this.data.requestId || createRequestId();
     this.setData({ errorMessage: "", loading: true, requestId, weakNetwork: false });
     try {
       const result = await runtime().api.write<{ jobId: string }>("generation.create", {
-        fileIds: this.data.images.map(({ path }) => `demo:${path}`),
-        inputType: this.data.images.length > 0 ? "images" : "text",
+        ...activeInput,
         resumeId: resume.resumeId,
-        text: this.data.text,
       }, requestId);
       runtime().setLastJobId(result.jobId);
       this.setData({ loading: false, requestId: "" });

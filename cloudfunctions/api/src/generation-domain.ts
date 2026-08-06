@@ -5,6 +5,7 @@ import type {
   PreferenceFact,
   ResumeProfile,
 } from "../../../shared/src/index.js";
+import { MAX_JD_IMAGE_COUNT } from "../../../shared/src/index.js";
 
 const ResumeIdSchema = z.string().regex(/^resume_[A-Za-z0-9_-]{8,64}$/u);
 const FileIdSchema = z.string().trim().min(1).max(100);
@@ -21,7 +22,7 @@ export const GenerationCreatePayloadSchema = z.discriminatedUnion("inputType", [
     .object({
       resumeId: ResumeIdSchema,
       inputType: z.literal("images"),
-      fileIds: z.array(FileIdSchema).min(1).max(6),
+      fileIds: z.array(FileIdSchema).min(1).max(MAX_JD_IMAGE_COUNT),
     })
     .strict(),
 ]);

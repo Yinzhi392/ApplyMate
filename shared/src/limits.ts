@@ -1,4 +1,5 @@
-export const MAX_IMAGE_COUNT = 6;
+export const MAX_JD_IMAGE_COUNT = 5;
+export const MAX_RESUME_IMAGE_COUNT = 6;
 export const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_TOTAL_BYTES = 10 * 1024 * 1024;
 export const MAX_PDF_PAGES = 10;

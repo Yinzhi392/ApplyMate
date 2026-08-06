@@ -1,5 +1,5 @@
 import {
-  validateImageSelection,
+  validateResumeImageSelection,
   validateResumeDocument,
   type SelectedImage,
 } from "../../core/input-rules.js";
@@ -63,7 +63,7 @@ Page({
     try {
       const response = await wx.chooseMedia({ count: 6, mediaType: ["image"], sourceType: ["album", "camera"] });
       const images = response.tempFiles.map(({ size, tempFilePath }) => ({ path: tempFilePath, size }));
-      const validation = validateImageSelection(images);
+      const validation = validateResumeImageSelection(images);
       if (!validation.valid) {
         this.setData({ errorMessage: validation.message });
         return;
@@ -83,7 +83,7 @@ Page({
       }
       payload.text = this.data.text;
     } else if (this.data.inputType === "images") {
-      const validation = validateImageSelection(this.data.images);
+      const validation = validateResumeImageSelection(this.data.images);
       if (!validation.valid) {
         this.setData({ errorMessage: validation.message });
         return;

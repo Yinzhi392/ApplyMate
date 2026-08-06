@@ -1,23 +1,28 @@
 <view class="page">
-  <view class="title">投递记录</view>
-  <view class="subtitle">保存生成时的脱敏事实与岗位快照，便于之后回看。</view>
-  <view class="actions">
-    <button class="button {{filter === 'not_applied' ? '' : 'button-secondary'}}" data-filter="not_applied" bindtap="changeFilter">未投递</button>
-    <button class="button {{filter === 'applied' ? '' : 'button-secondary'}}" data-filter="applied" bindtap="changeFilter">已投递</button>
+  <view class="page-header">
+    <view class="title">投递记录</view>
+    <view class="subtitle">最近投递都集中在这里，保存生成时的脱敏事实与岗位快照。</view>
+  </view>
+
+  <view class="filter-bar">
+    <button class="filter-option {{filter === 'not_applied' ? 'is-active' : ''}}" data-filter="not_applied" bindtap="changeFilter">未投递</button>
+    <button class="filter-option {{filter === 'applied' ? 'is-active' : ''}}" data-filter="applied" bindtap="changeFilter">已投递</button>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在读取投递记录。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
   <view wx:if="{{records.length === 0 && !loading}}" class="empty">暂无投递记录</view>
-  <view wx:for="{{records}}" wx:key="applicationId" class="card" data-application-id="{{item.applicationId}}" bindtap="openRecord">
-    <view class="row-between">
-      <view>
-        <view class="section-title">{{item.jobTitle}}</view>
-        <view class="muted">{{item.companyName}}</view>
+  <view wx:if="{{records.length}}" class="record-list">
+    <view wx:for="{{records}}" wx:key="applicationId" class="record-item" data-application-id="{{item.applicationId}}" bindtap="openRecord">
+      <view class="row-between">
+        <view>
+          <view class="record-title">{{item.jobTitle}}</view>
+          <view class="muted">{{item.companyName}}</view>
+        </view>
+        <view class="pill">{{item.statusLabel}}</view>
       </view>
-      <view class="pill">{{item.statusLabel}}</view>
+      <view wx:if="{{item.memo}}" class="safe-note record-memo">{{item.memo}}</view>
     </view>
-    <view wx:if="{{item.memo}}" class="safe-note">{{item.memo}}</view>
   </view>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadRecords">重新尝试</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary rewrite-action" bindtap="loadRecords">重新尝试</button>
 </view>

@@ -1,0 +1,26 @@
+.detail-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+}
+
+.greeting-snapshot {
+  padding: 28rpx;
+  border: 1rpx solid var(--color-border);
+  border-radius: 20rpx;
+  background: var(--color-surface);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.memo-section {
+  margin-top: 28rpx;
+  padding: 24rpx 0;
+  border-top: 1rpx solid var(--color-border);
+  border-bottom: 1rpx solid var(--color-border);
+}
+
+.memo-section .section-title {
+  margin-bottom: 10rpx;
+}

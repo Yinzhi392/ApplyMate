@@ -1,0 +1,26 @@
+.profile-name-section {
+  margin-bottom: 36rpx;
+}
+
+.fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.fact-item {
+  padding: 26rpx;
+  border: 1rpx solid var(--color-border);
+  border-radius: 18rpx;
+  background: var(--color-surface);
+}
+
+.fact-item .textarea {
+  min-height: 190rpx;
+  margin-top: 16rpx;
+}
+
+.fact-id {
+  margin-top: 12rpx;
+  overflow-wrap: anywhere;
+}

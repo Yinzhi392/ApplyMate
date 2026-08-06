@@ -1,42 +1,81 @@
 <view class="page">
-  <view class="title">提交岗位 JD</view>
-  <view class="subtitle">截图只发送给 OCR。TokenHub 只接收脱敏后的文字。</view>
+  <view class="page-header">
+    <view class="title">提交岗位信息</view>
+    <view class="subtitle">默认使用截图。原图只会交给 OCR，模型仅接收脱敏文字。</view>
+  </view>
 
-  <view class="card">
-    <view class="section-title">选择简历</view>
+  <view class="form-section resume-selector">
+    <label class="field-label">本次使用的简历</label>
     <picker mode="selector" range="{{resumeNames}}" value="{{resumeIndex}}" bindchange="changeResume">
-      <view class="input">{{resumeNames[resumeIndex] || '暂无已确认简历'}}</view>
+      <view class="select-field">
+        <text>{{resumeNames[resumeIndex] || '暂无已确认简历'}}</text>
+        <text class="select-hint">更换</text>
+      </view>
     </picker>
   </view>
 
-  <view class="card">
-    <view class="row-between">
-      <view class="section-title">上传截图</view>
-      <view class="pill">最多 6 张</view>
-    </view>
-    <view class="muted">支持从相册选择或拍照。请确保岗位名清晰可见。</view>
-    <button class="button button-secondary" bindtap="chooseImages">选择岗位截图</button>
-    <view wx:for="{{images}}" wx:key="path" class="list-item">
-      <view class="row-between">
-        <view>第 {{index + 1}} 张</view>
-        <view class="actions">
-          <button class="button button-quiet" data-index="{{index}}" data-direction="up" bindtap="moveImage">上移</button>
-          <button class="button button-quiet" data-index="{{index}}" data-direction="down" bindtap="moveImage">下移</button>
-        </view>
-      </view>
-    </view>
-    <view wx:if="{{images.length}}" class="safe-note">调整顺序后，OCR 会按当前顺序合并文字。</view>
+  <view class="mode-switch" role="tablist">
+    <button class="mode-option {{inputMode === 'images' ? 'is-active' : ''}}" data-mode="images" bindtap="changeInputMode">添加截图</button>
+    <button class="mode-option {{inputMode === 'text' ? 'is-active' : ''}}" data-mode="text" bindtap="changeInputMode">粘贴文字</button>
   </view>
 
-  <view class="card">
-    <view class="section-title">粘贴文字</view>
-    <textarea class="textarea" value="{{text}}" maxlength="10000" placeholder="也可以直接粘贴岗位职责和要求" bindinput="updateText" />
-    <view class="counter">{{text.length}} / 10000</view>
+  <view wx:if="{{inputMode === 'images'}}" class="input-workspace">
+    <view class="workspace-heading">
+      <view>
+        <view class="section-title">岗位截图</view>
+        <view class="muted">可分多次添加，最多 5 张。按阅读顺序排列。</view>
+      </view>
+      <view class="count-label">{{images.length}} / {{maxImageCount}}</view>
+    </view>
+
+    <button class="upload-area" disabled="{{images.length >= maxImageCount}}" bindtap="chooseImages">
+      <view class="upload-mark"></view>
+      <view class="upload-copy">{{images.length ? '继续添加截图' : '从相册或相机添加截图'}}</view>
+      <view class="upload-help">本次还能添加 {{maxImageCount - images.length}} 张</view>
+    </button>
+
+    <view id="jd-image-list" wx:if="{{images.length}}" class="screenshot-list">
+      <view
+        wx:for="{{images}}"
+        wx:key="path"
+        class="screenshot-item {{draggingIndex === index ? 'is-dragging' : ''}} {{dragTargetIndex === index ? 'is-target' : ''}}"
+        data-index="{{index}}"
+        bindlongpress="startImageDrag"
+        bindtouchmove="dragImage"
+        bindtouchend="finishImageDrag"
+      >
+        <image class="screenshot-thumb" src="{{item.path}}" mode="aspectFill" />
+        <view class="screenshot-meta">
+          <view class="screenshot-name">第 {{index + 1}} 张</view>
+          <view class="screenshot-help">长按并上下拖动排序</view>
+        </view>
+        <button class="icon-action" aria-label="删除第 {{index + 1}} 张截图" data-index="{{index}}" catchtap="removeImage">删除</button>
+      </view>
+    </view>
+    <view wx:if="{{images.length}}" class="privacy-note">OCR 会按当前顺序合并文字。删除或排序后会使用新的请求标识。</view>
+  </view>
+
+  <view wx:if="{{inputMode === 'text'}}" class="input-workspace text-workspace">
+    <label class="field-label" for="jd-text">岗位文字</label>
+    <view class="textarea-shell">
+      <textarea
+        id="jd-text"
+        class="textarea jd-textarea"
+        placeholder-class="textarea-placeholder"
+        value="{{text}}"
+        maxlength="20000"
+        placeholder="粘贴完整的岗位职责和任职要求"
+        bindinput="updateText"
+      />
+    </view>
+    <view class="counter">{{text.length}} / 20000</view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在创建生成任务。请不要连续提交。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
   <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定。相同请求会沿用请求标识，不会重复扣次。</view>
-  <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">生成个性化开场白</button>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="submit">重新尝试</button>
+  <view class="sticky-action">
+    <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">生成个性化开场白</button>
+    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="submit">重新尝试</button>
+  </view>
 </view>

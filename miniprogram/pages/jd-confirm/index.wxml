@@ -1,20 +1,32 @@
 <view class="page">
-  <view class="eyebrow">等待确认</view>
-  <view class="title">补充岗位信息</view>
-  <view class="subtitle">岗位名缺失或关键字段识别不确定。确认后会沿用同一个任务继续生成。</view>
+  <view class="page-header">
+    <view class="pill pill-warn">等待确认</view>
+    <view class="title">补充岗位信息</view>
+    <view class="subtitle">岗位名缺失或关键字段识别不确定。确认后会沿用同一个任务继续生成。</view>
+  </view>
+
+  <view class="confirmation-intro">只需要核对必要字段，不需要重新上传岗位截图。</view>
   <view wx:if="{{loading}}" class="status">加载中，正在恢复待确认内容。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}" class="card">
-    <label class="field-label" for="job-title">岗位名称，必填</label>
-    <input id="job-title" class="input" value="{{jobTitle}}" placeholder="例：AI 产品实习生" bindinput="updateJobTitle" />
-    <label class="field-label" for="company-name">公司名称，可不填</label>
-    <input id="company-name" class="input" value="{{companyName}}" placeholder="不填时正文使用“贵司”" bindinput="updateCompanyName" />
-    <label class="field-label" for="responsibilities">岗位职责</label>
-    <textarea id="responsibilities" class="textarea" value="{{responsibilities}}" bindinput="updateResponsibilities" />
+  <view wx:if="{{!loading}}" class="confirm-form">
+    <view>
+      <label class="field-label" for="job-title">岗位名称，必填</label>
+      <input id="job-title" class="input" value="{{jobTitle}}" placeholder="例：AI 产品实习生" bindinput="updateJobTitle" />
+    </view>
+    <view>
+      <label class="field-label" for="company-name">公司名称，可不填</label>
+      <input id="company-name" class="input" value="{{companyName}}" placeholder="不填时正文使用“贵司”" bindinput="updateCompanyName" />
+    </view>
+    <view>
+      <label class="field-label" for="responsibilities">岗位职责</label>
+      <textarea id="responsibilities" class="textarea" value="{{responsibilities}}" bindinput="updateResponsibilities" />
+    </view>
     <view wx:if="{{!companyName}}" class="warning">未填写公司名，结果会使用“贵司”并展示提醒。</view>
   </view>
 
-  <button class="button" disabled="{{loading || !jobTitle}}" bindtap="confirm">确认并继续生成</button>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadJob">重新尝试</button>
+  <view class="sticky-action">
+    <button class="button" disabled="{{loading || !jobTitle}}" bindtap="confirm">确认并继续生成</button>
+    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadJob">重新尝试</button>
+  </view>
 </view>

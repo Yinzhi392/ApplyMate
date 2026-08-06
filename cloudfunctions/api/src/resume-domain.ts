@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  MAX_RESUME_IMAGE_COUNT,
   ResumeProfileSchema,
   type ResumeProfile,
 } from "../../../shared/src/index.js";
@@ -16,7 +17,10 @@ export const ResumeParsePayloadSchema = z.discriminatedUnion("inputType", [
   z
     .object({
       inputType: z.literal("images"),
-      fileIds: z.array(z.string().trim().min(1).max(100)).min(1).max(6),
+      fileIds: z
+        .array(z.string().trim().min(1).max(100))
+        .min(1)
+        .max(MAX_RESUME_IMAGE_COUNT),
     })
     .strict(),
 ]);

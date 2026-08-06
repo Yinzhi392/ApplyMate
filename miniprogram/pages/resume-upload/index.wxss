@@ -1,0 +1,27 @@
+.input-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.input-type-option {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  padding: 18rpx 20rpx;
+  border: 1rpx solid var(--color-border);
+  border-radius: 16rpx;
+  background: var(--color-surface);
+}
+
+.upload-content {
+  margin-top: 40rpx;
+}
+
+.upload-content .muted {
+  margin: 10rpx 0 22rpx;
+}
+
+.selected-file {
+  margin-top: 18rpx;
+}

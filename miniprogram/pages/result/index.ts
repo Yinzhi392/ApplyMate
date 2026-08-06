@@ -17,6 +17,7 @@ Page({
     claims: [] as ReturnType<typeof createResultView>["claims"],
     companyDisplayName: "贵司",
     copyText: "",
+    detailsExpanded: false,
     errorMessage: "",
     feedbackNote: "",
     greetingBody: "",
@@ -26,6 +27,7 @@ Page({
     memo: "",
     omittedRequirements: [] as string[],
     rating: "" as "" | "satisfied" | "needs_improvement",
+    secondaryExpanded: false,
     status: "not_applied" as "not_applied" | "applied",
     visibleCharacters: 0,
     warningMessages: [] as string[],
@@ -84,6 +86,14 @@ Page({
 
   updateFeedbackNote(event: TextInputEvent): void {
     this.setData({ feedbackNote: event.detail.value });
+  },
+
+  toggleDetails(): void {
+    this.setData({ detailsExpanded: !this.data.detailsExpanded });
+  },
+
+  toggleSecondary(): void {
+    this.setData({ secondaryExpanded: !this.data.secondaryExpanded });
   },
 
   setRating(event: WechatMiniprogram.BaseEvent): void {

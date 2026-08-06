@@ -24,15 +24,21 @@ describe("native mini-program page contracts", () => {
 
   it.each([
     ["pages/login/index.wxml", ["投了吗", "用户协议", "隐私政策", "邀请码"]],
-    ["pages/home/index.wxml", ["今日剩余", "上传岗位 JD", "粘贴岗位 JD", "最近记录"]],
+    ["pages/home/index.wxml", ["当前简历", "今日剩余", "提交岗位信息"]],
     ["pages/resumes/index.wxml", ["我的简历", "设为默认", "删除"]],
-    ["pages/generation/index.wxml", ["上传截图", "粘贴文字", "调整顺序"]],
-    ["pages/result/index.wxml", ["个性化开场白", "匹配依据", "未采用要求", "复制正文"]],
+    ["pages/generation/index.wxml", ["添加截图", "粘贴文字", "最多 5 张"]],
+    ["pages/result/index.wxml", ["个性化开场白", "复制正文", "改写", "匹配依据"]],
     ["pages/records/index.wxml", ["未投递", "已投递", "暂无投递记录"]],
     ["pages/mine/index.wxml", ["求职偏好", "协议与隐私", "删除账号"]],
   ])("renders the approved core copy in %s", (file, labels) => {
     const content = read(file);
     labels.forEach((label) => expect(content).toContain(label));
+  });
+
+  it("keeps recent applications in records instead of the home page", () => {
+    expect(read("pages/home/index.wxml")).not.toContain("最近记录");
+    expect(read("pages/home/index.ts")).not.toContain("application.list");
+    expect(read("pages/records/index.wxml")).toContain("投递记录");
   });
 
   it("includes confirmation, failure, loading, weak-network and retry surfaces", () => {

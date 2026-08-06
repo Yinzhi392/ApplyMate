@@ -1,46 +1,57 @@
 <view class="page">
-  <view class="title">我的</view>
-  <view class="subtitle">管理长期偏好、简历和数据权利。</view>
+  <view class="page-header">
+    <view class="title">我的</view>
+    <view class="subtitle">管理长期偏好、简历和数据权利。</view>
+  </view>
+
   <view wx:if="{{loading}}" class="status">加载中，正在读取账号信息。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view class="card">
-    <view class="list-item row-between" bindtap="openResumes">
-      <view>
-        <view>简历管理</view>
-        <view class="muted">已保存 {{resumeCount}} / 3</view>
-      </view>
-      <view class="link">打开</view>
-    </view>
-    <view class="list-item row-between" bindtap="openPreferences">
-      <view>
-        <view>求职偏好</view>
-        <view class="muted">最多 500 字自由文本</view>
-      </view>
-      <view class="link">编辑</view>
-    </view>
-    <view class="list-item row-between" bindtap="showAgreements">
-      <view>
-        <view>协议与隐私</view>
-        <view class="muted">当前同意版本 {{agreementVersion}}</view>
-      </view>
-      <view class="link">查看版本</view>
+  <view class="account-summary">
+    <view class="account-mark">投</view>
+    <view>
+      <view class="section-title">邀请制内测账号</view>
+      <view class="muted">已保存 {{resumeCount}} / 3 份简历</view>
     </view>
   </view>
 
-  <view wx:if="{{isAdmin}}" class="card" bindtap="openAdmin">
+  <view class="list-surface">
+    <view class="list-item row-between" bindtap="openResumes">
+      <view>
+        <view class="menu-title">简历管理</view>
+        <view class="muted">查看、确认和设置默认简历</view>
+      </view>
+      <view class="menu-action">打开</view>
+    </view>
+    <view class="list-item row-between" bindtap="openPreferences">
+      <view>
+        <view class="menu-title">求职偏好</view>
+        <view class="muted">最多 500 字自由文本</view>
+      </view>
+      <view class="menu-action">编辑</view>
+    </view>
+    <view class="list-item row-between" bindtap="showAgreements">
+      <view>
+        <view class="menu-title">协议与隐私</view>
+        <view class="muted">当前同意版本 {{agreementVersion}}</view>
+      </view>
+      <view class="menu-action">查看版本</view>
+    </view>
+  </view>
+
+  <view wx:if="{{isAdmin}}" class="surface admin-entry" bindtap="openAdmin">
     <view class="row-between">
       <view>
         <view class="section-title">管理员工具</view>
         <view class="muted">受服务端白名单保护</view>
       </view>
-      <view class="link">进入</view>
+      <view class="menu-action">进入</view>
     </view>
   </view>
 
-  <view class="card">
+  <view class="danger-zone">
     <view class="section-title">数据与账号</view>
     <view class="muted">删除账号不可撤销。确认后立即停用，并应在 24 小时内删除可关联数据。</view>
-    <button class="button button-danger" bindtap="deleteAccount">删除账号</button>
+    <button class="button button-danger-secondary" bindtap="deleteAccount">删除账号</button>
   </view>
 </view>

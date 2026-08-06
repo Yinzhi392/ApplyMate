@@ -1,0 +1,49 @@
+.filter-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8rpx;
+  margin-bottom: 28rpx;
+  padding: 8rpx;
+  border-radius: 18rpx;
+  background: #e8ece8;
+}
+
+.filter-option {
+  min-height: 80rpx;
+  margin: 0;
+  border-radius: 13rpx;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 27rpx;
+  line-height: 52rpx;
+}
+
+.filter-option.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 650;
+}
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.record-item {
+  padding: 26rpx;
+  border: 1rpx solid var(--color-border);
+  border-radius: 18rpx;
+  background: var(--color-surface);
+}
+
+.record-title {
+  font-size: 31rpx;
+  font-weight: 650;
+}
+
+.record-memo {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--color-border);
+}

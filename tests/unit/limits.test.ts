@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_FEEDBACK_VISIBLE_CHARACTERS,
-  MAX_IMAGE_COUNT,
   MAX_IMAGE_TOTAL_BYTES,
+  MAX_JD_IMAGE_COUNT,
   MAX_PDF_PAGES,
   MAX_PREFERENCE_VISIBLE_CHARACTERS,
   MAX_RESUME_COUNT,
+  MAX_RESUME_IMAGE_COUNT,
   MAX_SINGLE_FILE_BYTES,
   MAX_TEXT_VISIBLE_CHARACTERS,
   isWithinInclusiveLimit,
 } from "../../shared/src/index.js";
 
 const limits = [
-  MAX_IMAGE_COUNT,
+  MAX_JD_IMAGE_COUNT,
+  MAX_RESUME_IMAGE_COUNT,
   MAX_SINGLE_FILE_BYTES,
   MAX_IMAGE_TOTAL_BYTES,
   MAX_PDF_PAGES,
@@ -25,7 +27,8 @@ const limits = [
 
 describe("MVP input limits", () => {
   it("uses the approved limit values", () => {
-    expect(MAX_IMAGE_COUNT).toBe(6);
+    expect(MAX_JD_IMAGE_COUNT).toBe(5);
+    expect(MAX_RESUME_IMAGE_COUNT).toBe(6);
     expect(MAX_SINGLE_FILE_BYTES).toBe(10 * 1024 * 1024);
     expect(MAX_IMAGE_TOTAL_BYTES).toBe(10 * 1024 * 1024);
     expect(MAX_PDF_PAGES).toBe(10);
