@@ -1,4 +1,32 @@
-# Mini Program
+# ApplyMate 微信小程序
 
-The native WeChat mini-program pages, components, WXML, WXSS, and client-side services will live here. UI implementation remains blocked until the seven low-fidelity wireframes are approved.
+阶段 9 使用微信原生 TypeScript、WXML 和 WXSS。当前默认运行本地演示 API，用于在不创建 CloudBase、OCR 或 TokenHub 资源的情况下验证完整页面流程。
 
+## 本地打开
+
+1. 在微信开发者工具中导入仓库根目录。
+2. AppID 保持 `touristappid`，确认小程序目录为 `miniprogram/`。
+3. 编译后从登录页开始，勾选协议并继续。
+4. 本地演示邀请码为 `APPLYMATE`。
+
+演示状态仅保存在本次小程序进程中，重新编译会重置。最后一次任务 ID 使用本地存储保存，用于验证页面重建后的任务恢复。
+
+## 建议验收路径
+
+- 首次准入：同意协议，尝试无效邀请码，再使用演示邀请码。
+- 简历：分别验证文字、PDF、DOCX 和图片选择；确认结构化事实并设置默认简历。
+- 岗位：上传多图并调整顺序，或粘贴文字后生成。文字以 `[待确认]` 开头可验证岗位确认分支。
+- 结果：编辑短正文查看非阻断警告；保存、改写、复制，并确认剪贴板末行是 `AI生成内容，请核对真实性`。
+- 记录：切换未投递/已投递，保存备忘和覆盖反馈，再删除单条记录。
+- 我的：编辑偏好，检查协议版本和账号删除二次确认。
+
+管理员页面默认不可见，直接访问也会被本地 API 拒绝。管理员演示状态已由自动化测试覆盖；真实白名单验证必须等待 CloudBase 获得单独授权。
+
+## 本地验证
+
+```sh
+npm run check
+npx vitest run tests/unit/miniprogram-*.test.ts tests/integration/miniprogram-*.test.ts
+```
+
+当前代码不得加入 `wx.cloud` 调用。真实文件上传、微信身份、OCR、模型、云端异步任务和真机跨端行为均需在外部资源逐项获批后验证。

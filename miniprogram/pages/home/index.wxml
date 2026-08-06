@@ -1,0 +1,48 @@
+<view class="page">
+  <view class="eyebrow">今天也认真投递</view>
+  <view class="title">把匹配点说清楚</view>
+  <view class="subtitle">确认一次简历，之后只需提交岗位 JD。</view>
+
+  <view wx:if="{{loading}}" class="status">加载中，正在同步你的资料。</view>
+  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，已保留当前页面。你可以重新尝试。</view>
+
+  <view class="card">
+    <view class="row-between">
+      <view>
+        <view class="muted">今日剩余</view>
+        <view class="title">{{remainingQuota}} 次</view>
+      </view>
+      <view class="pill">北京时间次日恢复</view>
+    </view>
+    <view wx:if="{{pauseTitle}}" class="warning">
+      <view>{{pauseTitle}}</view>
+      <view>{{pauseDescription}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <view>
+        <view class="section-title">默认简历</view>
+        <view class="muted">{{defaultResumeName}}</view>
+      </view>
+      <button class="button button-quiet" bindtap="openResumes">管理</button>
+    </view>
+    <button class="button" disabled="{{!generationEnabled}}" bindtap="openGeneration">{{primaryActionLabel}}</button>
+    <button class="button button-secondary" bindtap="openGeneration">粘贴岗位 JD</button>
+  </view>
+
+  <view class="section-title">最近记录</view>
+  <view wx:if="{{emptyRecentRecords}}" class="empty">还没有生成记录。上传岗位 JD 后，结果会保存在这里。</view>
+  <view wx:for="{{recentApplications}}" wx:key="applicationId" class="card card-compact" data-application-id="{{item.applicationId}}" bindtap="openApplication">
+    <view class="row-between">
+      <view>
+        <view>{{item.jobTitle}}</view>
+        <view class="muted">{{item.companyName}}</view>
+      </view>
+      <view class="pill">{{item.statusLabel}}</view>
+    </view>
+  </view>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadHome">重新尝试</button>
+</view>

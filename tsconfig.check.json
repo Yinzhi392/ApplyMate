@@ -4,12 +4,14 @@
     "noEmit": true,
     "types": [
       "node",
-      "vitest/globals"
+      "vitest/globals",
+      "miniprogram-api-typings"
     ]
   },
   "include": [
     "shared/src/**/*.ts",
     "cloudfunctions/*/src/**/*.ts",
+    "miniprogram/**/*.ts",
     "tests/**/*.test.ts"
   ]
 }

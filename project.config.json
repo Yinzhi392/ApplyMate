@@ -1,0 +1,36 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "condition": {},
+  "description": "ApplyMate phase 9 local UI verification",
+  "libVersion": "trial",
+  "miniprogramRoot": "miniprogram/",
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "../dist"
+      },
+      {
+        "type": "folder",
+        "value": "../tests"
+      }
+    ]
+  },
+  "projectname": "applymate",
+  "setting": {
+    "checkInvalidKey": true,
+    "compileHotReLoad": true,
+    "coverView": true,
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "preloadBackgroundData": false,
+    "showShadowRootInWxmlPanel": true,
+    "useCompilerPlugins": [
+      "typescript"
+    ],
+    "useIsolateContext": true,
+    "useStaticServer": true
+  }
+}

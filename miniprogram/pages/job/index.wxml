@@ -1,0 +1,15 @@
+<view class="page">
+  <view class="eyebrow">后台任务</view>
+  <view class="title">{{statusLabel}}</view>
+  <view class="subtitle">离开页面不会取消任务。回到这里可以继续查询。</view>
+
+  <view class="card">
+    <view wx:if="{{loading}}" class="status">加载中，正在查询任务进度。</view>
+    <view wx:if="{{!loading && !errorMessage}}" class="status">当前状态：{{statusLabel}}</view>
+    <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+    <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，任务仍可能在后台继续。请稍后重新尝试。</view>
+  </view>
+
+  <button class="button" disabled="{{loading}}" bindtap="refresh">刷新进度</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="refresh">重新尝试</button>
+</view>

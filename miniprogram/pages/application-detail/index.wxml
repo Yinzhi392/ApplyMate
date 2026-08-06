@@ -1,0 +1,20 @@
+<view class="page">
+  <view class="eyebrow">{{companyName}}</view>
+  <view class="title">{{jobTitle}}</view>
+  <view wx:if="{{loading}}" class="status">加载中，正在读取记录详情。</view>
+  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+
+  <view wx:if="{{!loading}}" class="card">
+    <view class="pill">{{statusLabel}}</view>
+    <view class="divider"></view>
+    <view>{{greetingBody}}</view>
+    <view class="safe-note">复制内容包含 AI 标识。</view>
+  </view>
+  <view wx:if="{{memo}}" class="card">
+    <view class="section-title">备忘</view>
+    <view>{{memo}}</view>
+  </view>
+  <button class="button" bindtap="openResult">编辑、复制与反馈</button>
+  <button class="button button-danger" bindtap="deleteRecord">删除记录</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadDetail">重新尝试</button>
+</view>

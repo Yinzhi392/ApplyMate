@@ -1,0 +1,42 @@
+<view class="page">
+  <view class="title">提交岗位 JD</view>
+  <view class="subtitle">截图只发送给 OCR。TokenHub 只接收脱敏后的文字。</view>
+
+  <view class="card">
+    <view class="section-title">选择简历</view>
+    <picker mode="selector" range="{{resumeNames}}" value="{{resumeIndex}}" bindchange="changeResume">
+      <view class="input">{{resumeNames[resumeIndex] || '暂无已确认简历'}}</view>
+    </picker>
+  </view>
+
+  <view class="card">
+    <view class="row-between">
+      <view class="section-title">上传截图</view>
+      <view class="pill">最多 6 张</view>
+    </view>
+    <view class="muted">支持从相册选择或拍照。请确保岗位名清晰可见。</view>
+    <button class="button button-secondary" bindtap="chooseImages">选择岗位截图</button>
+    <view wx:for="{{images}}" wx:key="path" class="list-item">
+      <view class="row-between">
+        <view>第 {{index + 1}} 张</view>
+        <view class="actions">
+          <button class="button button-quiet" data-index="{{index}}" data-direction="up" bindtap="moveImage">上移</button>
+          <button class="button button-quiet" data-index="{{index}}" data-direction="down" bindtap="moveImage">下移</button>
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{images.length}}" class="safe-note">调整顺序后，OCR 会按当前顺序合并文字。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">粘贴文字</view>
+    <textarea class="textarea" value="{{text}}" maxlength="10000" placeholder="也可以直接粘贴岗位职责和要求" bindinput="updateText" />
+    <view class="counter">{{text.length}} / 10000</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="status">加载中，正在创建生成任务。请不要连续提交。</view>
+  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定。相同请求会沿用请求标识，不会重复扣次。</view>
+  <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">生成个性化开场白</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="submit">重新尝试</button>
+</view>

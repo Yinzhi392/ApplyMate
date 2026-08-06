@@ -1,0 +1,56 @@
+<view class="page">
+  <view class="eyebrow">{{companyDisplayName}} · {{jobTitle}}</view>
+  <view class="title">个性化开场白</view>
+  <view class="subtitle">AI 只起草，发送前请再次核对真实性。</view>
+  <view wx:if="{{loading}}" class="status">加载中，正在整理结果。</view>
+  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+
+  <view wx:if="{{!loading}}" class="card">
+    <textarea class="textarea textarea-result" value="{{greetingBody}}" maxlength="1000" bindinput="updateBody" />
+    <view class="counter">{{visibleCharacters}} 个可见字符，AI 建议 250 至 350 字</view>
+    <view wx:for="{{manualWarnings}}" wx:key="message" class="warning">{{item.message}}</view>
+    <view class="safe-note">复制时会另起一行附加：AI生成内容，请核对真实性</view>
+    <view class="actions">
+      <button class="button" bindtap="copyBody">复制正文</button>
+      <button class="button button-secondary" bindtap="saveBody">保存修改</button>
+    </view>
+    <button class="button button-secondary" bindtap="rewrite">基于当前文字 AI 改写</button>
+  </view>
+
+  <view wx:if="{{claims.length}}" class="card">
+    <view class="section-title">匹配依据</view>
+    <view wx:for="{{claims}}" wx:key="claimId" wx:for-item="claim" class="list-item">
+      <view>{{claim.text}}</view>
+      <view wx:for="{{claim.sourceLabels}}" wx:key="*this" wx:for-item="source" class="sr-summary">{{source}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">未采用要求</view>
+    <view wx:if="{{omittedRequirements.length === 0}}" class="muted">没有需要说明的未采用要求。</view>
+    <view wx:for="{{omittedRequirements}}" wx:key="*this" class="list-item">{{item}}</view>
+  </view>
+
+  <view wx:if="{{warningMessages.length}}" class="card">
+    <view class="section-title">请核对</view>
+    <view wx:for="{{warningMessages}}" wx:key="*this" class="warning">{{item}}</view>
+  </view>
+
+  <view wx:if="{{!loading}}" class="card">
+    <view class="section-title">投递状态与备忘</view>
+    <textarea class="textarea" value="{{memo}}" maxlength="500" placeholder="可选，最多 500 字" bindinput="updateMemo" />
+    <button class="button button-secondary" bindtap="saveMemo">保存备忘</button>
+    <button class="button" bindtap="markApplied">{{status === 'applied' ? '已投递' : '标记为已投递'}}</button>
+  </view>
+
+  <view wx:if="{{!loading}}" class="card">
+    <view class="section-title">这次结果怎么样？</view>
+    <view class="actions">
+      <button class="button button-quiet" data-rating="satisfied" bindtap="setRating">满意</button>
+      <button class="button button-quiet" data-rating="needs_improvement" bindtap="setRating">需改进</button>
+    </view>
+    <textarea class="textarea" value="{{feedbackNote}}" maxlength="500" placeholder="可选说明，最多 500 字" bindinput="updateFeedbackNote" />
+    <button class="button button-secondary" disabled="{{!rating}}" bindtap="submitFeedback">提交反馈</button>
+  </view>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadResult">重新尝试</button>
+</view>

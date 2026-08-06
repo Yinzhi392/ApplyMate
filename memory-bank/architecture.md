@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 账号删除与运营 v1.8
+**版本：** 微信小程序本地界面 v1.9
 
 **日期：** 2026-08-06
 
-**当前状态：** 阶段 8 的本地账号二次确认、立即禁用、全量物理删除、匿名聚合、管理员统计、资源成本元数据和 180 天日志清理已实现，等待产品负责人验证。`api`、`worker` 与 `cleanup` 仍只提供可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或真实 AI/OCR 调用。30 组草案尚未经产品负责人逐组确认，因此真实模型指标未评测；验证前不得进入阶段 9。
+**当前状态：** 阶段 9 的 14 个微信原生小程序页面、三标签导航、客户端输入边界、任务恢复、结果/记录/偏好/管理员交互和本地演示 API 已实现，等待产品负责人在微信开发者工具与真机完成 9.15 验收；验收前不得进入阶段 10。客户端当前固定使用 `touristappid` 与进程内演示 API，不含 `wx.cloud` 调用。`api`、`worker` 与 `cleanup` 仍只有可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或真实 AI/OCR 调用，30 组草案也尚未经产品负责人逐组确认。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -17,6 +17,8 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cleanup`：回收超时任务、残留文件、过期草稿/幂等记录，并完成账号物理删除。
 
 数据使用 CloudBase 文档数据库，原文件仅临时存入 CloudBase 云存储。运行时不得增加视觉模型、独立服务器、外部队列、Web 框架或付费服务，除非产品负责人另行修订设计并明确批准。
+
+阶段 9 为了在零外部资源条件下验收 UI，引入了严格限定在小程序进程内的演示适配器。页面只依赖 `ApiClient` 接口，不感知演示或未来 CloudBase 调用细节；演示适配器不读取真实文件、不访问网络、不构成生产鉴权或数据持久化实现。
 
 ## 2. 信任与隐私边界
 
@@ -182,15 +184,25 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 身份审计、额度审计和资源日志只删除严格早于 180 天边界的记录；精确 180 天仍保留。幂等清理由各自 24 小时 `expiresAt` 决定，不受 180 天日志清理影响；未完成任务和匿名聚合不属于该清理范围。
 - 当前清理和统计仍为内存端口验证，不能证明 CloudBase 多集合删除、定时触发、事务补偿、真实账单或生产 24 小时 SLA。阶段 9 在产品负责人验证前不得开始。
 
+### 2026-08-06：阶段 9 微信小程序本地界面
+
+- 页面采用原生 TypeScript、WXML、WXSS 和 app.json 三标签导航，不增加跨端框架或 UI 组件库。全局视觉使用暖白、深蓝灰与低饱和青绿，主触控目标至少 88rpx，并为底部安全区预留空间。
+- UI 只调用统一 `ApiClient` 的 read/write 接口。当前 app 注入 `createDemoApiClient()`，使协议、邀请码、简历、任务、生成、投递、反馈、删除和管理员契约可完全离线演示；源码完整性测试禁止出现 `wx.cloud`。
+- 任务页把最后 jobId 保存到微信本地存储，使用有界轮询恢复排队、解析、等待确认、生成、校验、成功和失败状态。达到本轮轮询上限后只暂停页面查询，不取消后台任务。
+- PDF/DOCX 和图片在选择后先执行客户端扩展名、数量和字节提示；这些规则只用于及时反馈，未来服务端仍必须重复验证。演示模式只传递 `demo:` 路径标识，不上传或读取用户文件。
+- 结果页从 application 快照解析公司/岗位、逐项证据、未采用要求和警告；手动编辑警告不阻断保存/复制。复制前重新读取服务端组合的 copyText，确保 AI 标识来自可信业务规则。
+- 管理员入口只在 `user.get.isAdmin` 为真时显示，页面加载还会再次请求 `auth.status`，业务 API 仍是最终权限边界。演示普通用户无法通过直接路由取得管理员能力。
+- 阶段 9 自动化只证明页面文件、绑定、纯交互契约和 30 组合成结果映射。微信文件选择器、真实剪贴板、字号放大、前后台切换、iOS/Android 安全区和弱网行为必须由产品负责人完成 9.15 真机验收。
+
 ## 9. 实际构建与检查图
 
-根级 TypeScript 配置引用 shared 和三个云函数。`npm run typecheck` 对源代码与测试执行无输出严格检查；`npm run build` 只编译 shared 与三个云函数，生成物进入各自 `dist/` 并被 Git 忽略。小程序代码在后续 UI 阶段由微信开发者工具编译。
+根级 TypeScript 配置引用 shared、三个云函数和 miniprogram。`npm run typecheck` 对全部源代码与测试执行无输出严格检查；`npm run build` 编译五个模块，生成物进入 `dist/` 并被 Git 忽略。微信开发者工具同时使用 TypeScript 编译插件构建 `miniprogram/` 源码。
 
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 云函数构建。任一步失败都会保留非零退出码并停止后续命令。阶段 8 当前为 75 个测试文件、234 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 五模块构建。任一步失败都会保留非零退出码并停止后续命令。阶段 9 本地实现结束时为 85 个测试文件、274 项测试。环境变量检查单独执行，因为尚未获准配置真实外部资源。
 
 ## 10. 仓库文件职责
 
-以下清单描述阶段 8 本地实现结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
+以下清单描述阶段 9 本地实现结束时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
 
 ### 根目录
 
@@ -199,6 +211,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `.env.example`：只列外部资源变量和默认关闭的能力开关，不保存真实值。
 - `package.json`：锁定直接依赖和 format、fixture、env、typecheck、test、build、check 命令。
 - `package-lock.json`：锁定完整依赖树，保证 `npm ci` 可重复安装。
+- `project.config.json`：微信开发者工具本地项目配置，固定 touristappid、小程序根目录和 TypeScript 编译插件，不保存真实 AppID。
 - `tsconfig.base.json`：shared 与三个云函数共用的严格 TypeScript 规则。
 - `tsconfig.json`：构建入口，通过 project references 连接四个可编译模块。
 - `tsconfig.check.json`：对全部 TypeScript 源文件和测试执行无输出类型检查。
@@ -212,7 +225,35 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 ### 产品与服务骨架
 
-- `miniprogram/README.md`：说明微信原生客户端的未来职责和线框审批门槛。
+- `miniprogram/README.md`：说明本地导入方式、演示邀请码、阶段 9 验收路径和未授权能力边界。
+- `miniprogram/app.json`：注册 14 个页面、三标签导航和全局窗口样式。
+- `miniprogram/app.ts`：创建小程序实例，并把单一演示运行时注入 globalData。
+- `miniprogram/app.wxss`：定义暖白/深蓝灰/青绿视觉、卡片、表单、状态、按钮、88rpx 触控高度和安全区规则。
+- `miniprogram/sitemap.json`：禁止邀请制内测页面进入微信搜索索引。
+- `miniprogram/tsconfig.json`：小程序独立严格 TypeScript 构建配置。
+- `miniprogram/core/routes.ts`：页面顺序、三标签清单和标签路由判断的单一来源。
+- `miniprogram/core/presenters.ts`：把登录准入、首页简历/额度/资源状态转换成稳定显示模型。
+- `miniprogram/core/input-rules.ts`：客户端文档/图片边界、图片重排、偏好字数和分句预览纯规则。
+- `miniprogram/core/job-poller.ts`：有限退避轮询、终态/等待确认返回和可恢复暂停错误。
+- `miniprogram/core/result-presenter.ts`：把脱敏事实/JD 快照与逐项证据转换成结果页标签，并处理“贵司”和警告文案。
+- `miniprogram/services/api-client.ts`：统一客户端 action、读写、UUID requestId、网络异常和 API 错误归一。
+- `miniprogram/services/demo-api.ts`：离线进程内演示协议、简历、任务、生成、记录、反馈、删除和管理员契约；禁止作为生产仓储或鉴权。
+- `miniprogram/services/runtime.ts`：持有演示 API、演示邀请码和最后 jobId 的微信本地存储恢复接口。
+- `miniprogram/services/page-utils.ts`：集中处理提示、错误消息和常用导航。
+- `miniprogram/pages/login/index.{json,wxml,ts}`：协议版本、邀请码、管理员免码/禁用状态和首页准入。
+- `miniprogram/pages/home/index.{json,wxml,ts}`：默认简历、今日额度、资源暂停、JD 入口和最近记录。
+- `miniprogram/pages/resumes/index.{json,wxml,ts}`：三份简历列表、等待确认恢复、默认切换和删除。
+- `miniprogram/pages/resume-upload/index.{json,wxml,ts}`：PDF、DOCX、图片和文本选择及上传前边界提示。
+- `miniprogram/pages/resume-edit/index.{json,wxml,ts}`：解析任务恢复、结构化事实编辑和简历确认。
+- `miniprogram/pages/preferences/index.{json,wxml,ts}`：500 字偏好、分句预览、保存和清空。
+- `miniprogram/pages/generation/index.{json,wxml,ts}`：默认简历选择、JD 多图重排/文字粘贴、请求去重和任务创建。
+- `miniprogram/pages/job/index.{json,wxml,ts}`：jobId 恢复、状态轮询、弱网暂停和下一流程路由。
+- `miniprogram/pages/jd-confirm/index.{json,wxml,ts}`：岗位名必填、公司名可空、职责修订和同任务继续。
+- `miniprogram/pages/result/index.{json,wxml,ts}`：正文、证据、遗漏、警告、手动编辑、改写、复制、状态、备忘和反馈。
+- `miniprogram/pages/records/index.{json,wxml,ts}`：未投递/已投递筛选、空态和详情导航。
+- `miniprogram/pages/application-detail/index.{json,wxml,ts}`：投递正文/备忘快照、结果编辑入口和单条删除。
+- `miniprogram/pages/mine/index.{json,wxml,ts}`：简历/偏好/协议入口、管理员隐藏入口和账号删除二次确认。
+- `miniprogram/pages/admin/index.{json,wxml,ts}`：二次管理员鉴权、统计、邀请码、用户启停和当日额度操作。
 - `shared/README.md`：说明共享 Schema、类型、错误码、状态机和纯规则边界。
 - `shared/tsconfig.json`：共享模块的独立构建配置。
 - `shared/src/index.ts`：共享模块唯一公共导出入口。
@@ -361,6 +402,12 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/unit/jd-structure-parser.test.ts`：验证中英文、缺公司/岗位、重复字段冲突和一次备用解析。
 - `tests/unit/greeting-model-gateway.test.ts`：验证超时、429、无效 JSON、主备次数及日志无原文。
 - `tests/unit/operations-logging.test.ts`：验证资源日志拒绝原文字段，并按五类资源汇总调用、失败和成本元数据。
+- `tests/unit/miniprogram-routing.test.ts`：锁定 14 个页面顺序、三标签路由与普通流程页边界。
+- `tests/unit/miniprogram-access-home.test.ts`：验证登录六态显示规则与首页无简历、额度耗尽、资源暂停、最近记录状态。
+- `tests/unit/miniprogram-api-client.test.ts`：验证客户端读写 requestId、网络异常、失败响应、异常响应归一和弱网错误分类。
+- `tests/unit/miniprogram-inputs.test.ts`：验证客户端 PDF/DOCX、图片数量/大小、图片重排和偏好预览规则。
+- `tests/unit/miniprogram-job-poller.test.ts`：验证有界退避、等待确认、成功终态和轮询暂停恢复。
+- `tests/unit/miniprogram-result-presenter.test.ts`：验证事实/JD 证据标签、“贵司”提醒和未知来源安全回退。
 - `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
 - `tests/contract/tencent-ocr-adapter.test.ts`：验证 OCR 成功元数据、所有权、低置信、超时、429 和资源暂停。
 - `tests/contract/resume-privacy-chain.test.ts`：捕获 OCR/模型请求，证明原图只到 OCR 且五类敏感值不进入模型。
@@ -389,6 +436,10 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/integration/account-deletion-cleanup.test.ts`：验证简历与账号删除差异、全数据清除、跨用户保护、匿名聚合不可回连及重复 cleanup。
 - `tests/integration/admin-operations.test.ts`：验证四类管理员写操作的审计/幂等、可信白名单边界和统计输出。
 - `tests/integration/log-retention-cleanup.test.ts`：验证 180 天精确边界、账号关联日志清理和未完成任务/匿名指标/有效幂等保护。
+- `tests/integration/miniprogram-demo-api.test.ts`：离线走通协议/邀请码、简历/偏好、JD 确认、改写/复制/反馈和账号删除。
+- `tests/integration/miniprogram-page-contracts.test.ts`：锁定路由、三标签、核心中文文案、加载/弱网/重试/AI 标识和可见破折号约束。
+- `tests/integration/miniprogram-result-fixtures.test.ts`：把阶段 0 的 30 个编号样本映射为结果视图，验证逐项来源与公司回退不缺失。
+- `tests/integration/miniprogram-ui-integrity.test.ts`：检查每个路由的配置/模板/控制器、WXML 处理器绑定、触控/安全区和零 wx.cloud 边界。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。

@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="title">我的简历</view>
+  <view class="subtitle">最多保存 3 份。只有确认后的结构化内容会用于生成。</view>
+  <view wx:if="{{loading}}" class="status">加载中，正在读取简历。</view>
+  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
+
+  <view wx:if="{{resumes.length === 0 && !loading}}" class="empty">暂时没有简历。上传后可以逐项核对 AI 解析结果。</view>
+  <view wx:for="{{resumes}}" wx:key="resumeId" class="card">
+    <view class="row-between">
+      <view>
+        <view class="section-title">{{item.name}}</view>
+        <view class="muted">{{item.statusLabel}}</view>
+      </view>
+      <view wx:if="{{item.isDefault}}" class="pill">默认</view>
+    </view>
+    <view class="actions">
+      <button wx:if="{{item.status === 'awaiting_confirmation'}}" class="button button-quiet" data-job-id="{{item.jobId}}" bindtap="continueConfirm">继续确认</button>
+      <button wx:if="{{item.status === 'confirmed' && !item.isDefault}}" class="button button-quiet" data-resume-id="{{item.resumeId}}" bindtap="setDefault">设为默认</button>
+      <button class="button button-secondary" data-resume-id="{{item.resumeId}}" bindtap="deleteResume">删除</button>
+    </view>
+  </view>
+  <button class="button" disabled="{{resumes.length >= 3}}" bindtap="addResume">添加简历</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadResumes">重新尝试</button>
+</view>

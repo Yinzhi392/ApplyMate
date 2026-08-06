@@ -1,0 +1,46 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/home/index",
+    "pages/records/index",
+    "pages/mine/index",
+    "pages/resumes/index",
+    "pages/resume-upload/index",
+    "pages/resume-edit/index",
+    "pages/preferences/index",
+    "pages/generation/index",
+    "pages/job/index",
+    "pages/jd-confirm/index",
+    "pages/result/index",
+    "pages/application-detail/index",
+    "pages/admin/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#f7f6f2",
+    "navigationBarTitleText": "投了吗",
+    "navigationBarTextStyle": "black"
+  },
+  "tabBar": {
+    "color": "#65747a",
+    "selectedColor": "#2e776e",
+    "backgroundColor": "#fffefa",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/records/index",
+        "text": "记录"
+      },
+      {
+        "pagePath": "pages/mine/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}
