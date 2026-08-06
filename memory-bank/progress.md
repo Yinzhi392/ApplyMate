@@ -237,3 +237,13 @@
 4. 可选执行 `npx vitest run tests/integration/admin-operations.test.ts tests/unit/operations-logging.test.ts tests/integration/log-retention-cleanup.test.ts` 查看运营统计与日志保留。
 5. 可选执行 `npm run env:check`；未配置外部资源时预期列出缺失变量并返回失败，这不代表阶段 8 失败。
 6. 测试通过后明确回复；在此之前不得开始阶段 9。
+
+## 阶段 9 线框门槛记录（2026-08-06）
+
+- 产品负责人选择方案 A：七个核心页面配相邻状态板；该选择只授权制作线框，不等同于批准阶段 9 UI 编码。
+- 已完整交付 `docs/phase-9-wireframes.svg`，包含登录、首页、简历、生成、结果、记录和“我的”七个 390 × 844 页面。
+- 同一设计板覆盖加载、空、等待确认、失败、额度耗尽和账号删除二次确认；岗位名必填、公司名可空、异步恢复、事实证据、AI 标识和历史快照等已反映在线框中。
+- `xmllint --noout docs/phase-9-wireframes.svg` 通过；macOS Quick Look 成功渲染 1900px 预览，人工检查未见裁切、重叠或缺页。
+- Figma 文件 `YIiTYkCQDHPdakwbAgovm6` 已建立 3 页、21 个变量、6 个 Noto Sans SC 文字样式、1 个效果样式和基础说明板。Starter 插件调用额度在截图校验时耗尽，未付费升级。
+- Chrome 中的 Figma 要求重新登录；继续 Google 登录会形成新的 OAuth 授权，因此未擅自执行，也未上传本地文件。
+- 0.16 已完成，0.17 继续等待产品负责人明确批准。批准前不得执行 9.1，不得创建或修改小程序页面代码。

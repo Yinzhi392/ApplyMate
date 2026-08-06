@@ -1,0 +1,280 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="2050" viewBox="0 0 1900 2050">
+  <defs>
+    <style>
+      .board { fill: #f3f0e9; }
+      .phone { fill: #faf8f3; stroke: #c8d3ce; stroke-width: 2; }
+      .surface { fill: #ffffff; stroke: #d6ded9; stroke-width: 1.5; }
+      .soft { fill: #e4f0eb; }
+      .warn-soft { fill: #f8ebdd; }
+      .danger-soft { fill: #f8e6e3; }
+      .accent { fill: #4e8f7a; }
+      .accent-stroke { fill: none; stroke: #4e8f7a; stroke-width: 2; }
+      .line { stroke: #d6ded9; stroke-width: 1.5; }
+      .text { fill: #1f3144; font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+      .muted { fill: #657486; font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+      .white { fill: #ffffff; font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+      .warning { fill: #a9602d; font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+      .danger { fill: #a64646; font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+      .title { font-size: 24px; font-weight: 700; }
+      .heading { font-size: 18px; font-weight: 700; }
+      .body { font-size: 15px; font-weight: 400; }
+      .label { font-size: 13px; font-weight: 500; }
+      .caption { font-size: 12px; font-weight: 400; }
+      .button { font-size: 15px; font-weight: 500; }
+      .board-title { font-size: 34px; font-weight: 700; }
+      .screen-label { font-size: 16px; font-weight: 700; }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#1f3144" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect class="board" width="1900" height="2050"/>
+  <text x="80" y="58" class="text board-title">ApplyMate MVP 低保真线框</text>
+  <text x="80" y="88" class="muted body">方案 A：七个核心页面 + 相邻状态板｜390 × 844｜待产品负责人确认</text>
+
+  <!-- 01 登录 -->
+  <g transform="translate(80 140)">
+    <text x="0" y="-24" class="text screen-label">01 登录</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="62" class="text label">投了吗 · ApplyMate</text>
+    <text x="24" y="128" class="text title">先把真实经历记下来</text>
+    <text x="24" y="158" class="muted body">以后每次只需上传岗位 JD</text>
+    <rect x="24" y="205" width="342" height="132" rx="16" class="soft"/>
+    <circle cx="66" cy="251" r="20" class="accent"/>
+    <path d="M57 251l7 7 13-16" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="98" y="246" class="text heading">真实优先</text>
+    <text x="98" y="276" class="muted body">只使用你确认过的事实</text>
+    <rect x="24" y="370" width="342" height="54" rx="12" class="surface"/>
+    <text x="42" y="404" class="text body">邀请码</text>
+    <text x="278" y="404" class="muted caption">请输入</text>
+    <rect x="24" y="447" width="20" height="20" rx="4" class="accent-stroke"/>
+    <path d="M29 457l4 4 7-9" fill="none" stroke="#4e8f7a" stroke-width="2"/>
+    <text x="56" y="462" class="muted caption">我已阅读并同意用户协议与隐私政策</text>
+    <rect x="24" y="494" width="342" height="52" rx="12" class="accent"/>
+    <text x="145" y="527" class="white button">微信快捷登录</text>
+    <text x="24" y="590" class="muted caption">管理员白名单账号同意协议后可免邀请码进入</text>
+    <rect x="24" y="726" width="342" height="78" rx="12" class="warn-soft"/>
+    <text x="40" y="755" class="warning label">协议版本发生实质变化</text>
+    <text x="40" y="782" class="warning caption">需重新勾选同意后才能继续</text>
+  </g>
+
+  <!-- 02 首页 -->
+  <g transform="translate(520 140)">
+    <text x="0" y="-24" class="text screen-label">02 首页</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="55" class="text title">今天投哪个岗位？</text>
+    <text x="24" y="82" class="muted caption">先选择默认简历，再上传或粘贴 JD</text>
+    <rect x="24" y="108" width="342" height="88" rx="16" class="surface"/>
+    <text x="40" y="137" class="muted caption">默认简历</text>
+    <text x="40" y="166" class="text heading">AI 产品实习 · 2026</text>
+    <text x="322" y="159" class="muted body">›</text>
+    <rect x="24" y="214" width="342" height="58" rx="14" class="soft"/>
+    <text x="40" y="238" class="muted caption">今日剩余</text>
+    <text x="40" y="260" class="text heading">3 次</text>
+    <text x="240" y="250" class="muted caption">失败与等待确认不扣次</text>
+    <text x="24" y="314" class="text heading">添加岗位 JD</text>
+    <rect x="24" y="334" width="164" height="106" rx="16" class="accent"/>
+    <path d="M91 375h30M106 360v30" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="73" y="419" class="white button">上传截图</text>
+    <rect x="202" y="334" width="164" height="106" rx="16" class="surface"/>
+    <path d="M268 366h32v29h-32zM276 358h32v29" fill="none" stroke="#4e8f7a" stroke-width="2"/>
+    <text x="250" y="419" class="text button">粘贴文字</text>
+    <text x="24" y="482" class="text heading">最近记录</text>
+    <rect x="24" y="502" width="342" height="78" rx="14" class="surface"/>
+    <text x="40" y="530" class="text label">AI 产品实习生</text>
+    <text x="40" y="555" class="muted caption">贵司 · 未投递 · 10 分钟前</text>
+    <rect x="24" y="592" width="342" height="78" rx="14" class="surface"/>
+    <text x="40" y="620" class="text label">增长产品助理</text>
+    <text x="40" y="645" class="muted caption">某科技公司 · 已投递 · 昨天</text>
+    <line x1="0" y1="764" x2="390" y2="764" class="line"/>
+    <text x="58" y="792" class="text label">首页</text>
+    <text x="176" y="792" class="muted label">记录</text>
+    <text x="301" y="792" class="muted label">我的</text>
+    <rect x="55" y="808" width="34" height="4" rx="2" class="accent"/>
+  </g>
+
+  <!-- 03 简历 -->
+  <g transform="translate(960 140)">
+    <text x="0" y="-24" class="text screen-label">03 简历</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="54" class="muted body">‹ 返回</text>
+    <text x="24" y="96" class="text title">我的简历</text>
+    <text x="24" y="124" class="muted caption">最多 3 份，只有已确认简历可用于生成</text>
+    <rect x="24" y="151" width="342" height="112" rx="16" class="surface"/>
+    <text x="40" y="181" class="text heading">AI 产品实习</text>
+    <rect x="274" y="166" width="68" height="26" rx="13" class="soft"/>
+    <text x="290" y="184" class="text caption">默认</text>
+    <text x="40" y="212" class="muted caption">已确认 · 更新于 8 月 5 日</text>
+    <text x="40" y="242" class="text label">查看与编辑事实</text>
+    <rect x="24" y="279" width="342" height="84" rx="16" class="warn-soft"/>
+    <text x="40" y="309" class="warning label">产品运营简历正在解析</text>
+    <text x="40" y="336" class="warning caption">OCR · 退出页面后仍可恢复</text>
+    <text x="24" y="405" class="text heading">添加简历</text>
+    <rect x="24" y="425" width="342" height="52" rx="12" class="surface"/>
+    <text x="40" y="457" class="text body">PDF 或 DOCX</text>
+    <text x="330" y="457" class="muted body">›</text>
+    <rect x="24" y="489" width="342" height="52" rx="12" class="surface"/>
+    <text x="40" y="521" class="text body">图片或页面截图</text>
+    <text x="330" y="521" class="muted body">›</text>
+    <rect x="24" y="553" width="342" height="52" rx="12" class="surface"/>
+    <text x="40" y="585" class="text body">粘贴简历文本</text>
+    <text x="330" y="585" class="muted body">›</text>
+    <rect x="24" y="632" width="342" height="104" rx="14" class="soft"/>
+    <text x="40" y="662" class="text label">隐私说明</text>
+    <text x="40" y="688" class="muted caption">图片仅发送至腾讯 OCR</text>
+    <text x="40" y="713" class="muted caption">确认结构化事实后立即删除原文件</text>
+  </g>
+
+  <!-- 04 生成 -->
+  <g transform="translate(1400 140)">
+    <text x="0" y="-24" class="text screen-label">04 生成</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="54" class="muted body">‹ 返回</text>
+    <text x="24" y="96" class="text title">添加岗位 JD</text>
+    <text x="24" y="124" class="muted caption">支持最多 10 张连续截图，按顺序识别</text>
+    <rect x="24" y="151" width="342" height="206" rx="18" class="surface" stroke-dasharray="8 7"/>
+    <rect x="55" y="185" width="84" height="122" rx="10" class="soft"/>
+    <text x="78" y="250" class="text caption">截图 1</text>
+    <rect x="153" y="185" width="84" height="122" rx="10" class="soft"/>
+    <text x="176" y="250" class="text caption">截图 2</text>
+    <rect x="251" y="185" width="84" height="122" rx="10" fill="#fff" stroke="#4e8f7a" stroke-width="2" stroke-dasharray="5 5"/>
+    <text x="282" y="244" class="text heading">＋</text>
+    <text x="271" y="270" class="muted caption">继续添加</text>
+    <text x="24" y="397" class="muted caption">也可以直接粘贴文字</text>
+    <rect x="24" y="416" width="342" height="130" rx="14" class="surface"/>
+    <text x="40" y="447" class="muted body">在这里粘贴岗位职责和要求…</text>
+    <text x="308" y="523" class="muted caption">0 / 20000</text>
+    <rect x="24" y="575" width="342" height="52" rx="12" class="accent"/>
+    <text x="144" y="608" class="white button">识别并生成</text>
+    <rect x="24" y="648" width="342" height="88" rx="14" class="soft"/>
+    <text x="40" y="678" class="text label">当前简历：AI 产品实习</text>
+    <text x="40" y="704" class="muted caption">求职偏好将作为可追溯事实参与生成</text>
+  </g>
+
+  <!-- 05 结果 -->
+  <g transform="translate(80 1060)">
+    <text x="0" y="-24" class="text screen-label">05 结果</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="54" class="muted body">‹ 返回</text>
+    <text x="24" y="96" class="text title">专属开场白</text>
+    <rect x="24" y="119" width="342" height="246" rx="16" class="surface"/>
+    <text x="40" y="150" class="text body">您好，我关注到贵司正在招聘 AI 产品实习生。</text>
+    <text x="40" y="178" class="text body">我有需求分析、原型设计和数据复盘经验，并在</text>
+    <text x="40" y="206" class="text body">项目中完成从用户访谈到迭代验证的完整流程。</text>
+    <text x="40" y="247" class="text body">岗位强调快速学习与跨团队协作，这与我的项目</text>
+    <text x="40" y="275" class="text body">经历较匹配。我可尽快到岗，希望有机会进一步</text>
+    <text x="40" y="303" class="text body">沟通，谢谢。</text>
+    <text x="40" y="341" class="muted caption">286 个可见字符 · 2 段</text>
+    <rect x="24" y="381" width="164" height="48" rx="12" class="surface"/>
+    <text x="84" y="411" class="text button">编辑</text>
+    <rect x="202" y="381" width="164" height="48" rx="12" class="surface"/>
+    <text x="247" y="411" class="text button">AI 改写</text>
+    <rect x="24" y="441" width="342" height="50" rx="12" class="accent"/>
+    <text x="163" y="473" class="white button">复制</text>
+    <text x="24" y="530" class="text heading">为什么这样写</text>
+    <rect x="24" y="550" width="342" height="82" rx="14" class="surface"/>
+    <text x="40" y="578" class="text label">“需求分析、原型设计”</text>
+    <text x="40" y="605" class="muted caption">来源：项目经历 fact-p-02 ↔ JD 硬技能</text>
+    <rect x="24" y="644" width="342" height="82" rx="14" class="surface"/>
+    <text x="40" y="672" class="text label">“可尽快到岗”</text>
+    <text x="40" y="699" class="muted caption">来源：求职偏好 fact-pref-01</text>
+    <text x="24" y="764" class="muted caption">复制时另起一行附加 AI 生成内容标识</text>
+  </g>
+
+  <!-- 06 记录 -->
+  <g transform="translate(520 1060)">
+    <text x="0" y="-24" class="text screen-label">06 记录</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="58" class="text title">投递记录</text>
+    <rect x="24" y="91" width="162" height="40" rx="20" class="accent"/>
+    <text x="69" y="117" class="white label">全部 8</text>
+    <rect x="198" y="91" width="168" height="40" rx="20" class="surface"/>
+    <text x="234" y="117" class="muted label">已投递 3</text>
+    <rect x="24" y="157" width="342" height="150" rx="16" class="surface"/>
+    <text x="40" y="187" class="text heading">AI 产品实习生</text>
+    <text x="40" y="214" class="muted caption">贵司 · 今天 14:20</text>
+    <rect x="40" y="232" width="70" height="26" rx="13" class="warn-soft"/>
+    <text x="53" y="250" class="warning caption">未投递</text>
+    <text x="40" y="284" class="text label">备忘：晚上完善后发送</text>
+    <rect x="24" y="323" width="342" height="150" rx="16" class="surface"/>
+    <text x="40" y="353" class="text heading">增长产品助理</text>
+    <text x="40" y="380" class="muted caption">某科技公司 · 昨天 19:40</text>
+    <rect x="40" y="398" width="70" height="26" rx="13" class="soft"/>
+    <text x="53" y="416" class="text caption">已投递</text>
+    <text x="40" y="450" class="muted label">反馈：满意</text>
+    <rect x="24" y="489" width="342" height="94" rx="16" class="surface"/>
+    <text x="40" y="521" class="text label">历史快照仍可查看</text>
+    <text x="40" y="548" class="muted caption">即使原简历已修改或删除</text>
+    <line x1="0" y1="764" x2="390" y2="764" class="line"/>
+    <text x="58" y="792" class="muted label">首页</text>
+    <text x="176" y="792" class="text label">记录</text>
+    <text x="301" y="792" class="muted label">我的</text>
+    <rect x="173" y="808" width="34" height="4" rx="2" class="accent"/>
+  </g>
+
+  <!-- 07 我的 -->
+  <g transform="translate(960 1060)">
+    <text x="0" y="-24" class="text screen-label">07 我的</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="58" class="text title">我的</text>
+    <rect x="24" y="90" width="342" height="82" rx="16" class="soft"/>
+    <text x="40" y="121" class="text heading">今日剩余 3 次</text>
+    <text x="40" y="148" class="muted caption">每日北京时间 00:00 重置</text>
+    <rect x="24" y="193" width="342" height="54" rx="12" class="surface"/>
+    <text x="40" y="227" class="text body">简历管理</text>
+    <text x="330" y="227" class="muted body">›</text>
+    <rect x="24" y="259" width="342" height="54" rx="12" class="surface"/>
+    <text x="40" y="293" class="text body">求职偏好</text>
+    <text x="330" y="293" class="muted body">›</text>
+    <rect x="24" y="325" width="342" height="54" rx="12" class="surface"/>
+    <text x="40" y="359" class="text body">用户协议与同意记录</text>
+    <text x="330" y="359" class="muted body">›</text>
+    <rect x="24" y="391" width="342" height="54" rx="12" class="surface"/>
+    <text x="40" y="425" class="text body">隐私与数据说明</text>
+    <text x="330" y="425" class="muted body">›</text>
+    <rect x="24" y="475" width="342" height="54" rx="12" class="surface"/>
+    <text x="40" y="509" class="text body">管理员工具</text>
+    <text x="292" y="509" class="muted caption">仅白名单</text>
+    <rect x="24" y="618" width="342" height="54" rx="12" class="danger-soft"/>
+    <text x="40" y="652" class="danger body">删除账号与全部数据</text>
+    <text x="24" y="701" class="muted caption">二次确认后立即禁用，24 小时内完成物理删除</text>
+    <line x1="0" y1="764" x2="390" y2="764" class="line"/>
+    <text x="58" y="792" class="muted label">首页</text>
+    <text x="176" y="792" class="muted label">记录</text>
+    <text x="301" y="792" class="text label">我的</text>
+    <rect x="298" y="808" width="34" height="4" rx="2" class="accent"/>
+  </g>
+
+  <!-- 状态板 -->
+  <g transform="translate(1400 1060)">
+    <text x="0" y="-24" class="text screen-label">相邻状态板</text>
+    <rect class="phone" width="390" height="844" rx="28" filter="url(#shadow)"/>
+    <text x="24" y="52" class="text title">关键状态</text>
+    <text x="24" y="80" class="muted caption">状态必须可恢复、可解释、可继续</text>
+    <rect x="24" y="104" width="342" height="92" rx="14" class="surface"/>
+    <circle cx="52" cy="135" r="10" fill="none" stroke="#4e8f7a" stroke-width="3" stroke-dasharray="14 8"/>
+    <text x="76" y="137" class="text label">加载：正在解析简历</text>
+    <text x="40" y="174" class="muted caption">排队 → OCR → 解析，可退出后恢复</text>
+    <rect x="24" y="208" width="342" height="92" rx="14" class="surface"/>
+    <text x="40" y="239" class="text label">空状态：还没有已确认简历</text>
+    <text x="40" y="266" class="muted caption">先上传并确认，再开始生成</text>
+    <rect x="24" y="312" width="342" height="104" rx="14" class="warn-soft"/>
+    <text x="40" y="343" class="warning label">等待确认：岗位名缺失</text>
+    <text x="40" y="370" class="warning caption">补充必填岗位名，公司名可空</text>
+    <text x="40" y="396" class="warning caption">确认后使用同一 jobId 继续</text>
+    <rect x="24" y="428" width="342" height="92" rx="14" class="danger-soft"/>
+    <text x="40" y="459" class="danger label">失败：图片过于模糊</text>
+    <text x="40" y="486" class="danger caption">不扣额度，可替换截图后重试</text>
+    <rect x="24" y="532" width="342" height="92" rx="14" class="warn-soft"/>
+    <text x="40" y="563" class="warning label">额度耗尽：今日次数已用完</text>
+    <text x="40" y="590" class="warning caption">明日 00:00 自动恢复，不进入生成</text>
+    <rect x="24" y="636" width="342" height="158" rx="14" class="danger-soft"/>
+    <text x="40" y="667" class="danger heading">确认删除账号？</text>
+    <text x="40" y="694" class="danger caption">此操作不可撤销，全部可关联数据将删除</text>
+    <rect x="40" y="719" width="132" height="42" rx="10" class="surface"/>
+    <text x="92" y="745" class="text label">取消</text>
+    <rect x="186" y="719" width="156" height="42" rx="10" fill="#b34e4e"/>
+    <text x="226" y="745" class="white label">确认删除</text>
+  </g>
+</svg>
