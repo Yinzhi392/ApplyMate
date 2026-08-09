@@ -10,6 +10,8 @@ interface DetailResponse {
     };
     memo?: string;
     status: "not_applied" | "applied";
+    factSnapshot?: Array<{ text: string }>;
+    updatedAt?: string;
   };
 }
 
@@ -19,10 +21,12 @@ Page({
     companyName: "贵司",
     errorMessage: "",
     greetingBody: "",
-    jobTitle: "岗位名称待核对",
+    jobTitle: "该岗位",
     loading: true,
     memo: "",
     statusLabel: "未投递",
+    sourceTexts: [] as string[],
+    updatedAt: "",
   },
 
   onLoad(options: Record<string, string | undefined>): void {
@@ -39,10 +43,12 @@ Page({
       this.setData({
         companyName: response.application.jdSnapshot.companyName?.text ?? "贵司",
         greetingBody: response.application.greetingBody,
-        jobTitle: response.application.jdSnapshot.jobTitle?.text ?? "岗位名称待核对",
+        jobTitle: response.application.jdSnapshot.jobTitle?.text ?? "该岗位",
         loading: false,
         memo: response.application.memo ?? "",
         statusLabel: response.application.status === "applied" ? "已投递" : "未投递",
+        sourceTexts: (response.application.factSnapshot ?? []).slice(0, 3).map(({ text }) => text),
+        updatedAt: response.application.updatedAt ?? "",
       });
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error), loading: false });

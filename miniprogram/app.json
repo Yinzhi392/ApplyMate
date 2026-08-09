@@ -10,20 +10,19 @@
     "pages/preferences/index",
     "pages/generation/index",
     "pages/job/index",
-    "pages/jd-confirm/index",
     "pages/result/index",
     "pages/application-detail/index",
     "pages/admin/index"
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#f5f6f2",
+    "navigationBarBackgroundColor": "#f2f4ef",
     "navigationBarTitleText": "投了吗",
     "navigationBarTextStyle": "black"
   },
   "tabBar": {
-    "color": "#5d6d72",
-    "selectedColor": "#2f756c",
+    "color": "#53676b",
+    "selectedColor": "#26766c",
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [

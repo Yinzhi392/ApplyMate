@@ -12,7 +12,6 @@ export const FLOW_ROUTES = [
   "pages/preferences/index",
   "pages/generation/index",
   "pages/job/index",
-  "pages/jd-confirm/index",
   "pages/result/index",
   "pages/application-detail/index",
   "pages/admin/index",

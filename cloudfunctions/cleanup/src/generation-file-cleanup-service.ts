@@ -2,7 +2,7 @@ interface GenerationFileCleanupRecord {
   jobId: string;
   userId: string;
   temporaryFileIds: string[];
-  status: "processing" | "awaiting_confirmation" | "generating" | "succeeded" | "failed";
+  status: "processing" | "generating" | "succeeded" | "failed";
   updatedAt: string;
 }
 

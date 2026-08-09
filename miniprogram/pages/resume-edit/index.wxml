@@ -1,28 +1,100 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">逐项确认简历</view>
-    <view class="subtitle">这些内容会成为 AI 可引用的事实。请删除错误内容，并修正识别偏差。</view>
+<view class="page page-with-fixed-action">
+  <view class="page-header review-header">
+    <view class="page-header-copy">
+      <view class="title">核对个人资料</view>
+      <view class="subtitle">AI 负责提取和排序，你只需要纠正事实。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在恢复解析结果。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}" class="profile-name-section">
-    <label class="field-label" for="profile-name">姓名或简历名称</label>
-    <input id="profile-name" class="input" value="{{profileName}}" bindinput="updateName" />
-  </view>
-
-  <view wx:if="{{facts.length}}" class="fact-list">
-    <view wx:for="{{facts}}" wx:key="key" class="fact-item">
-      <view class="pill">{{item.label}}</view>
-      <textarea class="textarea" value="{{item.text}}" data-section="{{item.section}}" data-index="{{item.index}}" bindinput="updateFact" />
-      <view class="safe-note fact-id">事实标识：{{item.factId}}</view>
+  <block wx:if="{{!loading}}">
+    <view class="review-guidance">
+      <view class="section-title">这份简历只需核对一次</view>
+      <view class="muted">确认后，每个岗位会按照 JD 自动重排已确认事实，不会再次要求确认简历。</view>
     </view>
-  </view>
 
-  <view wx:if="{{facts.length === 0 && !loading}}" class="warning">没有识别到可确认事实，请返回并换一种输入方式。</view>
-  <view class="sticky-action">
-    <button class="button" disabled="{{loading || facts.length === 0}}" bindtap="confirm">确认并保存</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadProfile">重新尝试</button>
+    <view class="section profile-name-section glass-surface">
+      <label class="field-label" for="profile-name">简历名称</label>
+      <input id="profile-name" class="input" value="{{profileName}}" bindinput="updateName" />
+    </view>
+
+    <view class="section review-block glass-surface">
+      <view class="section-heading">
+        <view class="section-title">本次最有价值的 3 项</view>
+        <view class="muted">AI 初步判断</view>
+      </view>
+      <view class="strength-list">
+        <view wx:for="{{strengths}}" wx:key="label" class="strength-row">
+          <view class="strength-rank">{{index + 1}}</view>
+          <view class="strength-copy">
+            <view class="strength-label">{{item.label}}</view>
+            <view class="muted">{{item.text}}</view>
+          </view>
+          <view class="strength-score">{{item.weight}}%</view>
+        </view>
+      </view>
+      <view class="field-help weight-note">权重只用于初始排序，不代表录用概率；具体岗位会按 JD 重新计算。</view>
+    </view>
+
+    <view class="section review-block glass-surface">
+      <view class="section-heading">
+        <view class="section-title">市场基准权重</view>
+        <view class="muted">具体岗位会重排</view>
+      </view>
+      <view class="weight-list">
+        <view wx:for="{{weights}}" wx:key="label" class="weight-row">
+          <view class="weight-copy">
+            <view>{{item.label}}</view>
+            <view class="field-help">{{item.count ? '已识别 ' + item.count + ' 项' : '暂未识别'}} · {{item.note}}</view>
+          </view>
+          <view class="weight-value">{{item.weight}}%</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section review-block glass-surface">
+      <view class="section-heading">
+        <view class="section-title">需要你核对</view>
+        <view class="pill pill-warn">{{needsReview.length}} 项</view>
+      </view>
+      <view wx:if="{{needsReview.length === 0}}" class="quiet-panel">没有发现需要重点核对的内容，你仍可检查下方事实。</view>
+      <view wx:else class="review-list">
+        <view wx:for="{{needsReview}}" wx:key="key" class="review-row needs-review">
+          <view class="review-label">需核对 · {{item.label}}</view>
+          <textarea wx:if="{{editingKey === item.key}}" class="textarea fact-editor" value="{{item.text}}" data-section="{{item.section}}" data-index="{{item.index}}" bindinput="updateFact" bindblur="finishFactEdit" />
+          <view wx:else class="review-text">{{item.text}}</view>
+          <view class="review-actions">
+            <button class="mini-action correct-action" data-fact-id="{{item.factId}}" bindtap="markFactCorrect">正确</button>
+            <button class="mini-action edit-action" data-key="{{item.key}}" bindtap="startFactEdit">修改</button>
+            <button class="mini-action delete-action" data-section="{{item.section}}" data-index="{{item.index}}" bindtap="deleteFact">删除</button>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section review-block glass-surface">
+      <view class="section-heading">
+        <view class="section-title">其余已识别事实</view>
+        <view class="muted">{{confirmedFacts.length}} 项</view>
+      </view>
+      <view wx:if="{{confirmedFacts.length}}" class="review-list">
+        <view wx:for="{{confirmedFacts}}" wx:key="key" class="review-row">
+          <view class="review-label">{{item.label}}</view>
+          <textarea wx:if="{{editingKey === item.key}}" class="textarea fact-editor" value="{{item.text}}" data-section="{{item.section}}" data-index="{{item.index}}" bindinput="updateFact" bindblur="finishFactEdit" />
+          <view wx:else class="review-text">{{item.text}}</view>
+          <view class="review-actions">
+            <button class="mini-action edit-action" data-key="{{item.key}}" bindtap="startFactEdit">修改</button>
+            <button class="mini-action delete-action" data-section="{{item.section}}" data-index="{{item.index}}" bindtap="deleteFact">删除</button>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="warning">没有识别到可确认事实，请返回并换一种输入方式。</view>
+    </view>
+  </block>
+
+  <view class="fixed-action">
+    <button class="button" disabled="{{loading || facts.length === 0}}" bindtap="confirm">确认事实并保存</button>
   </view>
 </view>

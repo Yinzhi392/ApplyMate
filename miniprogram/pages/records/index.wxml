@@ -1,28 +1,29 @@
-<view class="page">
+<view class="page records-page">
   <view class="page-header">
-    <view class="title">投递记录</view>
-    <view class="subtitle">最近投递都集中在这里，保存生成时的脱敏事实与岗位快照。</view>
+    <view class="page-header-copy">
+      <view class="title">投递记录</view>
+      <view class="subtitle">最近投递统一在这里管理。</view>
+    </view>
   </view>
 
   <view class="filter-bar">
+    <button class="filter-option {{filter === 'all' ? 'is-active' : ''}}" data-filter="all" bindtap="changeFilter">全部</button>
     <button class="filter-option {{filter === 'not_applied' ? 'is-active' : ''}}" data-filter="not_applied" bindtap="changeFilter">未投递</button>
     <button class="filter-option {{filter === 'applied' ? 'is-active' : ''}}" data-filter="applied" bindtap="changeFilter">已投递</button>
   </view>
 
-  <view wx:if="{{loading}}" class="status">加载中，正在读取投递记录。</view>
-  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view wx:if="{{records.length === 0 && !loading}}" class="empty">暂无投递记录</view>
-  <view wx:if="{{records.length}}" class="record-list">
-    <view wx:for="{{records}}" wx:key="applicationId" class="record-item" data-application-id="{{item.applicationId}}" bindtap="openRecord">
-      <view class="row-between">
-        <view>
-          <view class="record-title">{{item.jobTitle}}</view>
-          <view class="muted">{{item.companyName}}</view>
-        </view>
-        <view class="pill">{{item.statusLabel}}</view>
+  <view wx:if="{{loading}}" class="status section">加载中，正在读取投递记录。</view>
+  <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
+  <view wx:if="{{records.length === 0 && !loading}}" class="empty section"><view class="section-title">暂无投递记录</view><view class="muted">生成开场白后，记录会自动出现在这里。</view></view>
+  <view wx:if="{{records.length}}" class="section record-list glass-surface">
+    <view wx:for="{{records}}" wx:key="applicationId" class="record-row" data-application-id="{{item.applicationId}}" bindtap="openRecord">
+      <view class="record-heading">
+        <view class="record-copy"><view class="record-title">{{item.jobTitle}}</view><view class="muted">{{item.companyName}}</view></view>
+        <view class="pill {{item.statusLabel === '未投递' ? 'pill-neutral' : ''}}">{{item.statusLabel}}</view>
       </view>
-      <view wx:if="{{item.memo}}" class="safe-note record-memo">{{item.memo}}</view>
+      <view wx:if="{{item.memo}}" class="record-memo">{{item.memo}}</view>
+      <view class="record-link">查看详情 ›</view>
     </view>
   </view>
-  <button wx:if="{{errorMessage}}" class="button button-secondary rewrite-action" bindtap="loadRecords">重新尝试</button>
+  <button wx:if="{{errorMessage}}" class="button button-secondary retry-button" bindtap="loadRecords">重新尝试</button>
 </view>

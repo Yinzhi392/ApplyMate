@@ -1,4 +1,9 @@
-import { createJobPoller, JobPollingError, type ClientJob } from "../../core/job-poller.js";
+import {
+  createJobPoller,
+  createJobProgressView,
+  JobPollingError,
+  type ClientJob,
+} from "../../core/job-poller.js";
 import { isWeakNetwork, messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
@@ -7,7 +12,15 @@ Page({
     errorMessage: "",
     jobId: "",
     loading: true,
+    progress: 12,
+    stepItems: [
+      { label: "读取任务输入", state: "is-current", dot: "1" },
+      { label: "处理内容", state: "", dot: "2" },
+      { label: "完成质量检查", state: "", dot: "3" },
+    ],
     statusLabel: "排队",
+    subtitle: "正在恢复任务信息。",
+    title: "正在处理",
     weakNetwork: false,
   },
 
@@ -31,7 +44,18 @@ Page({
     });
     try {
       const job = await poller.poll(this.data.jobId, (update) => {
-        this.setData({ statusLabel: update.statusLabel });
+        const view = createJobProgressView(update.kind, update.status);
+        this.setData({
+          progress: view.progress,
+          statusLabel: update.statusLabel,
+          stepItems: view.steps.map((label, index) => ({
+            label,
+            state: index < view.activeStep ? "is-done" : index === view.activeStep ? "is-current" : "",
+            dot: index < view.activeStep ? "✓" : String(index + 1),
+          })),
+          subtitle: view.subtitle,
+          title: view.title,
+        });
       });
       this.setData({ loading: false });
       this.openNext(job);
@@ -50,8 +74,14 @@ Page({
 
   openNext(job: ClientJob): void {
     if (job.status === "awaiting_user_confirmation") {
-      const page = job.kind === "resume_parse" ? "resume-edit" : "jd-confirm";
-      openPage(`/pages/${page}/index?jobId=${job.jobId}`);
+      if (job.kind !== "resume_parse") {
+        this.setData({
+          errorMessage: "岗位任务状态异常，请返回后重新提交。",
+          loading: false,
+        });
+        return;
+      }
+      openPage(`/pages/resume-edit/index?jobId=${job.jobId}`);
       return;
     }
     if (job.status === "succeeded" && job.kind !== "resume_parse") {

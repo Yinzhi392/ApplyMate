@@ -1,32 +1,66 @@
-<view class="page login-page">
-  <view class="brand-block">
-    <view class="brand-name">APPLYMATE</view>
-    <view class="title">投了吗</view>
-    <view class="subtitle">让每一次开场，都有真实经历支撑。</view>
+<view class="page login-page" style="padding-top: {{contentTopPx}}px;">
+  <view class="login-glow login-glow-one"></view>
+  <view class="login-glow login-glow-two"></view>
+  <view wx:if="{{loading}}" class="login-loading">
+    <view class="brand-symbol"></view>
+    <view class="status">加载中，正在确认微信身份。</view>
   </view>
 
-  <view wx:if="{{loading}}" class="status">加载中，请稍候。</view>
-  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-
-  <view wx:if="{{!loading}}" class="surface login-panel">
-    <view class="section-title">{{title}}</view>
-    <view class="muted">{{description}}</view>
-
-    <label wx:if="{{showAgreement}}" class="row agreement-row">
-      <checkbox checked="{{agreementChecked}}" bindtap="toggleAgreement" color="#2f756c" />
-      <view>我已阅读并同意<text class="agreement-link" data-document="用户协议" catchtap="showDocument">用户协议</text>和<text class="agreement-link" data-document="隐私政策" catchtap="showDocument">隐私政策</text></view>
-    </label>
-
-    <view wx:if="{{showInviteInput}}" class="invite-field">
-      <label class="field-label" for="invite-code">邀请码</label>
-      <input id="invite-code" class="input" value="{{inviteCode}}" placeholder="请输入邀请码" bindinput="updateInviteCode" />
-      <view wx:if="{{isDemo}}" class="safe-note">本地界面验证邀请码：APPLYMATE</view>
+  <block wx:elif="{{mode === 'success'}}">
+    <view class="center-state glass-surface">
+      <view class="success-mark">✓</view>
+      <view class="title">验证成功</view>
+      <view class="subtitle">账号已激活。先确认一份简历，就可以开始生成专属开场白。</view>
+      <button class="button center-action" bindtap="enterHome">开始使用</button>
     </view>
+  </block>
 
-    <button class="button login-action" disabled="{{actionDisabled}}" bindtap="submit">{{actionLabel}}</button>
-    <view class="safe-note">{{helperText}}</view>
-  </view>
+  <block wx:elif="{{mode === 'disabled'}}">
+    <view class="center-state glass-surface">
+      <view class="restricted-mark">!</view>
+      <view class="title">账号暂不可用</view>
+      <view class="subtitle">当前无法继续生成，你仍可申请删除全部个人数据。</view>
+      <view class="warning center-warning">删除账号后不可撤销，全部可关联数据将在 24 小时内删除。</view>
+      <button class="button button-danger center-action" bindtap="deleteAccount">删除账号</button>
+    </view>
+  </block>
 
-  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，状态可能未更新。请检查网络后重新尝试。</view>
-  <button wx:if="{{errorMessage}}" class="button button-secondary login-action" bindtap="loadStatus">重新尝试</button>
+  <block wx:else>
+    <view class="login-content">
+      <view class="login-intro">
+        <view class="brand-symbol"></view>
+        <view class="title">{{title}}</view>
+        <view class="subtitle">{{description}}</view>
+      </view>
+
+      <view class="login-form glass-surface">
+        <view wx:if="{{isAdmin || (!inviteRequired && agreementRequired)}}" class="quiet-panel identity-note">
+          <view class="section-title">{{isAdmin ? '管理员身份已识别' : '当前账号已激活'}}</view>
+          <view class="field-help">{{isAdmin ? '管理员无需邀请码，仍需同意当前版本协议。' : '本次只需重新同意协议，不会再次验证邀请码。'}}</view>
+        </view>
+
+        <view wx:if="{{showInviteInput}}" class="field-group">
+          <label class="field-label" for="invite-code">邀请码</label>
+          <input id="invite-code" class="input" value="{{inviteCode}}" placeholder="输入 8 至 16 位邀请码" bindinput="updateInviteCode" />
+        </view>
+
+        <checkbox-group wx:if="{{showAgreement}}" bindchange="changeAgreement">
+          <label class="agreement-row">
+            <checkbox value="accepted" checked="{{agreementChecked}}" color="#26766c" />
+            <view>我已阅读并同意<text class="agreement-link" data-document="用户协议" catchtap="showDocument">《用户协议》</text>和<text class="agreement-link" data-document="隐私政策" catchtap="showDocument">《隐私政策》</text>，理解简历与岗位信息的处理方式。</view>
+          </label>
+        </checkbox-group>
+        <view wx:elif="{{!agreementRequired}}" class="agreement-complete">✓ 当前版本协议已确认</view>
+
+        <view wx:if="{{errorMessage}}" class="error inline-error">{{errorMessage}}</view>
+        <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，页面已保留邀请码和协议状态。</view>
+        <view class="login-action-row">
+          <button class="button login-action" disabled="{{actionDisabled || loading}}" bindtap="submit">{{actionLabel}}</button>
+        </view>
+        <view class="field-help">提交期间不会重复处理；失败后可在当前页面直接重试。</view>
+      </view>
+    </view>
+  </block>
+
+  <button wx:if="{{errorMessage && mode !== 'form'}}" class="button button-secondary retry-action" bindtap="loadStatus">重新尝试</button>
 </view>

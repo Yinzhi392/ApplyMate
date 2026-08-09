@@ -1,26 +1,28 @@
-.preference-editor {
-  margin-bottom: 36rpx;
+.preferences-header {
+  padding-bottom: 28rpx;
+  border-bottom: 1rpx solid var(--color-border);
 }
 
 .preference-editor .textarea {
   min-height: 360rpx;
 }
 
-.segment-preview {
-  margin-top: 28rpx;
+.preference-editor {
+  padding: 28rpx;
 }
 
-.segment-list {
+.preference-facts {
+  padding: 0 2rpx;
+}
+
+.segment-row {
   display: flex;
-  flex-direction: column;
-  gap: 12rpx;
-  margin-top: 14rpx;
+  min-height: 88rpx;
+  align-items: center;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid var(--color-border);
 }
 
-.segment-item {
-  padding: 18rpx 20rpx;
-  border-radius: 14rpx;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
-  font-size: 26rpx;
+.segment-row:last-child {
+  border-bottom: 0;
 }

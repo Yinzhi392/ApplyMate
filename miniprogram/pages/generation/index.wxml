@@ -1,17 +1,9 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">提交岗位信息</view>
-    <view class="subtitle">默认使用截图。原图只会交给 OCR，模型仅接收脱敏文字。</view>
-  </view>
-
-  <view class="form-section resume-selector">
-    <label class="field-label">本次使用的简历</label>
-    <picker mode="selector" range="{{resumeNames}}" value="{{resumeIndex}}" bindchange="changeResume">
-      <view class="select-field">
-        <text>{{resumeNames[resumeIndex] || '暂无已确认简历'}}</text>
-        <text class="select-hint">更换</text>
-      </view>
-    </picker>
+<view class="page page-with-fixed-action">
+  <view class="page-header generation-header">
+    <view class="page-header-copy">
+      <view class="title">提交岗位</view>
+      <view class="subtitle">最多 5 张截图；截图和文字草稿会分别保留，只提交当前模式。</view>
+    </view>
   </view>
 
   <view class="mode-switch" role="tablist">
@@ -19,20 +11,11 @@
     <button class="mode-option {{inputMode === 'text' ? 'is-active' : ''}}" data-mode="text" bindtap="changeInputMode">粘贴文字</button>
   </view>
 
-  <view wx:if="{{inputMode === 'images'}}" class="input-workspace">
-    <view class="workspace-heading">
-      <view>
-        <view class="section-title">岗位截图</view>
-        <view class="muted">可分多次添加，最多 5 张。按阅读顺序排列。</view>
-      </view>
+  <view wx:if="{{inputMode === 'images'}}" class="section input-workspace glass-surface">
+    <view class="section-heading">
+      <view><view class="section-title">岗位截图</view><view class="field-help">无需区分岗位介绍和岗位要求</view></view>
       <view class="count-label">{{images.length}} / {{maxImageCount}}</view>
     </view>
-
-    <button class="upload-area" disabled="{{images.length >= maxImageCount}}" bindtap="chooseImages">
-      <view class="upload-mark"></view>
-      <view class="upload-copy">{{images.length ? '继续添加截图' : '从相册或相机添加截图'}}</view>
-      <view class="upload-help">本次还能添加 {{maxImageCount - images.length}} 张</view>
-    </button>
 
     <view id="jd-image-list" wx:if="{{images.length}}" class="screenshot-list">
       <view
@@ -44,38 +27,53 @@
         bindtouchmove="dragImage"
         bindtouchend="finishImageDrag"
       >
+        <view class="image-order">{{index + 1}}</view>
         <image class="screenshot-thumb" src="{{item.path}}" mode="aspectFill" />
-        <view class="screenshot-meta">
-          <view class="screenshot-name">第 {{index + 1}} 张</view>
-          <view class="screenshot-help">长按并上下拖动排序</view>
-        </view>
+        <view class="screenshot-meta"><view class="screenshot-name">第 {{index + 1}} 张</view><view class="field-help">长按拖动排序</view></view>
         <button class="icon-action" aria-label="删除第 {{index + 1}} 张截图" data-index="{{index}}" catchtap="removeImage">删除</button>
       </view>
     </view>
-    <view wx:if="{{images.length}}" class="privacy-note">OCR 会按当前顺序合并文字。删除或排序后会使用新的请求标识。</view>
+
+    <button class="upload-area" disabled="{{images.length >= maxImageCount}}" bindtap="chooseImages">
+      <view class="upload-mark">＋</view>
+      <view class="upload-copy">{{images.length ? '继续添加截图' : '从相册或相机添加截图'}}</view>
+      <view class="field-help">可一次选择多张，本次还能添加 {{maxImageCount - images.length}} 张</view>
+    </button>
+    <view wx:if="{{images.length}}" class="privacy-note">OCR 会按当前顺序合并文字；删除或排序后会使用新的请求标识。</view>
   </view>
 
-  <view wx:if="{{inputMode === 'text'}}" class="input-workspace text-workspace">
-    <label class="field-label" for="jd-text">岗位文字</label>
-    <view class="textarea-shell">
+  <view wx:if="{{inputMode === 'text'}}" class="section input-workspace glass-surface">
+    <view class="field-group">
+      <label class="field-label" for="jd-text">岗位信息</label>
       <textarea
         id="jd-text"
         class="textarea jd-textarea"
         placeholder-class="textarea-placeholder"
         value="{{text}}"
         maxlength="20000"
-        placeholder="粘贴完整的岗位职责和任职要求"
+        placeholder="粘贴完整岗位职责、任职要求、地点和工作方式"
         bindinput="updateText"
       />
+      <view class="counter">{{text.length}} / 20000</view>
     </view>
-    <view class="counter">{{text.length}} / 20000</view>
   </view>
 
-  <view wx:if="{{loading}}" class="status">加载中，正在创建生成任务。请不要连续提交。</view>
-  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定。相同请求会沿用请求标识，不会重复扣次。</view>
-  <view class="sticky-action">
-    <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">生成个性化开场白</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="submit">重新尝试</button>
+  <view class="section resume-selector glass-surface">
+    <label class="field-label">本次使用简历</label>
+    <picker mode="selector" range="{{resumeNames}}" value="{{resumeIndex}}" bindchange="changeResume">
+      <view class="list-row">
+        <view class="list-row-main"><text>{{resumeNames[resumeIndex] || '暂无已确认简历'}}</text><text>只引用已确认事实</text></view>
+        <view class="select-hint">更换 ›</view>
+      </view>
+    </picker>
+  </view>
+
+  <view class="section quiet-panel"><view class="section-title">提交后直接生成</view><view class="field-help">低置信字段会省略并在结果中提醒，不会要求再次确认岗位。</view></view>
+  <view wx:if="{{loading}}" class="status section">加载中，正在创建生成任务，请不要连续提交。</view>
+  <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
+  <view wx:if="{{weakNetwork}}" class="warning section">网络连接不稳定，相同请求会沿用请求标识，不会重复扣次。</view>
+
+  <view class="fixed-action">
+    <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">识别并生成</button>
   </view>
 </view>

@@ -27,13 +27,6 @@ export const GenerationCreatePayloadSchema = z.discriminatedUnion("inputType", [
     .strict(),
 ]);
 
-export const GenerationConfirmJdPayloadSchema = z
-  .object({
-    jobId: z.string().trim().min(1).max(100),
-    jobDescription: z.unknown(),
-  })
-  .strict();
-
 export type GenerationCreateInput = z.infer<typeof GenerationCreatePayloadSchema>;
 export type ValidatedJdInput =
   | { inputType: "text"; sourceText: string }
@@ -41,7 +34,6 @@ export type ValidatedJdInput =
 
 export type GenerationRecordStatus =
   | "processing"
-  | "awaiting_confirmation"
   | "generating"
   | "succeeded"
   | "failed";
@@ -58,7 +50,6 @@ export interface GenerationRecord {
   status: GenerationRecordStatus;
   extractedMaskedText?: string;
   jobDescription?: JobDescription;
-  pendingFieldIds?: string[];
   warnings?: string[];
   createdAt: string;
   updatedAt: string;

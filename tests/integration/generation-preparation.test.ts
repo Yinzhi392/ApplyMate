@@ -86,7 +86,7 @@ async function createHarness() {
 }
 
 describe("generation JD preparation", () => {
-  it("OCRs in submitted order, masks text, deletes images, and waits without quota", async () => {
+  it("OCRs in submitted order, masks text, deletes images, and omits low-confidence fields", async () => {
     const harness = await createHarness();
     const ocrOrder: string[] = [];
     const modelInputs: string[] = [];
@@ -112,7 +112,11 @@ describe("generation JD preparation", () => {
               text: "产品实习生",
               confidence: 0.7,
             },
-            responsibilities: [],
+            responsibilities: [{
+              fieldId: "jd_responsibility_1",
+              text: "整理产品需求",
+              confidence: 0.99,
+            }],
             hardSkills: [],
             experienceEducation: [],
             locationWorkMode: [],
@@ -131,24 +135,62 @@ describe("generation JD preparation", () => {
 
     await expect(
       worker.run(harness.record.jobId, "worker_prepare", NOW),
-    ).resolves.toMatchObject({ status: "awaiting_confirmation" });
+    ).resolves.toMatchObject({ status: "ready" });
     expect(ocrOrder).toEqual([harness.second.fileId, harness.first.fileId]);
     expect(modelInputs[0]).not.toContain("13800138000");
     await expect(
       harness.temporaryFiles.getOwnedFile("user_prepare", harness.first.fileId),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    const waitingJob = await harness.jobs.getJobForUser(
+    const preparedJob = await harness.jobs.getJobForUser(
       "user_prepare",
       harness.record.jobId,
     );
-    expect(waitingJob).toMatchObject({
-      status: "awaiting_user_confirmation",
-      result: {
-        pendingFieldIds: ["jd_job_title"],
-        warnings: ["LOW_CONFIDENCE_FIELD", "COMPANY_NAME_MISSING"],
+    expect(preparedJob.status).toBe("parsing");
+    const record = await harness.generations.getByJobId(harness.record.jobId);
+    expect(record).toMatchObject({
+      status: "generating",
+      jobDescription: {
+        jobTitle: { text: "该岗位" },
+        responsibilities: [{ text: "整理产品需求" }],
       },
+      warnings: [
+        "JOB_TITLE_MISSING",
+        "LOW_CONFIDENCE_FIELD_OMITTED",
+        "COMPANY_NAME_MISSING",
+      ],
     });
-    expect(waitingJob).not.toHaveProperty("quotaReservationId");
+    expect(preparedJob).not.toHaveProperty("quotaReservationId");
+  });
+
+  it("fails safely when no reliable responsibilities or requirements remain", async () => {
+    const harness = await createHarness();
+    const worker = new GenerationPreparationService(
+      harness.jobs,
+      harness.generations,
+      harness.temporaryFiles,
+      {
+        extract: async () => "只有模糊标题",
+        parse: async () => ({
+          maskedText: "只有模糊标题",
+          jobDescription: {
+            responsibilities: [],
+            hardSkills: [],
+            experienceEducation: [],
+            locationWorkMode: [],
+            availabilityDuration: [],
+          },
+          maskedTypes: [],
+          maskedCount: 0,
+        }),
+      },
+      () => NOW,
+    );
+
+    await expect(worker.run(harness.record.jobId, "worker_empty", NOW)).resolves.toMatchObject({ status: "failed" });
+    await expect(harness.jobs.getJobForUser("user_prepare", harness.record.jobId)).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "JD_CONTENT_INSUFFICIENT" },
+    });
   });
 
   it("deletes every JD image even when OCR fails and records a safe failure", async () => {

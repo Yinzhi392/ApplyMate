@@ -286,13 +286,17 @@ export class GenerationExecutionService {
     }
 
     try {
-      const jd = record.jobDescription;
-      if (jd === undefined || jd.jobTitle === undefined) {
-        throw new DomainError("CONFLICT", "Confirmed JD is missing.");
+      const parsedJd = record.jobDescription;
+      if (parsedJd === undefined) {
+        throw new DomainError("CONFLICT", "Prepared JD is missing.");
       }
-      const evaluation = evaluateJobDescription(jd);
+      const evaluation = evaluateJobDescription(parsedJd);
       if (evaluation.status !== "ready") {
-        throw new DomainError("CONFLICT", "Confirmed JD is incomplete.");
+        throw new DomainError("CONFLICT", "Prepared JD is incomplete.");
+      }
+      const jd = evaluation.jobDescription;
+      if (jd.jobTitle === undefined) {
+        throw new DomainError("CONFLICT", "Prepared JD title fallback is missing.");
       }
       const companyDisplayName = evaluation.companyDisplayName;
       const request = {

@@ -11,7 +11,6 @@ export type ClientApiAction =
   | "resume.setDefault"
   | "resume.delete"
   | "generation.create"
-  | "generation.confirmJd"
   | "generation.rewrite"
   | "job.get"
   | "application.list"

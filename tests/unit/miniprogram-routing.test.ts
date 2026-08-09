@@ -8,7 +8,7 @@ import {
 } from "../../miniprogram/core/routes.js";
 
 describe("mini-program route manifest", () => {
-  it("locks the three approved tab routes and all seven core surfaces", () => {
+  it("locks the three approved tab routes and all thirteen approved pages", () => {
     expect(TAB_ROUTES).toEqual([
       { pagePath: "pages/home/index", text: "首页" },
       { pagePath: "pages/records/index", text: "记录" },
@@ -24,7 +24,8 @@ describe("mini-program route manifest", () => {
       "pages/mine/index",
     ]));
     expect(FLOW_ROUTES).toContain("pages/job/index");
-    expect(FLOW_ROUTES).toContain("pages/jd-confirm/index");
+    expect(PAGE_ROUTES).toHaveLength(13);
+    expect(FLOW_ROUTES).not.toContain("pages/jd-confirm/index");
   });
 
   it("distinguishes tab switching from flow navigation", () => {

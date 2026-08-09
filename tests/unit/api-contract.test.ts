@@ -68,6 +68,13 @@ describe("API contract", () => {
     ).toBe(false);
     expect(
       ApiRequestSchema.safeParse({
+        action: "generation.confirmJd",
+        payload: { jobId: "job_demo1234" },
+        requestId: "123e4567-e89b-42d3-a456-426614174000",
+      }).success,
+    ).toBe(false);
+    expect(
+      ApiRequestSchema.safeParse({
         action: "job.get",
         payload: { value: "字".repeat(20_001) },
       }).success,

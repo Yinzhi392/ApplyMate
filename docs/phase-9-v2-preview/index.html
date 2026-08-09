@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>ApplyMate · 阶段 9 全量视觉稿</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      THESIS: 把求职开场白从一段黑箱文案变成可追溯、可确认的事实链。
+      OWN-WORLD: 中国移动求职场景中的简历事实、岗位截图和逐项匹配证据。
+      STORY: 准入 -> 确认简历 -> 提交岗位 -> 生成与核对 -> 留下投递记录。
+      FIRST VIEWPORT: 先看当前任务与唯一下一步，不用卡片堆叠解释产品。
+      FORM: A 克制玻璃，暖白半透明表面、深蓝灰字、低饱和青绿动作色、细描边与轻内高光。
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
+    <a class="skip-link" href="#phone-content">跳到手机预览</a>
+    <main class="preview-shell">
+      <aside class="preview-sidebar" aria-label="视觉稿页面导航">
+        <div class="preview-brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <strong>ApplyMate</strong>
+            <span>阶段 9 · 13 页视觉稿</span>
+          </div>
+        </div>
+        <p class="preview-note">A“克制玻璃”候验稿。仅使用合成数据，不连接微信、CloudBase、OCR 或模型服务。</p>
+        <nav id="screen-nav" class="screen-nav"></nav>
+        <div class="preview-help">
+          <strong>评审方式</strong>
+          <span>逐页查看结构、间距与交互。本稿已同步原生小程序，仍需开发者工具和真机验收。</span>
+        </div>
+      </aside>
+
+      <section class="preview-stage" aria-label="手机交互预览">
+        <header class="stage-toolbar">
+          <div>
+            <span class="stage-status"><i aria-hidden="true"></i> 可交互视觉稿</span>
+            <h1 id="stage-title">登录与准入</h1>
+          </div>
+          <div class="toolbar-actions">
+            <button id="previous-screen" class="toolbar-button" type="button">上一页</button>
+            <button id="next-screen" class="toolbar-button" type="button">下一页</button>
+          </div>
+        </header>
+
+        <div class="device-wrap">
+          <div class="device" aria-label="390 乘 844 手机画板">
+            <div class="device-statusbar" aria-hidden="true">
+              <span>15:41</span>
+              <span class="status-icons">● ◒</span>
+            </div>
+            <div id="phone-content" class="phone-content" tabindex="-1"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./preview.js"></script>
+  </body>
+</html>

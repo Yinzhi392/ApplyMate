@@ -23,6 +23,8 @@ Page({
     pauseDescription: "",
     pauseTitle: "",
     primaryActionLabel: "先添加简历",
+    primaryActionDescription: "上传后只需核对一次个人资料",
+    primaryActionDisabled: false,
     remainingQuota: 0,
     weakNetwork: false,
   },
@@ -65,6 +67,9 @@ Page({
         pauseDescription: view.pauseDescription,
         pauseTitle: view.pauseTitle,
         primaryActionLabel: view.primaryActionLabel,
+        primaryActionDescription: view.primaryActionDescription,
+        primaryActionDisabled:
+          view.primaryActionLabel !== "先添加简历" && !view.generationEnabled,
         remainingQuota: view.remainingQuota,
       });
     } catch (error) {

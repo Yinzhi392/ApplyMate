@@ -87,7 +87,13 @@ function application(userId: string): ApplicationRecord {
         confidence: 1,
       },
       responsibilities: [],
-      hardSkills: [],
+      hardSkills: [
+        {
+          fieldId: "jd_rewrite_skill",
+          text: "熟悉 SQL",
+          confidence: 1,
+        },
+      ],
       experienceEducation: [],
       locationWorkMode: [],
       availabilityDuration: [],

@@ -68,4 +68,32 @@ describe("mini-program result presenter", () => {
 
     expect(view.claims[0]?.sourceLabels).toEqual(["来源待核对"]);
   });
+
+  it("explains title fallback and omitted low-confidence JD fields", () => {
+    const view = createResultView({
+      applicationId: "application_3",
+      greetingBody: "测试正文",
+      status: "not_applied",
+      memo: "",
+      warnings: ["JOB_TITLE_MISSING", "LOW_CONFIDENCE_FIELD_OMITTED"],
+      omittedRequirements: [],
+      factSnapshot: [],
+      jdSnapshot: {
+        responsibilities: [],
+        hardSkills: [],
+        experienceEducation: [],
+        locationWorkMode: [],
+        availabilityDuration: [],
+      },
+      evidence: [],
+      copyText: "测试正文\nAI生成内容，请核对真实性",
+      manualWarnings: [],
+    });
+
+    expect(view.jobTitle).toBe("该岗位");
+    expect(view.warningMessages).toEqual([
+      "未可靠识别岗位名，正文已使用“该岗位”。",
+      "部分低置信岗位字段已省略，请核对结果。",
+    ]);
+  });
 });

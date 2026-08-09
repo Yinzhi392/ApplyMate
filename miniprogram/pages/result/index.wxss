@@ -1,84 +1,137 @@
-.result-editor {
-  padding: 28rpx;
-  border: 1rpx solid var(--color-border);
-  border-radius: 20rpx;
-  background: var(--color-surface);
+.result-header {
+  padding-bottom: 28rpx;
+  border-bottom: 1rpx solid var(--color-border);
 }
 
-.textarea-result {
-  min-height: 470rpx;
+.greeting-surface {
+  overflow: hidden;
+  padding: 22rpx 24rpx 24rpx;
+}
+
+.greeting-editor {
+  min-height: 500rpx;
   border: 0;
   border-radius: 0;
-  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 29rpx;
+  line-height: 1.85;
 }
 
-.result-primary-actions {
-  display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  gap: 14rpx;
-  margin-top: 22rpx;
+.editor-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 23rpx;
 }
 
-.rewrite-action {
-  margin-top: 14rpx;
+.ai-label-note,
+.warning-item {
+  margin-top: 16rpx;
 }
 
-.result-disclosure,
-.secondary-disclosure {
-  margin-top: 28rpx;
-  overflow: hidden;
-  border: 1rpx solid var(--color-border);
-  border-radius: 18rpx;
-  background: var(--color-surface);
+.secondary-action-row,
+.rating-actions {
+  margin-top: 16rpx;
+}
+
+.disclosure-list {
+  border-top: 1rpx solid var(--color-border);
+}
+
+.disclosure {
+  border-bottom: 1rpx solid var(--color-border);
 }
 
 .disclosure-trigger {
   display: flex;
+  width: 100%;
+  min-height: 96rpx;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  min-height: 88rpx;
   margin: 0;
-  padding: 18rpx 24rpx;
+  padding: 0;
   background: transparent;
   color: var(--color-text);
-  font-size: 28rpx;
-  font-weight: 620;
-  line-height: 1.5;
+  font-weight: 650;
   text-align: left;
 }
 
 .disclosure-state {
   color: var(--color-primary);
   font-size: 24rpx;
-  font-weight: 500;
 }
 
 .disclosure-content {
-  padding: 0 24rpx 24rpx;
+  padding: 4rpx 0 28rpx;
 }
 
 .evidence-item {
   padding: 20rpx 0;
-  border-top: 1rpx solid var(--color-border);
+  border-bottom: 1rpx solid var(--color-border);
 }
 
-.evidence-item:first-child {
-  border-top: 0;
+.evidence-claim {
+  margin-bottom: 8rpx;
+  font-weight: 650;
+}
+
+.evidence-empty {
+  margin-top: 12rpx;
 }
 
 .secondary-actions {
   display: flex;
   flex-direction: column;
-  gap: 26rpx;
+  gap: 28rpx;
 }
 
-.secondary-actions .textarea {
-  min-height: 210rpx;
+.secondary-textarea {
+  min-height: 160rpx;
 }
 
-.rating-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12rpx;
+.rating-button {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 88rpx;
+  flex: 1 1 0%;
+  margin: 0;
+  border: 1rpx solid var(--color-border-strong);
+  border-radius: 14rpx;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 25rpx;
+}
+
+.rating-button.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.retry-button {
+  margin-top: 24rpx;
+}
+
+.result-exit {
+  padding: 28rpx;
+}
+
+.result-exit-copy .field-help {
+  margin-top: 8rpx;
+}
+
+.result-exit-actions {
+  margin-top: 24rpx;
+}
+
+.result-next-button,
+.result-home-button {
+  min-height: 96rpx;
 }

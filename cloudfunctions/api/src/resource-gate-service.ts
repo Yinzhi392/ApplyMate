@@ -12,6 +12,10 @@ export type ResourceAvailability = Readonly<Record<FreeResource, boolean>>;
 export class ResourceGateService {
   constructor(private readonly availability: ResourceAvailability) {}
 
+  unavailableResources(): FreeResource[] {
+    return FREE_RESOURCES.filter((resource) => !this.availability[resource]);
+  }
+
   assertAvailable(requirements: readonly FreeResource[]): void {
     for (const resource of new Set(requirements)) {
       if (!this.availability[resource]) {

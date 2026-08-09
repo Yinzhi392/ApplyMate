@@ -6,28 +6,48 @@ import {
 } from "../../miniprogram/core/presenters.js";
 
 describe("mini-program access and home presenters", () => {
+  it("combines agreement and invitation for a first-time user", () => {
+    expect(createLoginView({
+      accessState: "agreement_required",
+      agreementChecked: true,
+      inviteRequired: true,
+      isAdmin: false,
+      inviteCode: "APPLYMATE",
+      errorMessage: "",
+      justActivated: false,
+    })).toMatchObject({
+      actionLabel: "验证并登录",
+      mode: "form",
+      showAgreement: true,
+      showInviteInput: true,
+    });
+  });
+
   it.each([
-    ["agreement_required", "请先阅读并同意协议", "同意并继续"],
-    ["invite_required", "输入邀请码", "激活邀请码"],
-    ["active", "登录成功", "进入首页"],
-    ["disabled", "账号已停用", "删除账号"],
-  ] as const)("maps %s to an actionable access state", (accessState, title, actionLabel) => {
+    ["active", false, "redirect"],
+    ["active", true, "success"],
+    ["disabled", false, "disabled"],
+  ] as const)("maps %s with justActivated=%s to %s", (accessState, justActivated, mode) => {
     expect(createLoginView({
       accessState,
-      agreementChecked: accessState !== "agreement_required",
+      agreementChecked: true,
+      inviteRequired: false,
       isAdmin: false,
       inviteCode: "",
       errorMessage: "",
-    })).toMatchObject({ title, actionLabel });
+      justActivated,
+    })).toMatchObject({ mode });
   });
 
   it("lets approved administrators skip the invitation step", () => {
     const view = createLoginView({
       accessState: "active",
       agreementChecked: true,
+      inviteRequired: false,
       isAdmin: true,
       inviteCode: "",
       errorMessage: "",
+      justActivated: false,
     });
 
     expect(view.helperText).toContain("管理员");
@@ -42,6 +62,7 @@ describe("mini-program access and home presenters", () => {
     });
     expect(emptyResume).toMatchObject({
       primaryActionLabel: "先添加简历",
+      primaryActionDescription: "上传后只需核对一次个人资料",
       generationEnabled: false,
     });
     expect(emptyResume).not.toHaveProperty("recentApplications");
@@ -50,7 +71,11 @@ describe("mini-program access and home presenters", () => {
       defaultResume: { resumeId: "resume_demo0001", name: "产品简历" },
       remainingQuota: 0,
       resourcePauseReason: "",
-    })).toMatchObject({ generationEnabled: false, pauseTitle: "今日次数已用完" });
+    })).toMatchObject({
+      generationEnabled: false,
+      primaryActionLabel: "提交岗位信息",
+      pauseTitle: "今日次数已用完",
+    });
 
     expect(createHomeView({
       defaultResume: { resumeId: "resume_demo0001", name: "产品简历" },

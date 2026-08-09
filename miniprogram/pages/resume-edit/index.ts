@@ -1,5 +1,6 @@
 import { messageFrom, switchHome } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
+import { createResumeReview, type ResumeReviewFact } from "../../core/resume-review.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 
@@ -25,41 +26,20 @@ interface EditableProfile {
   skills: FactItem[];
 }
 
-const SECTIONS = [
-  ["education", "教育"],
-  ["experiences", "经历"],
-  ["projects", "项目"],
-  ["skills", "技能"],
-  ["languages", "语言"],
-  ["certificates", "证书"],
-  ["achievements", "成果"],
-  ["preferences", "偏好"],
-  ["otherFacts", "其他"],
-] as const;
-
-function flattenFacts(profile: EditableProfile): Array<FactItem & {
-  index: number;
-  key: string;
-  label: string;
-  section: keyof EditableProfile;
-}> {
-  return SECTIONS.flatMap(([section, label]) => profile[section].map((fact, index) => ({
-    ...fact,
-    index,
-    key: `${section}:${fact.factId}`,
-    label,
-    section,
-  })));
-}
-
 Page({
   data: {
+    confirmedFacts: [] as ResumeReviewFact[],
+    editingKey: "",
     errorMessage: "",
-    facts: [] as ReturnType<typeof flattenFacts>,
+    facts: [] as ResumeReviewFact[],
     jobId: "",
     loading: true,
+    needsReview: [] as ResumeReviewFact[],
     profile: null as EditableProfile | null,
     profileName: "",
+    reviewFactIds: [] as string[],
+    strengths: [] as ReturnType<typeof createResumeReview>["strengths"],
+    weights: [] as ReturnType<typeof createResumeReview>["weights"],
   },
 
   onLoad(options: Record<string, string | undefined>): void {
@@ -76,19 +56,15 @@ Page({
     this.setData({ errorMessage: "", loading: true });
     try {
       const job = await runtime().api.read<{
-        result?: { profile?: EditableProfile };
+        result?: { profile?: EditableProfile; reviewFactIds?: string[] };
       }>("job.get", { jobId: this.data.jobId });
       const profile = job.result?.profile;
       if (profile === undefined) {
         this.setData({ errorMessage: "解析结果尚未准备好。", loading: false });
         return;
       }
-      this.setData({
-        facts: flattenFacts(profile),
-        loading: false,
-        profile,
-        profileName: profile.name ?? "",
-      });
+      this.applyReview(profile, job.result?.reviewFactIds ?? []);
+      this.setData({ loading: false, profileName: profile.name ?? "" });
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error), loading: false });
     }
@@ -116,7 +92,51 @@ Page({
       return;
     }
     fact.text = event.detail.value;
-    this.setData({ facts: flattenFacts(profile), profile });
+    this.applyReview(profile, this.data.reviewFactIds);
+  },
+
+  startFactEdit(event: WechatMiniprogram.BaseEvent): void {
+    this.setData({ editingKey: String(event.currentTarget.dataset.key ?? "") });
+  },
+
+  finishFactEdit(): void {
+    this.setData({ editingKey: "" });
+  },
+
+  markFactCorrect(event: WechatMiniprogram.BaseEvent): void {
+    const factId = String(event.currentTarget.dataset.factId ?? "");
+    const reviewFactIds = this.data.reviewFactIds.filter((candidate) => candidate !== factId);
+    if (this.data.profile !== null) {
+      this.applyReview(this.data.profile, reviewFactIds);
+    }
+  },
+
+  deleteFact(event: WechatMiniprogram.BaseEvent): void {
+    const profile = this.data.profile;
+    const section = String(event.currentTarget.dataset.section) as keyof EditableProfile;
+    const index = Number(event.currentTarget.dataset.index);
+    if (profile === null || !Array.isArray(profile[section])) {
+      return;
+    }
+    const entries = profile[section] as FactItem[];
+    const removed = entries.splice(index, 1)[0];
+    const reviewFactIds = removed === undefined
+      ? this.data.reviewFactIds
+      : this.data.reviewFactIds.filter((candidate) => candidate !== removed.factId);
+    this.applyReview(profile, reviewFactIds);
+  },
+
+  applyReview(profile: EditableProfile, reviewFactIds: string[]): void {
+    const review = createResumeReview(profile, reviewFactIds);
+    this.setData({
+      confirmedFacts: review.confirmedFacts,
+      facts: [...review.needsReview, ...review.confirmedFacts],
+      needsReview: review.needsReview,
+      profile,
+      reviewFactIds,
+      strengths: review.strengths,
+      weights: review.weights,
+    });
   },
 
   async confirm(): Promise<void> {

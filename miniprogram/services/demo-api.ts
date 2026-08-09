@@ -545,7 +545,12 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
         kind: "resume_parse",
         status: "awaiting_user_confirmation",
         statusLabel: STATUS_LABELS.awaiting_user_confirmation,
-        result: { resumeId, profile: clone(profile), maskingSummary: [] },
+        result: {
+          resumeId,
+          profile: clone(profile),
+          reviewFactIds: profile.education[0] === undefined ? [] : [profile.education[0].factId],
+          maskingSummary: [],
+        },
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -602,53 +607,20 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       if (resume.status !== "confirmed") {
         throw new ApiClientError("CONFLICT", "请先确认简历。", false);
       }
-      const text = typeof payload.text === "string" ? payload.text : "";
       const jobId = nextId(state, "job");
       const timestamp = now();
-      const needsConfirmation = text.includes("[待确认]");
-      const jobDescription = needsConfirmation
-        ? {
-            responsibilities: [{ fieldId: "jd_responsibility", text: "负责产品需求分析", confidence: 0.7 }],
-            hardSkills: [],
-            experienceEducation: [],
-            locationWorkMode: [],
-            availabilityDuration: [],
-          }
-        : defaultJobDescription();
+      const jobDescription = defaultJobDescription();
       const job: DemoJob = {
         jobId,
         kind: "greeting_generate",
-        status: needsConfirmation ? "awaiting_user_confirmation" : "generating",
-        statusLabel: needsConfirmation
-          ? STATUS_LABELS.awaiting_user_confirmation
-          : STATUS_LABELS.generating,
-        ...(needsConfirmation
-          ? { result: { jobDescription, pendingFieldIds: ["jd_job_title", "jd_responsibility"] } }
-          : {}),
+        status: "generating",
+        statusLabel: STATUS_LABELS.generating,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
       state.jobs.push(job);
-      if (!needsConfirmation) {
-        createApplication(state, job, resume, jobDescription);
-      }
-      return clone({ jobId }) as T;
-    }
-    if (action === "generation.confirmJd") {
-      const job = getJob(payload);
-      if (job.status !== "awaiting_user_confirmation") {
-        throw new ApiClientError("CONFLICT", "任务当前无需确认。", false);
-      }
-      const resume = state.resumes.find(({ status }) => status === "confirmed");
-      if (resume === undefined) {
-        throw new ApiClientError("CONFLICT", "已确认简历不存在。", false);
-      }
-      const jobDescription = clone(payload.jobDescription) as DemoJobDescription;
-      if (jobDescription.jobTitle?.text.trim() === "") {
-        throw new ApiClientError("INVALID_REQUEST", "岗位名不能为空。", false);
-      }
       createApplication(state, job, resume, jobDescription);
-      return clone({ jobId: job.jobId, status: job.status }) as T;
+      return clone({ jobId }) as T;
     }
     if (action === "application.update") {
       const application = getApplication(payload);

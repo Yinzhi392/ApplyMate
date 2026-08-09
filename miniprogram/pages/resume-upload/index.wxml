@@ -1,44 +1,46 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">添加简历</view>
-    <view class="subtitle">原文件只用于解析。确认结构化内容后，原文件会从临时存储删除。</view>
+<view class="page page-with-fixed-action">
+  <view class="page-header upload-header">
+    <view class="page-header-copy">
+      <view class="title">添加简历</view>
+      <view class="subtitle">选择一种方式，解析后仍需你核对事实。</view>
+    </view>
   </view>
 
-  <view class="section-title">选择输入方式</view>
-  <radio-group class="input-type-grid" bindchange="changeInputType">
-    <label class="input-type-option"><radio value="pdf" checked="{{inputType === 'pdf'}}" color="#2f756c" />PDF 文件</label>
-    <label class="input-type-option"><radio value="docx" checked="{{inputType === 'docx'}}" color="#2f756c" />DOCX 文件</label>
-    <label class="input-type-option"><radio value="images" checked="{{inputType === 'images'}}" color="#2f756c" />简历图片</label>
-    <label class="input-type-option"><radio value="text" checked="{{inputType === 'text'}}" color="#2f756c" />粘贴文字</label>
-  </radio-group>
+  <view class="mode-switch" role="tablist">
+    <button class="mode-option {{inputType !== 'text' ? 'is-active' : ''}}" data-mode="upload" bindtap="changeResumeMode">上传文件</button>
+    <button class="mode-option {{inputType === 'text' ? 'is-active' : ''}}" data-mode="text" bindtap="changeResumeMode">粘贴文字</button>
+  </view>
 
-  <view class="upload-content form-section">
-    <view wx:if="{{inputType === 'pdf' || inputType === 'docx'}}">
-      <view class="section-title">选择 {{inputType === 'pdf' ? 'PDF' : 'DOCX'}}</view>
-      <view class="muted">单个文件不超过 10MB。旧版 DOC 需先另存为 DOCX。</view>
-      <button class="button button-secondary" bindtap="chooseDocument">选择文件</button>
-      <view wx:if="{{selectedName}}" class="status selected-file">已选择：{{selectedName}}</view>
-    </view>
+  <view class="section upload-content glass-surface">
+    <block wx:if="{{inputType !== 'text'}}">
+      <button class="upload-zone" bindtap="chooseDocument">
+        <view class="upload-symbol">＋</view>
+        <view class="upload-title">选择 PDF 或 DOCX</view>
+        <view class="field-help">单文件不超过 10MB；旧版 DOC 需先另存为 DOCX</view>
+      </button>
+      <button class="image-upload-row" bindtap="chooseImages">
+        <view class="image-upload-copy"><view class="upload-title">改用简历图片</view><view class="field-help">最多 6 张，总大小不超过 10MB</view></view>
+        <view class="select-hint">选择 ›</view>
+      </button>
+      <view wx:if="{{inputType === 'images' && images.length}}" class="selected-file"><view class="section-title">已选择 {{images.length}} 张图片</view><view class="muted">将按当前选择顺序解析</view></view>
+      <view wx:elif="{{inputType !== 'images' && selectedName}}" class="selected-file"><view class="section-title">已选择文件</view><view class="muted">{{selectedName}}</view></view>
+    </block>
 
-    <view wx:if="{{inputType === 'images'}}">
-      <view class="section-title">选择简历图片</view>
-      <view class="muted">最多 6 张，总大小不超过 10MB。请按阅读顺序选择。</view>
-      <button class="button button-secondary" bindtap="chooseImages">选择简历图片</button>
-      <view wx:if="{{images.length}}" class="status selected-file">已选择 {{images.length}} 张</view>
-    </view>
-
-    <view wx:if="{{inputType === 'text'}}">
+    <view wx:if="{{inputType === 'text'}}" class="field-group">
       <label class="field-label" for="resume-text">简历文字</label>
-      <textarea id="resume-text" class="textarea" value="{{text}}" maxlength="12000" placeholder="粘贴教育、经历、项目和技能等真实信息" bindinput="updateText" />
-      <view class="counter">{{text.length}} / 12000</view>
+      <textarea id="resume-text" class="textarea resume-textarea" value="{{text}}" maxlength="20000" placeholder-class="textarea-placeholder" placeholder="粘贴教育、实习、项目和技能等内容" bindinput="updateText" />
+      <view class="counter">{{text.length}} / 20000</view>
     </view>
   </view>
 
-  <view class="privacy-note">手机号、邮箱、证件号和详细地址会在模型调用前遮盖。</view>
-  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view wx:if="{{loading}}" class="status">加载中，正在创建解析任务。</view>
-  <view class="sticky-action">
+  <view class="section quiet-panel">
+    <view class="section-title">隐私说明</view>
+    <view class="field-help">原文件只用于解析；确认结构化内容后会删除。手机号、邮箱、证件号和详细地址会在模型调用前遮盖。</view>
+  </view>
+  <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
+  <view wx:if="{{loading}}" class="status section">加载中，正在创建解析任务。</view>
+
+  <view class="fixed-action">
     <button class="button" disabled="{{loading}}" bindtap="submit">开始解析</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="submit">重新尝试</button>
   </view>
 </view>

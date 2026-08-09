@@ -14,7 +14,7 @@ interface ApplicationRecord {
 Page({
   data: {
     errorMessage: "",
-    filter: "not_applied" as "not_applied" | "applied",
+    filter: "all" as "all" | "not_applied" | "applied",
     loading: true,
     records: [] as Array<{
       applicationId: string;
@@ -31,7 +31,7 @@ Page({
 
   changeFilter(event: WechatMiniprogram.BaseEvent): void {
     const filter = String(event.currentTarget.dataset.filter);
-    if (filter === "not_applied" || filter === "applied") {
+    if (filter === "all" || filter === "not_applied" || filter === "applied") {
       this.setData({ filter });
       void this.loadRecords();
     }
@@ -42,14 +42,14 @@ Page({
     try {
       const response = await runtime().api.read<{ applications: ApplicationRecord[] }>(
         "application.list",
-        { status: this.data.filter },
+        this.data.filter === "all" ? {} : { status: this.data.filter },
       );
       this.setData({
         loading: false,
         records: response.applications.map((application) => ({
           applicationId: application.applicationId,
           companyName: application.jdSnapshot.companyName?.text ?? "贵司",
-          jobTitle: application.jdSnapshot.jobTitle?.text ?? "岗位名称待核对",
+          jobTitle: application.jdSnapshot.jobTitle?.text ?? "该岗位",
           memo: application.memo ?? "",
           statusLabel: application.status === "applied" ? "已投递" : "未投递",
         })),

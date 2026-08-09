@@ -1,25 +1,31 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">求职偏好</view>
-    <view class="subtitle">例如远程、到岗时间或每周可工作天数。系统会按句子拆成可追溯事实。</view>
+<view class="page page-with-fixed-action">
+  <view class="page-header preferences-header">
+    <view class="page-header-copy">
+      <view class="title">求职偏好</view>
+      <view class="subtitle">这些内容也会成为可追溯事实。</view>
+    </view>
+    <button class="text-action" disabled="{{loading}}" bindtap="clear">清空</button>
   </view>
 
-  <view class="form-section preference-editor">
-    <textarea class="textarea" value="{{text}}" maxlength="520" placeholder="例：希望远程。可以立即到岗。每周工作 4 天。" bindinput="updateText" />
-    <view class="counter">{{visibleCharacters}} / 500</view>
-    <view wx:if="{{message}}" class="error">{{message}}</view>
-    <view wx:if="{{segments.length}}" class="segment-preview">
-      <view class="section-title">将保存为</view>
-      <view class="segment-list">
-        <view wx:for="{{segments}}" wx:key="*this" class="segment-item">{{item}}</view>
+  <view class="field-group preference-editor glass-surface">
+    <label class="field-label">补充你的长期偏好</label>
+    <textarea class="textarea" value="{{text}}" maxlength="520" placeholder-class="textarea-placeholder" placeholder="例如：希望远程。可以立即到岗。每周工作 4 天。" bindinput="updateText" />
+    <view class="counter">{{visibleCharacters}} / 500 字</view>
+  </view>
+  <view wx:if="{{message}}" class="error section">{{message}}</view>
+  <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
+
+  <view class="section preference-facts">
+    <view class="section-heading"><view class="section-title">将保存为 {{segments.length}} 项事实</view></view>
+    <view wx:if="{{segments.length}}" class="list-group segment-list">
+      <view wx:for="{{segments}}" wx:key="*this" class="segment-row">
+        <view>{{item}}</view>
       </view>
     </view>
+    <view wx:else class="quiet-panel">按句号、分号或换行自动拆分；无需逐项选择。</view>
   </view>
 
-  <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view class="sticky-action">
+  <view class="fixed-action">
     <button class="button" disabled="{{loading || !valid}}" bindtap="save">保存偏好</button>
-    <button class="button button-secondary" disabled="{{loading}}" bindtap="clear">清空偏好</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadPreferences">重新尝试</button>
   </view>
 </view>

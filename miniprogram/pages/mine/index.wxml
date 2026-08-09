@@ -1,57 +1,93 @@
-<view class="page">
+<view class="page mine-page">
   <view class="page-header">
-    <view class="title">我的</view>
-    <view class="subtitle">管理长期偏好、简历和数据权利。</view>
+    <view class="page-header-copy">
+      <view class="title">我的 👋</view>
+      <view class="subtitle">资料、偏好与数据权利都在这里。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在读取账号信息。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view class="account-summary">
-    <view class="account-mark">投</view>
-    <view>
-      <view class="section-title">邀请制内测账号</view>
-      <view class="muted">已保存 {{resumeCount}} / 3 份简历</view>
+  <view class="section">
+    <view class="section-title group-title">求职资料</view>
+    <view class="list-group">
+      <view
+        class="list-row profile-menu-row"
+        hover-class="profile-menu-row-hover"
+        aria-role="button"
+        aria-label="简历管理"
+        bindtap="openResumes"
+      >
+        <view class="menu-row-content">
+          <view class="menu-icon">📄</view>
+          <view class="list-row-main"><text>简历管理</text><text>核对事实、设置默认简历</text></view>
+          <view class="menu-action">{{resumeCount}} 份 ›</view>
+        </view>
+      </view>
+      <view
+        class="list-row profile-menu-row"
+        hover-class="profile-menu-row-hover"
+        aria-role="button"
+        aria-label="求职偏好"
+        bindtap="openPreferences"
+      >
+        <view class="menu-row-content">
+          <view class="menu-icon">🎯</view>
+          <view class="list-row-main"><text>求职偏好</text><text>远程、到岗时间等长期补充</text></view>
+          <view class="menu-action">编辑 ›</view>
+        </view>
+      </view>
     </view>
   </view>
 
-  <view class="list-surface">
-    <view class="list-item row-between" bindtap="openResumes">
-      <view>
-        <view class="menu-title">简历管理</view>
-        <view class="muted">查看、确认和设置默认简历</view>
+  <view class="section">
+    <view class="section-title group-title">使用情况</view>
+    <view class="list-group">
+      <view class="list-row status-row">
+        <view class="list-row-main"><text>今日生成额度</text><text>北京时间每日零点重置</text></view>
+        <view class="menu-action">剩余 {{remainingQuota}} 次</view>
       </view>
-      <view class="menu-action">打开</view>
-    </view>
-    <view class="list-item row-between" bindtap="openPreferences">
-      <view>
-        <view class="menu-title">求职偏好</view>
-        <view class="muted">最多 500 字自由文本</view>
+      <view class="list-row status-row">
+        <view class="list-row-main"><text>已确认简历</text><text>最多保存 3 份</text></view>
+        <view class="menu-action">{{resumeCount}} / 3</view>
       </view>
-      <view class="menu-action">编辑</view>
-    </view>
-    <view class="list-item row-between" bindtap="showAgreements">
-      <view>
-        <view class="menu-title">协议与隐私</view>
-        <view class="muted">当前同意版本 {{agreementVersion}}</view>
-      </view>
-      <view class="menu-action">查看版本</view>
+      <button wx:if="{{isAdmin}}" class="list-row" bindtap="openAdmin">
+        <view class="list-row-main"><text>管理员工具</text><text>受服务端白名单保护</text></view>
+        <view class="menu-action">进入 ›</view>
+      </button>
     </view>
   </view>
 
-  <view wx:if="{{isAdmin}}" class="surface admin-entry" bindtap="openAdmin">
-    <view class="row-between">
-      <view>
-        <view class="section-title">管理员工具</view>
-        <view class="muted">受服务端白名单保护</view>
+  <view class="section">
+    <view class="section-title group-title">隐私与账号</view>
+    <view class="list-group">
+      <view
+        class="list-row profile-menu-row"
+        hover-class="profile-menu-row-hover"
+        aria-role="button"
+        aria-label="协议与隐私"
+        bindtap="showAgreements"
+      >
+        <view class="menu-row-content">
+          <view class="menu-icon privacy-menu-icon">🔒</view>
+          <view class="list-row-main"><text>协议与隐私</text><text>当前版本 {{agreementVersion}}</text></view>
+          <view class="menu-action">查看 ›</view>
+        </view>
       </view>
-      <view class="menu-action">进入</view>
+      <view
+        class="list-row profile-menu-row danger-row"
+        hover-class="profile-menu-row-hover"
+        aria-role="button"
+        aria-label="删除账号"
+        bindtap="deleteAccount"
+      >
+        <view class="menu-row-content">
+          <view class="menu-icon danger-menu-icon">🗑️</view>
+          <view class="list-row-main"><text>删除账号</text><text>立即停用，并在 24 小时内删除可关联数据</text></view>
+          <view class="danger-action">删除 ›</view>
+        </view>
+      </view>
     </view>
-  </view>
-
-  <view class="danger-zone">
-    <view class="section-title">数据与账号</view>
-    <view class="muted">删除账号不可撤销。确认后立即停用，并应在 24 小时内删除可关联数据。</view>
-    <button class="button button-danger-secondary" bindtap="deleteAccount">删除账号</button>
   </view>
 </view>

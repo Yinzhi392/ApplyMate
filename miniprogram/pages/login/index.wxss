@@ -1,43 +1,175 @@
 .login-page {
   display: flex;
+  position: relative;
+  min-height: 100vh;
+  flex-direction: column;
+  padding-top: 0;
+  overflow: hidden;
+}
+
+.login-content,
+.login-intro,
+.login-form,
+.center-state,
+.login-loading,
+.retry-action {
+  position: relative;
+  z-index: 1;
+}
+
+.login-content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
   flex-direction: column;
   justify-content: center;
+  padding: 48rpx 0 16rpx;
 }
 
-.brand-block {
-  margin-bottom: 56rpx;
+.login-glow {
+  position: absolute;
+  z-index: 0;
+  width: 360rpx;
+  height: 360rpx;
+  border-radius: 50%;
+  pointer-events: none;
 }
 
-.brand-name {
-  color: var(--color-primary);
-  font-size: 24rpx;
-  font-weight: 700;
-  letter-spacing: 4rpx;
+.login-glow-one {
+  top: -120rpx;
+  right: -180rpx;
+  background: rgba(151, 209, 192, 0.22);
 }
 
-.login-panel {
+.login-glow-two {
+  bottom: 80rpx;
+  left: -220rpx;
+  background: rgba(212, 226, 217, 0.3);
+}
+
+.login-intro {
+  padding: 0 4rpx 32rpx;
+}
+
+.login-intro .title {
+  max-width: 620rpx;
+  font-size: 50rpx;
+  letter-spacing: -2rpx;
+  line-height: 1.18;
+}
+
+.login-intro .subtitle {
+  max-width: 650rpx;
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.brand-symbol {
+  width: 56rpx;
+  height: 56rpx;
+  margin-bottom: 44rpx;
+  border: 12rpx solid var(--color-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-22deg);
+}
+
+.login-form {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 24rpx;
   padding: 32rpx;
 }
 
+.identity-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
 .agreement-row {
+  display: flex;
   align-items: flex-start;
-  margin-top: 26rpx;
-  padding: 22rpx 0;
-  border-top: 1rpx solid var(--color-border);
-  font-size: 26rpx;
+  gap: 14rpx;
+  color: var(--color-text-secondary);
+  font-size: 25rpx;
   line-height: 1.65;
 }
 
 .agreement-link {
   color: var(--color-primary);
-  text-decoration: underline;
-  text-underline-offset: 5rpx;
+  font-weight: 650;
 }
 
-.invite-field {
-  margin-top: 26rpx;
+.agreement-complete {
+  color: var(--color-primary-strong);
+  font-size: 25rpx;
 }
 
-.login-action {
-  margin-top: 28rpx;
+.login-action-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-items: stretch;
+}
+
+.login-action-row .login-action {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-self: stretch;
+  flex: 1 1 0%;
+  margin: 0;
+}
+
+.center-state,
+.login-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.center-state {
+  min-height: calc(100vh - 180rpx - env(safe-area-inset-top));
+  justify-content: center;
+  padding: 44rpx 36rpx;
+}
+
+.center-state .subtitle {
+  margin-top: 18rpx;
+}
+
+.success-mark,
+.restricted-mark {
+  display: flex;
+  width: 96rpx;
+  height: 96rpx;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 36rpx;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 52rpx;
+  font-weight: 700;
+}
+
+.restricted-mark {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.center-action,
+.center-warning {
+  margin-top: 32rpx;
+}
+
+.retry-action {
+  margin-top: 24rpx;
 }

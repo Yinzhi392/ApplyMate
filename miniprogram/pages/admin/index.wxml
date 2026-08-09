@@ -1,14 +1,16 @@
-<view class="page">
+<view class="page admin-page">
   <view class="page-header">
-    <view class="pill">受保护入口</view>
-    <view class="title">管理员工具</view>
-    <view class="subtitle">权限由服务端 OpenID 白名单判断，客户端不能声明管理员身份。</view>
+    <view class="page-header-copy">
+      <view class="eyebrow">受保护入口</view>
+      <view class="title">管理员工具</view>
+      <view class="subtitle">服务端根据 OpenID 白名单授权，所有变更都会记录审计原因。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在校验管理员权限。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{authorized}}" class="stats-grid">
+  <view wx:if="{{authorized}}" class="stats-grid glass-surface">
     <view class="stat-item">
       <view class="stat-value">{{userTotal}}</view>
       <view class="stat-label">用户</view>
@@ -23,31 +25,58 @@
     </view>
   </view>
 
-  <view wx:if="{{authorized}}" class="admin-section">
-    <view class="section-title">邀请码</view>
-    <view class="admin-form">
-      <button class="button" bindtap="createInvite">创建邀请码</button>
-      <view wx:if="{{inviteCode}}" class="status">邀请码：{{inviteCode}}</view>
-      <button wx:if="{{inviteId}}" class="button button-secondary" bindtap="revokeInvite">撤销当前邀请码</button>
+  <view wx:if="{{authorized}}" class="section">
+    <view class="section-heading">
+      <view class="section-title">邀请码</view>
+      <view class="muted">邀请制内测</view>
+    </view>
+    <view class="list-group">
+      <button class="list-row" bindtap="createInvite">
+        <view class="list-row-main"><text>创建一个邀请码</text><text>生成后仅在当前页面显示</text></view>
+        <view class="menu-action">创建 ›</view>
+      </button>
+    </view>
+    <view wx:if="{{inviteCode}}" class="invite-result">
+      <view class="field-help">新邀请码</view>
+      <view class="invite-code">{{inviteCode}}</view>
+      <button wx:if="{{inviteId}}" class="button button-secondary" bindtap="revokeInvite">撤销这个邀请码</button>
     </view>
   </view>
 
-  <view wx:if="{{authorized}}" class="admin-section">
-    <view class="section-title">用户与当日额度</view>
-    <view class="admin-form">
-      <input class="input" value="{{targetUserId}}" placeholder="目标用户 ID" bindinput="updateTargetUserId" />
-      <input class="input" type="number" value="{{quotaIncrease}}" placeholder="增加次数" bindinput="updateQuota" />
-      <input class="input" value="{{reason}}" placeholder="必填审计原因" bindinput="updateReason" />
-      <button class="button button-secondary" bindtap="increaseQuota">增加当日临时次数</button>
-      <view class="admin-actions">
-        <button class="button button-quiet" data-enabled="true" bindtap="setUserEnabled">启用用户</button>
-        <button class="button button-danger-secondary" data-enabled="false" bindtap="setUserEnabled">停用用户</button>
+  <view wx:if="{{authorized}}" class="section">
+    <view class="section-heading">
+      <view class="section-title">用户操作</view>
+      <view class="muted">必填审计原因</view>
+    </view>
+    <view class="admin-form surface-panel">
+      <view class="field-group">
+        <label class="field-label" for="target-user">目标用户 ID</label>
+        <input id="target-user" class="input" value="{{targetUserId}}" placeholder="输入用户 ID" bindinput="updateTargetUserId" />
+      </view>
+      <view class="field-group">
+        <label class="field-label" for="audit-reason">审计原因</label>
+        <input id="audit-reason" class="input" value="{{reason}}" placeholder="说明本次调整原因" bindinput="updateReason" />
+      </view>
+      <view class="quota-row">
+        <view class="quota-field">
+          <label class="field-label" for="quota-increase">增加次数</label>
+          <input id="quota-increase" class="input" type="number" value="{{quotaIncrease}}" bindinput="updateQuota" />
+        </view>
+        <button class="button button-secondary quota-action" bindtap="increaseQuota">增加当日额度</button>
+      </view>
+      <view class="admin-actions list-group">
+        <button class="list-row" data-enabled="true" bindtap="setUserEnabled">
+          <view class="list-row-main"><text>启用用户</text><text>恢复账号访问</text></view><view class="menu-action">执行 ›</view>
+        </button>
+        <button class="list-row danger-row" data-enabled="false" bindtap="setUserEnabled">
+          <view class="list-row-main"><text>停用用户</text><text>立即阻止继续使用</text></view><view class="danger-action">执行 ›</view>
+        </button>
       </view>
     </view>
   </view>
 
   <view class="sticky-action">
-    <button wx:if="{{authorized}}" class="button button-secondary" bindtap="loadAdmin">刷新统计</button>
+    <button wx:if="{{authorized}}" class="button button-secondary" bindtap="loadAdmin">刷新数据</button>
     <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadAdmin">重新尝试</button>
   </view>
 </view>

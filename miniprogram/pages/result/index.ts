@@ -1,5 +1,6 @@
 import { countVisibleCharacters } from "../../core/input-rules.js";
 import { createResultView } from "../../core/result-presenter.js";
+import { leaveResult, type ResultExitDestination } from "../../core/result-exit.js";
 import { messageFrom, openPage, showSuccess } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
@@ -21,12 +22,14 @@ Page({
     errorMessage: "",
     feedbackNote: "",
     greetingBody: "",
-    jobTitle: "岗位名称待核对",
+    jobTitle: "该岗位",
+    leaving: false,
     loading: true,
     manualWarnings: [] as Array<{ code?: string; message?: string }>,
     memo: "",
     omittedRequirements: [] as string[],
     rating: "" as "" | "satisfied" | "needs_improvement",
+    savedGreetingBody: "",
     secondaryExpanded: false,
     status: "not_applied" as "not_applied" | "applied",
     visibleCharacters: 0,
@@ -66,6 +69,7 @@ Page({
         memo: view.memo,
         omittedRequirements: view.omittedRequirements,
         rating: response.feedback?.rating ?? "",
+        savedGreetingBody: view.greetingBody,
         status: view.status,
         visibleCharacters: countVisibleCharacters(view.greetingBody),
         warningMessages: view.warningMessages,
@@ -104,35 +108,48 @@ Page({
   },
 
   async saveBody(): Promise<void> {
-    await this.updateApplication({ greetingBody: this.data.greetingBody });
-    showSuccess("修改已保存");
+    const saved = await this.updateApplication({ greetingBody: this.data.greetingBody });
+    if (saved) {
+      this.setData({ savedGreetingBody: this.data.greetingBody });
+      showSuccess("修改已保存");
+    }
   },
 
   async saveMemo(): Promise<void> {
-    await this.updateApplication({ memo: this.data.memo });
-    showSuccess("备忘已保存");
+    const saved = await this.updateApplication({ memo: this.data.memo });
+    if (saved) {
+      showSuccess("备忘已保存");
+    }
   },
 
   async markApplied(): Promise<void> {
-    await this.updateApplication({ status: "applied" });
-    this.setData({ status: "applied" });
-    showSuccess("已标记投递");
+    const saved = await this.updateApplication({ status: "applied" });
+    if (saved) {
+      this.setData({ status: "applied" });
+      showSuccess("已标记投递");
+    }
   },
 
-  async updateApplication(payload: Record<string, unknown>): Promise<void> {
+  async updateApplication(payload: Record<string, unknown>): Promise<boolean> {
     try {
       const response = await runtime().api.write<{
         manualEvaluation: { warnings: Array<{ code?: string; message?: string }> };
       }>("application.update", { applicationId: this.data.applicationId, ...payload });
       this.setData({ manualWarnings: response.manualEvaluation.warnings });
+      return true;
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error) });
+      return false;
     }
   },
 
   async copyBody(): Promise<void> {
     try {
-      await this.updateApplication({ greetingBody: this.data.greetingBody });
+      const saved = await this.updateApplication({ greetingBody: this.data.greetingBody });
+      if (!saved) {
+        return;
+      }
+      this.setData({ savedGreetingBody: this.data.greetingBody });
       const response = await runtime().api.read<{ copyText: string }>("application.get", {
         applicationId: this.data.applicationId,
       });
@@ -152,7 +169,11 @@ Page({
     if (!modal.confirm) {
       return;
     }
-    await this.updateApplication({ greetingBody: this.data.greetingBody });
+    const saved = await this.updateApplication({ greetingBody: this.data.greetingBody });
+    if (!saved) {
+      return;
+    }
+    this.setData({ savedGreetingBody: this.data.greetingBody });
     try {
       const result = await runtime().api.write<{ jobId: string }>("generation.rewrite", {
         applicationId: this.data.applicationId,
@@ -178,6 +199,56 @@ Page({
       showSuccess("反馈已更新");
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error) });
+    }
+  },
+
+  async continueNextJob(): Promise<void> {
+    await this.leave("next_job");
+  },
+
+  async returnHome(): Promise<void> {
+    await this.leave("home");
+  },
+
+  async leave(destination: ResultExitDestination): Promise<void> {
+    if (this.data.leaving) {
+      return;
+    }
+    this.setData({ errorMessage: "", leaving: true });
+    let navigationStarted = false;
+    try {
+      await leaveResult(
+        {
+          currentBody: this.data.greetingBody,
+          destination,
+          savedBody: this.data.savedGreetingBody,
+        },
+        {
+          goHome: async () => {
+            await wx.switchTab({ url: "/pages/home/index" });
+          },
+          goToNextJob: async () => {
+            runtime().setLastJobId("");
+            await wx.reLaunch({ url: "/pages/generation/index?fresh=1" });
+          },
+          persist: async (body) => {
+            const saved = await this.updateApplication({ greetingBody: body });
+            if (!saved) {
+              throw new Error("SAVE_FAILED");
+            }
+            this.setData({ savedGreetingBody: body });
+          },
+        },
+      );
+      navigationStarted = true;
+    } catch (error) {
+      if (!(error instanceof Error && error.message === "SAVE_FAILED")) {
+        this.setData({ errorMessage: messageFrom(error) });
+      }
+    } finally {
+      if (!navigationStarted) {
+        this.setData({ leaving: false });
+      }
     }
   },
 });

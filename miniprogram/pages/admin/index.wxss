@@ -1,17 +1,21 @@
 .stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rpx;
-  overflow: hidden;
-  border: 1rpx solid var(--color-border);
-  border-radius: 18rpx;
-  background: var(--color-border);
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  gap: 20rpx;
+  padding: 26rpx 18rpx;
 }
 
 .stat-item {
-  padding: 24rpx 12rpx;
-  background: var(--color-surface);
+  min-width: 0;
+  flex: 1 1 0%;
+  padding: 4rpx 8rpx;
   text-align: center;
+}
+
+.stat-item + .stat-item {
+  border-left: 1rpx solid var(--color-border);
 }
 
 .stat-value {
@@ -25,22 +29,62 @@
   font-size: 22rpx;
 }
 
-.admin-section {
-  margin-top: 42rpx;
+.menu-action {
+  flex-shrink: 0;
+  color: var(--color-primary);
+  font-size: 25rpx;
 }
 
-.admin-section .section-title {
-  margin-bottom: 18rpx;
+.invite-result {
+  margin-top: 20rpx;
+  padding: 22rpx 24rpx;
+  border-left: 6rpx solid var(--color-primary);
+  background: var(--color-surface);
+}
+
+.invite-code {
+  margin: 8rpx 0 20rpx;
+  font-size: 36rpx;
+  font-weight: 700;
+  letter-spacing: 3rpx;
+}
+
+.quota-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: end;
+  gap: 18rpx;
+  margin-top: 32rpx;
 }
 
 .admin-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+  padding: 28rpx;
+}
+
+.quota-field {
+  min-width: 150rpx;
+  flex: 0 1 180rpx;
+}
+
+.quota-action {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 0%;
+  padding-right: 16rpx;
+  padding-left: 16rpx;
 }
 
 .admin-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14rpx;
+  margin-top: 32rpx;
+}
+
+.danger-row {
+  color: var(--color-danger);
+}
+
+.danger-action {
+  flex-shrink: 0;
+  color: var(--color-danger);
+  font-size: 25rpx;
 }

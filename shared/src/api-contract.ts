@@ -15,7 +15,6 @@ export const API_ACTIONS = [
   "resume.setDefault",
   "resume.delete",
   "generation.create",
-  "generation.confirmJd",
   "generation.rewrite",
   "job.get",
   "application.list",

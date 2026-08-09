@@ -1,35 +1,69 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">今天投哪份？</view>
-    <view class="subtitle">选好岗位信息，生成一段有事实支撑的开场白。</view>
+<view class="page home-page">
+  <view class="home-glow home-glow-one"></view>
+  <view class="home-glow home-glow-two"></view>
+
+  <view class="home-hero glass-surface">
+    <view class="home-hero-header">
+      <view class="page-header-copy">
+        <view class="title">你好，同学 👋</view>
+        <view class="subtitle">准备好后，直接提交一个岗位。</view>
+      </view>
+      <view
+        class="text-action home-manage"
+        hover-class="home-manage-hover"
+        aria-role="button"
+        aria-label="管理简历"
+        bindtap="openResumes"
+      >管理简历</view>
+    </view>
+
+    <view class="home-metrics">
+      <view class="metric metric-resume">
+        <view class="metric-label">当前简历</view>
+        <view class="metric-value">{{defaultResumeName}}</view>
+      </view>
+      <view class="metric metric-quota">
+        <view class="metric-label">今日剩余</view>
+        <view class="metric-value">{{remainingQuota}} / 5</view>
+      </view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在同步你的资料。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，已保留当前页面。你可以重新尝试。</view>
+  <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，当前页面已保留。你可以重新尝试。</view>
 
-  <view class="home-summary">
-    <view class="summary-item">
-      <view class="summary-label">当前简历</view>
-      <view class="summary-value summary-value-name">{{defaultResumeName}}</view>
-      <button class="text-action" bindtap="openResumes">管理简历</button>
-    </view>
-    <view class="summary-divider"></view>
-    <view class="summary-item summary-item-quota">
-      <view class="summary-label">今日剩余</view>
-      <view class="quota-line"><text class="quota-number">{{remainingQuota}}</text><text class="quota-unit">次</text></view>
-      <view class="summary-help">北京时间次日恢复</view>
-    </view>
-  </view>
-
-  <view class="home-action">
-    <view class="section-title">提交岗位信息</view>
-    <view class="muted">支持一次添加最多 5 张截图，也可以粘贴岗位文字。</view>
-    <button class="button" disabled="{{!generationEnabled}}" bindtap="openGeneration">{{primaryActionLabel}}</button>
-    <view wx:if="{{pauseTitle}}" class="warning">
-      <view class="message-title">{{pauseTitle}}</view>
+  <view class="home-launch-section">
+    <button class="primary-launch" disabled="{{primaryActionDisabled}}" bindtap="openGeneration">
+      <view class="launch-copy">
+        <view class="launch-title">{{primaryActionLabel}}</view>
+        <view class="launch-description">{{primaryActionDescription}}</view>
+      </view>
+      <view class="launch-arrow">›</view>
+    </button>
+    <view wx:if="{{pauseTitle}}" class="warning launch-warning">
+      <view class="section-title">{{pauseTitle}}</view>
       <view>{{pauseDescription}}</view>
     </view>
   </view>
-  <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadHome">重新尝试</button>
+
+  <view class="home-journey glass-surface">
+    <view class="journey-heading">每次投递，都有据可查</view>
+    <view class="journey-grid">
+      <view class="journey-item">
+        <view class="journey-index">01</view>
+        <view class="journey-copy"><view class="fact-title">简历事实</view><view class="muted">使用已确认的经历</view></view>
+      </view>
+      <view class="journey-item">
+        <view class="journey-index">02</view>
+        <view class="journey-copy"><view class="fact-title">岗位要求</view><view class="muted">识别职责与技能</view></view>
+      </view>
+      <view class="journey-item">
+        <view class="journey-index">03</view>
+        <view class="journey-copy"><view class="fact-title">专属开场</view><view class="muted">逐项核对匹配依据</view></view>
+      </view>
+    </view>
+  </view>
+
+  <button wx:if="{{errorMessage}}" class="button button-secondary retry-button" bindtap="loadHome">重新尝试</button>
 </view>

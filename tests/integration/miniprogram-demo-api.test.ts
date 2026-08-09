@@ -74,35 +74,31 @@ describe("mini-program local UI gateway", () => {
     });
   });
 
-  it("supports JD confirmation, result history, editing, rewrite, copy and feedback", async () => {
+  it("generates directly from JD, then supports history, editing, rewrite, copy and feedback", async () => {
     const client = createDemoApiClient({ activated: true, withConfirmedResume: true });
     const created = await client.write<{ jobId: string }>("generation.create", {
       resumeId: "resume_demo0001",
       inputType: "text",
-      text: "[待确认] 负责 AI 产品需求分析，支持远程实习。",
-    });
-    const waiting = await client.read<{ status: string; result: { jobDescription: unknown } }>(
-      "job.get",
-      { jobId: created.jobId },
-    );
-    expect(waiting.status).toBe("awaiting_user_confirmation");
-
-    await client.write("generation.confirmJd", {
-      jobId: created.jobId,
-      jobDescription: {
-        jobTitle: { fieldId: "jd_job_title", text: "AI 产品实习生", confidence: 1 },
-        responsibilities: [{ fieldId: "jd_responsibility", text: "负责产品需求分析", confidence: 1 }],
-        hardSkills: [],
-        experienceEducation: [],
-        locationWorkMode: [{ fieldId: "jd_work_mode", text: "支持远程", confidence: 1 }],
-        availabilityDuration: [],
-      },
+      text: "负责 AI 产品需求分析，支持远程实习。",
     });
     const succeeded = await client.read<{ status: string; result: { applicationId: string } }>(
       "job.get",
       { jobId: created.jobId },
     );
     expect(succeeded.status).toBe("succeeded");
+
+    const second = await client.write<{ jobId: string }>("generation.create", {
+      resumeId: "resume_demo0001",
+      inputType: "text",
+      text: "负责用户研究与需求文档，支持每周四天实习。",
+    });
+    await expect(client.read("job.get", { jobId: second.jobId })).resolves.toMatchObject({
+      kind: "greeting_generate",
+      status: "succeeded",
+    });
+    await expect(client.read("resume.list", {})).resolves.toMatchObject({
+      resumes: [expect.objectContaining({ status: "confirmed" })],
+    });
 
     const applicationId = succeeded.result.applicationId;
     const editedBody = "您好，我希望应聘贵司的 AI 产品实习生岗位。我的项目经历与岗位需求相关，请您核对具体内容。";
@@ -143,9 +139,14 @@ describe("mini-program local UI gateway", () => {
       rating: "needs_improvement",
       note: "希望更简洁",
     });
-    await expect(client.read<{ applications: unknown[] }>("application.list", {})).resolves.toMatchObject({
-      applications: [expect.objectContaining({ applicationId })],
-    });
+    const applications = await client.read<{ applications: Array<{ applicationId: string }> }>(
+      "application.list",
+      {},
+    );
+    expect(applications.applications).toHaveLength(2);
+    expect(applications.applications).toEqual(
+      expect.arrayContaining([expect.objectContaining({ applicationId })]),
+    );
   });
 
   it("implements irreversible account deletion confirmation for the UI", async () => {

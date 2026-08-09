@@ -5,6 +5,7 @@ const root = process.cwd();
 const ignoredDirectories = new Set([".git", ".worktrees", "coverage", "dist", "node_modules"]);
 const textExtensions = new Set([
   ".css",
+  ".html",
   ".js",
   ".json",
   ".md",
@@ -17,6 +18,7 @@ const textExtensions = new Set([
   ".yml",
 ]);
 const explicitTextFiles = new Set([".env.example", ".gitignore"]);
+const developerToolFiles = new Set(["project.config.json", "project.private.config.json"]);
 const failures = [];
 
 function collectFiles(directory) {
@@ -45,6 +47,9 @@ function collectFiles(directory) {
 
 for (const absolutePath of collectFiles(root)) {
   const filePath = relative(root, absolutePath);
+  if (developerToolFiles.has(filePath)) {
+    continue;
+  }
   const content = readFileSync(absolutePath, "utf8");
 
   if (content.startsWith("\uFEFF")) {
@@ -83,4 +88,3 @@ if (failures.length > 0) {
 } else {
   console.log("Format check passed.");
 }
-

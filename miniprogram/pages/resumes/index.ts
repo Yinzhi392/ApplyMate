@@ -1,5 +1,6 @@
 import { messageFrom, openPage, showSuccess } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
+import { createResumeActions, type ResumeActionType } from "../../core/resume-actions.js";
 
 interface ResumeRecord {
   isDefault: boolean;
@@ -7,6 +8,16 @@ interface ResumeRecord {
   profile: { name?: string };
   resumeId: string;
   status: "awaiting_confirmation" | "confirmed";
+}
+
+function isActionSheetCancel(error: unknown): boolean {
+  if (error instanceof Error) {
+    return /cancel/u.test(error.message);
+  }
+  if (typeof error === "object" && error !== null && "errMsg" in error) {
+    return /cancel/u.test(String(error.errMsg));
+  }
+  return false;
 }
 
 Page({
@@ -41,16 +52,15 @@ Page({
     openPage("/pages/resume-upload/index");
   },
 
-  continueConfirm(event: WechatMiniprogram.BaseEvent): void {
-    const jobId = String(event.currentTarget.dataset.jobId ?? "");
+  continueConfirmation(jobId: string): void {
     runtime().setLastJobId(jobId);
     openPage(`/pages/job/index?jobId=${jobId}`);
   },
 
-  async setDefault(event: WechatMiniprogram.BaseEvent): Promise<void> {
+  async setDefaultResume(resumeId: string): Promise<void> {
     try {
       await runtime().api.write("resume.setDefault", {
-        resumeId: String(event.currentTarget.dataset.resumeId ?? ""),
+        resumeId,
       });
       showSuccess("已设为默认");
       await this.loadResumes();
@@ -59,8 +69,7 @@ Page({
     }
   },
 
-  async deleteResume(event: WechatMiniprogram.BaseEvent): Promise<void> {
-    const resumeId = String(event.currentTarget.dataset.resumeId ?? "");
+  async deleteResumeById(resumeId: string): Promise<void> {
     const modal = await wx.showModal({
       title: "删除这份简历？",
       content: "既有投递记录会保留生成时的脱敏事实快照。",
@@ -76,5 +85,45 @@ Page({
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error) });
     }
+  },
+
+  async openResumeActions(event: WechatMiniprogram.BaseEvent): Promise<void> {
+    const index = Number(event.currentTarget.dataset.index);
+    const resume = this.data.resumes[index];
+    if (resume === undefined) {
+      return;
+    }
+    const actions = createResumeActions(resume);
+    try {
+      const selection = await wx.showActionSheet({
+        alertText: resume.name,
+        itemList: actions.map(({ label }) => label),
+      });
+      const action = actions[selection.tapIndex];
+      if (action === undefined) {
+        return;
+      }
+      await this.runResumeAction(action.type, resume);
+    } catch (error) {
+      if (isActionSheetCancel(error)) {
+        return;
+      }
+      this.setData({ errorMessage: messageFrom(error) });
+    }
+  },
+
+  async runResumeAction(
+    type: ResumeActionType,
+    resume: ResumeRecord,
+  ): Promise<void> {
+    if (type === "continue_confirmation") {
+      this.continueConfirmation(resume.jobId);
+      return;
+    }
+    if (type === "set_default") {
+      await this.setDefaultResume(resume.resumeId);
+      return;
+    }
+    await this.deleteResumeById(resume.resumeId);
   },
 });

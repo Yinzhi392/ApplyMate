@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryIdentityRepository,
+  InMemoryQuotaRepository,
+  QuotaService,
+  ResourceGateService,
   createIdentityAccessApi,
   hashTrustedOpenId,
 } from "../../cloudfunctions/api/src/index.js";
@@ -122,5 +125,40 @@ describe("auth.status and user.get", () => {
     });
     expect(JSON.stringify(response)).not.toContain("identityHash");
     expect(JSON.stringify(response)).not.toContain("wx_synthetic_user_a");
+  });
+
+  it("returns the current daily quota and free-resource pause state for the client", async () => {
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const quotas = new QuotaService(new InMemoryQuotaRepository());
+    const resourceGate = new ResourceGateService({
+      ocr: true,
+      model: false,
+      compute_storage: true,
+    });
+    const api = createIdentityAccessApi({
+      repository: new InMemoryIdentityRepository(),
+      quotas,
+      resourceGate: {
+        service: resourceGate,
+        resolveRequirements: () => [],
+      },
+      currentVersions,
+      adminOpenIds: [],
+      now: () => now,
+      readCloudBaseContext: () => ({ OPENID: "wx_synthetic_quota_user" }),
+    });
+    const userResponse = await api({ action: "user.get", payload: {} });
+    const userId = (userResponse as { data?: { user?: { userId?: string } } }).data?.user?.userId ?? "";
+    await quotas.reserve(userId, "quota_identity_status", now);
+
+    await expect(api({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          remainingQuota: 4,
+          resourcePauseReason: "模型免费额度已暂停",
+        },
+      },
+    });
   });
 });

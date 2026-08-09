@@ -26,11 +26,7 @@ import type { UserRecord } from "./identity-domain.js";
 import type { IdentityRepository } from "./identity-repository.js";
 import type { IdempotencyService } from "./idempotency-service.js";
 import type { ApplicationService } from "./application-service.js";
-import {
-  GenerationConfirmJdPayloadSchema,
-  GenerationCreatePayloadSchema,
-} from "./generation-domain.js";
-import type { GenerationConfirmationService } from "./generation-confirmation-service.js";
+import { GenerationCreatePayloadSchema } from "./generation-domain.js";
 import { GenerationRewritePayloadSchema } from "./generation-rewrite-domain.js";
 import type { GenerationRewriteWorkflowService } from "./generation-rewrite-workflow-service.js";
 import type { GenerationWorkflowService } from "./generation-workflow-service.js";
@@ -127,7 +123,6 @@ export interface IdentityAccessApiDependencies {
   confirmations?: ResumeConfirmationService;
   management?: ResumeManagementService;
   generation?: GenerationWorkflowService;
-  generationConfirmation?: GenerationConfirmationService;
   rewrite?: GenerationRewriteWorkflowService;
   applications?: ApplicationService;
   feedback?: FeedbackService;
@@ -278,6 +273,15 @@ export function createIdentityAccessApi(
       return invalidRequest();
     }
     const user = await currentUser(context);
+    const usage = dependencies.quotas === undefined
+      ? undefined
+      : await dependencies.quotas.getUsage(user.userId, dependencies.now());
+    const unavailable = dependencies.resourceGate?.service.unavailableResources() ?? [];
+    const resourceLabels: Record<(typeof unavailable)[number], string> = {
+      ocr: "OCR",
+      model: "模型",
+      compute_storage: "计算或存储",
+    };
     return success({
         accessState: accessState(user, agreements, isAdmin(user)),
         user: {
@@ -288,6 +292,10 @@ export function createIdentityAccessApi(
           preferenceText: user.preferenceText,
           preferenceFacts: user.preferenceFacts,
           isAdmin: isAdmin(user),
+          remainingQuota: usage?.remaining ?? 5,
+          resourcePauseReason: unavailable.length === 0
+            ? ""
+            : `${unavailable.map((resource) => resourceLabels[resource]).join("、")}免费额度已暂停`,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
@@ -650,28 +658,6 @@ export function createIdentityAccessApi(
           user.userId,
           user.preferenceFacts,
           parsed.data,
-          dependencies.now(),
-        ),
-      );
-    });
-  }
-
-  const generationConfirmation = dependencies.generationConfirmation;
-  if (generationConfirmation !== undefined) {
-    registry.register("generation.confirmJd", async (payload, context) => {
-      const parsed = GenerationConfirmJdPayloadSchema.safeParse(payload);
-      if (!parsed.success) {
-        return invalidRequest();
-      }
-      const user = await currentUser(context);
-      assertEnabled(user, "generation.confirmJd");
-      agreements.assertActionAgreement(user, "generation.confirmJd");
-      assertActivated(user);
-      return success(
-        await generationConfirmation.confirm(
-          user.userId,
-          parsed.data.jobId,
-          parsed.data.jobDescription,
           dependencies.now(),
         ),
       );

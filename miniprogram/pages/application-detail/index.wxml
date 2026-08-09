@@ -1,29 +1,45 @@
 <view class="page">
-  <view class="page-header">
-    <view class="muted">{{companyName}}</view>
-    <view class="title">{{jobTitle}}</view>
+  <view class="page-header detail-header">
+    <view class="page-header-copy">
+      <view class="eyebrow">{{companyName}}</view>
+      <view class="title">{{jobTitle}}</view>
+      <view class="subtitle">记录保存生成当时的脱敏事实与岗位快照。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在读取记录详情。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}">
-    <view class="detail-meta">
-      <view class="section-title">开场白快照</view>
+  <block wx:if="{{!loading}}">
+    <view class="section detail-status surface-panel">
+      <view><view class="section-title">投递状态</view><view wx:if="{{updatedAt}}" class="field-help">更新于 {{updatedAt}}</view></view>
       <view class="pill">{{statusLabel}}</view>
     </view>
-    <view class="greeting-snapshot">{{greetingBody}}</view>
-    <view class="safe-note">复制内容包含 AI 标识。</view>
 
-    <view wx:if="{{memo}}" class="memo-section">
-      <view class="section-title">备忘</view>
-      <view>{{memo}}</view>
+    <view class="section">
+      <view class="section-heading"><view class="section-title">开场白快照</view></view>
+      <view class="greeting-snapshot glass-surface">{{greetingBody}}</view>
+      <view class="field-help snapshot-note">复制内容会包含 AI 标识。</view>
     </view>
-  </view>
 
-  <view class="sticky-action">
-    <button class="button" bindtap="openResult">编辑、复制与反馈</button>
-    <button class="button button-danger-secondary" bindtap="deleteRecord">删除记录</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadDetail">重新尝试</button>
-  </view>
+    <view wx:if="{{sourceTexts.length}}" class="section">
+      <view class="section-heading"><view class="section-title">当时的匹配来源</view><view class="muted">{{sourceTexts.length}} 项</view></view>
+      <view class="list-group">
+        <view wx:for="{{sourceTexts}}" wx:key="*this" class="source-row"><view class="source-dot"></view><view>{{item}}</view></view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-heading"><view class="section-title">备忘</view></view>
+      <view wx:if="{{memo}}" class="detail-memo">{{memo}}</view>
+      <view wx:else class="muted">暂时没有备忘。</view>
+    </view>
+
+    <view class="section detail-actions">
+      <button class="button" bindtap="openResult">编辑、复制与反馈</button>
+      <button class="button button-danger-secondary" bindtap="deleteRecord">删除这条记录</button>
+    </view>
+  </block>
+
+  <button wx:if="{{errorMessage}}" class="button button-secondary retry-button" bindtap="loadDetail">重新尝试</button>
 </view>

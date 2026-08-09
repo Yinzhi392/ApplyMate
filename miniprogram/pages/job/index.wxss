@@ -1,40 +1,77 @@
-.job-stage {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 480rpx;
-  padding: 40rpx 32rpx;
-  border: 1rpx solid var(--color-border);
-  border-radius: 22rpx;
-  background: var(--color-surface);
-  text-align: center;
+.job-header {
+  padding-bottom: 28rpx;
+  border-bottom: 1rpx solid var(--color-border);
 }
 
-.progress-line {
-  width: 180rpx;
-  height: 8rpx;
-  margin: 0 auto 30rpx;
+.job-progress {
+  padding: 32rpx 30rpx;
+  border-color: var(--color-glass-border);
+  border-radius: 28rpx;
+  background: var(--color-glass-surface);
+}
+
+.progress-track {
+  height: 12rpx;
   overflow: hidden;
-  border-radius: 4rpx;
-  background: #dfe6e2;
+  border-radius: 999rpx;
+  background: var(--color-surface-muted);
 }
 
-.progress-line::after {
-  display: block;
-  width: 58%;
+.progress-value {
   height: 100%;
   border-radius: inherit;
   background: var(--color-primary);
+}
+
+.progress-copy {
+  margin-top: 18rpx;
+}
+
+.step-list {
+  position: relative;
+  padding: 18rpx 26rpx;
+}
+
+.step-list::before {
+  position: absolute;
+  top: 30rpx;
+  bottom: 30rpx;
+  left: 21rpx;
+  width: 2rpx;
+  background: var(--color-border-strong);
   content: "";
 }
 
-.job-status {
-  font-size: 38rpx;
-  font-weight: 680;
+.step {
+  position: relative;
+  display: flex;
+  min-height: 88rpx;
+  align-items: center;
+  gap: 20rpx;
+  color: var(--color-text-secondary);
 }
 
-.job-help {
-  margin-top: 12rpx;
-  color: var(--color-text-secondary);
-  font-size: 26rpx;
+.step-dot {
+  z-index: 1;
+  display: flex;
+  width: 44rpx;
+  height: 44rpx;
+  flex: 0 0 44rpx;
+  align-items: center;
+  justify-content: center;
+  border: 5rpx solid rgba(251, 252, 250, 0.94);
+  border-radius: 50%;
+  background: var(--color-surface-muted);
+  font-size: 22rpx;
+}
+
+.step.is-done,
+.step.is-current {
+  color: var(--color-text);
+}
+
+.step.is-done .step-dot,
+.step.is-current .step-dot {
+  background: var(--color-primary);
+  color: #ffffff;
 }

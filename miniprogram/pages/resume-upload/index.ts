@@ -7,7 +7,7 @@ import { messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
-type RadioEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
+type UploadInputType = "pdf" | "docx" | "images";
 
 Page({
   data: {
@@ -19,12 +19,17 @@ Page({
     selectedName: "",
     selectedSize: 0,
     text: "",
+    uploadInputType: "pdf" as UploadInputType,
   },
 
-  changeInputType(event: RadioEvent): void {
-    const value = event.detail.value;
-    if (value === "pdf" || value === "docx" || value === "images" || value === "text") {
-      this.setData({ errorMessage: "", inputType: value });
+  changeResumeMode(event: WechatMiniprogram.BaseEvent): void {
+    const mode = String(event.currentTarget.dataset.mode);
+    if (mode === "text") {
+      this.setData({ errorMessage: "", inputType: "text" });
+      return;
+    }
+    if (mode === "upload") {
+      this.setData({ errorMessage: "", inputType: this.data.uploadInputType });
     }
   },
 
@@ -44,17 +49,22 @@ Page({
         this.setData({ errorMessage: validation.message });
         return;
       }
-      if (validation.kind !== this.data.inputType) {
-        this.setData({ errorMessage: `当前选择的是 ${this.data.inputType.toUpperCase()} 输入方式，请选择对应文件。` });
+      if (validation.kind === undefined) {
+        this.setData({ errorMessage: "无法识别文件类型，请重新选择 PDF 或 DOCX。" });
         return;
       }
       this.setData({
         documentPath: selected.path,
         errorMessage: "",
+        inputType: validation.kind,
         selectedName: selected.name,
         selectedSize: selected.size,
+        uploadInputType: validation.kind,
       });
     } catch (error) {
+      if (error instanceof Error && /cancel/u.test(error.message)) {
+        return;
+      }
       this.setData({ errorMessage: messageFrom(error) });
     }
   },
@@ -68,8 +78,11 @@ Page({
         this.setData({ errorMessage: validation.message });
         return;
       }
-      this.setData({ errorMessage: "", images });
+      this.setData({ errorMessage: "", images, inputType: "images", uploadInputType: "images" });
     } catch (error) {
+      if (error instanceof Error && /cancel/u.test(error.message)) {
+        return;
+      }
       this.setData({ errorMessage: messageFrom(error) });
     }
   },

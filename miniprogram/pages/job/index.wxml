@@ -1,20 +1,29 @@
-<view class="page">
-  <view class="page-header">
-    <view class="title">任务进度</view>
-    <view class="subtitle">离开页面不会取消任务，回到这里可以继续查询。</view>
+<view class="page page-with-fixed-action">
+  <view class="page-header job-header">
+    <view class="page-header-copy">
+      <view class="title">{{title}}</view>
+      <view class="subtitle">{{subtitle}}</view>
+    </view>
   </view>
 
-  <view class="job-stage">
-    <view wx:if="{{loading}}" class="progress-line"></view>
-    <view class="job-status">{{statusLabel}}</view>
-    <view wx:if="{{loading}}" class="job-help">加载中，正在查询后台任务。</view>
-    <view wx:if="{{!loading && !errorMessage}}" class="job-help">任务状态已同步</view>
-    <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-    <view wx:if="{{weakNetwork}}" class="warning">网络连接不稳定，任务仍可能在后台继续。请稍后重新尝试。</view>
+  <view class="section job-progress glass-surface">
+    <view class="section-heading">
+      <view class="section-title">{{statusLabel}}</view>
+      <view class="muted">任务可恢复</view>
+    </view>
+    <view class="progress-track"><view class="progress-value" style="width: {{progress}}%;"></view></view>
+    <view wx:if="{{loading}}" class="field-help progress-copy">加载中，正在查询任务进度。</view>
+    <view wx:elif="{{!errorMessage}}" class="field-help progress-copy">状态已同步，页面离开后任务仍会继续。</view>
   </view>
 
-  <view class="sticky-action">
+  <view class="section step-list surface-panel">
+    <view wx:for="{{stepItems}}" wx:key="label" class="step {{item.state}}"><view class="step-dot">{{item.dot}}</view><view>{{item.label}}</view></view>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
+  <view wx:if="{{weakNetwork}}" class="warning section">网络连接不稳定，任务可能仍在后台继续。稍后刷新不会重复扣次。</view>
+
+  <view class="fixed-action">
     <button class="button" disabled="{{loading}}" bindtap="refresh">刷新进度</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="refresh">重新尝试</button>
   </view>
 </view>

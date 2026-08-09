@@ -17,6 +17,56 @@ export interface ClientJob {
   error?: { code: string; message: string; retryable: boolean };
 }
 
+export interface JobProgressView {
+  activeStep: number;
+  progress: number;
+  steps: string[];
+  subtitle: string;
+  title: string;
+}
+
+const STATUS_PROGRESS: Record<ClientJobStatus, number> = {
+  queued: 12,
+  ocr: 30,
+  parsing: 52,
+  awaiting_user_confirmation: 94,
+  generating: 76,
+  validating: 90,
+  succeeded: 100,
+  failed: 100,
+};
+
+export function createJobProgressView(
+  kind: ClientJob["kind"],
+  status: ClientJobStatus,
+): JobProgressView {
+  if (kind === "resume_parse") {
+    return {
+      activeStep: status === "queued" || status === "ocr" ? 0 : status === "parsing" ? 1 : 2,
+      progress: STATUS_PROGRESS[status],
+      steps: ["读取简历内容", "识别并整理个人事实", "准备一次性资料核对"],
+      subtitle: "解析完成后，只需核对一次个人资料。",
+      title: "正在解析简历",
+    };
+  }
+  if (kind === "greeting_rewrite") {
+    return {
+      activeStep: status === "queued" || status === "parsing" ? 0 : status === "generating" ? 1 : 2,
+      progress: STATUS_PROGRESS[status],
+      steps: ["读取最新正文", "按照要求改写", "重新检查事实来源与格式"],
+      subtitle: "基于你最新编辑的正文改写，并重新检查事实。",
+      title: "正在改写开场白",
+    };
+  }
+  return {
+    activeStep: status === "queued" || status === "ocr" ? 0 : status === "parsing" ? 1 : status === "generating" ? 2 : 3,
+    progress: STATUS_PROGRESS[status],
+    steps: ["读取岗位输入", "识别岗位职责与要求", "匹配简历事实并生成", "检查事实来源与格式"],
+    subtitle: "岗位识别后会直接生成，无需再次确认。",
+    title: "正在生成开场白",
+  };
+}
+
 export class JobPollingError extends Error {
   constructor(
     public readonly code: "POLLING_PAUSED" | "JOB_FAILED",

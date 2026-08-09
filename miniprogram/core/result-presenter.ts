@@ -52,8 +52,10 @@ const FACT_LABELS: Record<string, string> = {
 
 const WARNING_MESSAGES: Record<string, string> = {
   COMPANY_NAME_MISSING: "未识别到公司名，正文已使用“贵司”。",
-  LOW_CONFIDENCE_FIELD: "部分岗位字段识别不确定，请核对。",
-  JOB_TITLE_REQUIRED: "请补充岗位名称。",
+  JOB_TITLE_MISSING: "未可靠识别岗位名，正文已使用“该岗位”。",
+  LOW_CONFIDENCE_FIELD_OMITTED: "部分低置信岗位字段已省略，请核对结果。",
+  LOW_CONFIDENCE_FIELD: "部分低置信岗位字段已省略，请核对结果。",
+  JOB_TITLE_REQUIRED: "未可靠识别岗位名，正文已使用“该岗位”。",
 };
 
 function jobFields(jobDescription: JobDescriptionSnapshot): JobField[] {
@@ -80,7 +82,7 @@ export function createResultView(input: ResultInput): ResultInput & {
   return {
     ...input,
     companyDisplayName: input.jdSnapshot.companyName?.text ?? "贵司",
-    jobTitle: input.jdSnapshot.jobTitle?.text ?? "岗位名称待核对",
+    jobTitle: input.jdSnapshot.jobTitle?.text ?? "该岗位",
     claims: input.evidence.map((claim) => ({
       claimId: claim.claimId,
       text: claim.text,

@@ -26,7 +26,6 @@ export interface GenerationPreparationProcessor {
 
 export type GenerationPreparationOutcome =
   | { status: "ready"; record: GenerationRecord }
-  | { status: "awaiting_confirmation"; record: GenerationRecord }
   | { status: "failed" };
 
 class GenerationDeadlineError extends Error {
@@ -143,45 +142,41 @@ export class GenerationPreparationService {
         externalDeadline,
       ]);
       const evaluation = evaluateJobDescription(parsed.jobDescription);
+      if (evaluation.status === "insufficient_content") {
+        await this.jobs.finishFailed(
+          jobId,
+          {
+            code: "JD_CONTENT_INSUFFICIENT",
+            message: "岗位内容不足，请重新提交更完整的职责或要求。",
+            retryable: true,
+          },
+          this.now(),
+        );
+        const failedRecord: GenerationRecord = {
+          ...record,
+          temporaryFileIds: remainingTemporaryFileIds,
+          status: "failed",
+          extractedMaskedText: parsed.maskedText,
+          jobDescription: evaluation.jobDescription,
+          warnings: evaluation.warnings,
+          updatedAt: this.now().toISOString(),
+        };
+        delete failedRecord.sourceText;
+        await this.generations.save(failedRecord);
+        return { status: "failed" };
+      }
       const updated: GenerationRecord = {
         ...record,
         temporaryFileIds: remainingTemporaryFileIds,
-        status:
-          evaluation.status === "ready"
-            ? "generating"
-            : "awaiting_confirmation",
+        status: "generating",
         extractedMaskedText: parsed.maskedText,
-        jobDescription: parsed.jobDescription,
-        pendingFieldIds: evaluation.confirmFieldIds,
+        jobDescription: evaluation.jobDescription,
         warnings: evaluation.warnings,
         updatedAt: this.now().toISOString(),
       };
       delete updated.sourceText;
       await this.generations.save(updated);
 
-      if (evaluation.status === "awaiting_user_confirmation") {
-        await this.jobs.transitionJob(
-          jobId,
-          "awaiting_user_confirmation",
-          this.now(),
-          {
-            clearClaim: true,
-            result: {
-              jobDescription: parsed.jobDescription,
-              pendingFieldIds:
-                parsed.jobDescription.jobTitle === undefined
-                  ? ["jobTitle", ...evaluation.confirmFieldIds]
-                  : evaluation.confirmFieldIds,
-              warnings: evaluation.warnings,
-              privacy: {
-                maskedTypes: parsed.maskedTypes,
-                maskedCount: parsed.maskedCount,
-              },
-            },
-          },
-        );
-        return { status: "awaiting_confirmation", record: updated };
-      }
       return { status: "ready", record: updated };
     } catch (error) {
       const deadlineReached = error instanceof GenerationDeadlineError;

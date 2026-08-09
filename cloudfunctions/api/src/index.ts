@@ -16,7 +16,6 @@ export * from "./generation-rewrite-domain.js";
 export * from "./generation-rewrite-execution-service.js";
 export * from "./generation-rewrite-repository.js";
 export * from "./generation-rewrite-workflow-service.js";
-export * from "./generation-confirmation-service.js";
 export * from "./generation-preparation-service.js";
 export * from "./generation-repository.js";
 export * from "./generation-workflow-service.js";

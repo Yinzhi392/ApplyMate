@@ -4,6 +4,7 @@ import { countVisibleCharacters } from "./text.js";
 
 export const JOB_FIELD_CONFIDENCE_THRESHOLD = 0.8;
 export const COMPANY_NAME_FALLBACK = "贵司";
+export const JOB_TITLE_FALLBACK = "该岗位";
 
 export const JobFieldIdSchema = z
   .string()
@@ -64,44 +65,82 @@ export const JobDescriptionSchema = JobDescriptionObjectSchema.superRefine(
 export type JobDescription = z.infer<typeof JobDescriptionSchema>;
 
 export interface JobDescriptionEvaluation {
-  status: "ready" | "awaiting_user_confirmation";
+  status: "ready" | "insufficient_content";
   companyDisplayName: string;
-  confirmFieldIds: string[];
-  warnings: Array<"JOB_TITLE_REQUIRED" | "LOW_CONFIDENCE_FIELD" | "COMPANY_NAME_MISSING">;
+  jobDescription: JobDescription;
+  omittedFieldIds: string[];
+  warnings: Array<
+    | "JOB_TITLE_MISSING"
+    | "LOW_CONFIDENCE_FIELD_OMITTED"
+    | "COMPANY_NAME_MISSING"
+    | "JD_CONTENT_INSUFFICIENT"
+  >;
 }
 
 export function evaluateJobDescription(input: unknown): JobDescriptionEvaluation {
   const jobDescription = JobDescriptionSchema.parse(input);
   const warnings: JobDescriptionEvaluation["warnings"] = [];
-  const criticalFields = [
-    jobDescription.jobTitle,
-    ...jobDescription.responsibilities,
-    ...jobDescription.hardSkills,
-    ...jobDescription.experienceEducation,
-    ...jobDescription.locationWorkMode,
-    ...jobDescription.availabilityDuration,
-  ].filter((field) => field !== undefined);
-  const confirmFieldIds = criticalFields
-    .filter(({ confidence }) => confidence < JOB_FIELD_CONFIDENCE_THRESHOLD)
-    .map(({ fieldId }) => fieldId);
+  const omittedFieldIds: string[] = [];
+  const reliable = <T extends { confidence: number; fieldId: string }>(fields: T[]): T[] =>
+    fields.filter((field) => {
+      if (field.confidence >= JOB_FIELD_CONFIDENCE_THRESHOLD) {
+        return true;
+      }
+      omittedFieldIds.push(field.fieldId);
+      return false;
+    });
+  const reliableTitle = jobDescription.jobTitle?.confidence !== undefined &&
+      jobDescription.jobTitle.confidence >= JOB_FIELD_CONFIDENCE_THRESHOLD
+    ? jobDescription.jobTitle
+    : undefined;
+  if (jobDescription.jobTitle !== undefined && reliableTitle === undefined) {
+    omittedFieldIds.push(jobDescription.jobTitle.fieldId);
+  }
+  const reliableCompany = jobDescription.companyName?.confidence !== undefined &&
+      jobDescription.companyName.confidence >= JOB_FIELD_CONFIDENCE_THRESHOLD
+    ? jobDescription.companyName
+    : undefined;
+  if (jobDescription.companyName !== undefined && reliableCompany === undefined) {
+    omittedFieldIds.push(jobDescription.companyName.fieldId);
+  }
+  const normalized: JobDescription = {
+    jobTitle: reliableTitle ?? {
+      fieldId: "jd_job_title_fallback",
+      text: JOB_TITLE_FALLBACK,
+      confidence: 1,
+    },
+    ...(reliableCompany === undefined ? {} : { companyName: reliableCompany }),
+    responsibilities: reliable(jobDescription.responsibilities),
+    hardSkills: reliable(jobDescription.hardSkills),
+    experienceEducation: reliable(jobDescription.experienceEducation),
+    locationWorkMode: reliable(jobDescription.locationWorkMode),
+    availabilityDuration: reliable(jobDescription.availabilityDuration),
+  };
 
-  if (jobDescription.jobTitle === undefined) {
-    warnings.push("JOB_TITLE_REQUIRED");
+  if (reliableTitle === undefined) {
+    warnings.push("JOB_TITLE_MISSING");
   }
-  if (confirmFieldIds.length > 0) {
-    warnings.push("LOW_CONFIDENCE_FIELD");
+  if (omittedFieldIds.length > 0) {
+    warnings.push("LOW_CONFIDENCE_FIELD_OMITTED");
   }
-  if (jobDescription.companyName === undefined) {
+  if (reliableCompany === undefined) {
     warnings.push("COMPANY_NAME_MISSING");
+  }
+  const usefulFieldCount =
+    normalized.responsibilities.length +
+    normalized.hardSkills.length +
+    normalized.experienceEducation.length +
+    normalized.locationWorkMode.length +
+    normalized.availabilityDuration.length;
+  if (usefulFieldCount === 0) {
+    warnings.push("JD_CONTENT_INSUFFICIENT");
   }
 
   return {
-    status:
-      jobDescription.jobTitle === undefined || confirmFieldIds.length > 0
-        ? "awaiting_user_confirmation"
-        : "ready",
-    companyDisplayName: jobDescription.companyName?.text ?? COMPANY_NAME_FALLBACK,
-    confirmFieldIds,
+    status: usefulFieldCount === 0 ? "insufficient_content" : "ready",
+    companyDisplayName: reliableCompany?.text ?? COMPANY_NAME_FALLBACK,
+    jobDescription: normalized,
+    omittedFieldIds,
     warnings,
   };
 }

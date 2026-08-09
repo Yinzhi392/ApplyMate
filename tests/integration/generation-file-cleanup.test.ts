@@ -32,7 +32,7 @@ describe("generation image residual cleanup", () => {
       temporaryFileIds: ["file_retry", "file_deleted"],
       resumeSnapshot: PROFILE,
       preferenceSnapshot: [],
-      status: "awaiting_confirmation",
+      status: "generating",
       createdAt: "2026-08-05T10:00:00.000Z",
       updatedAt: "2026-08-05T10:01:00.000Z",
     };

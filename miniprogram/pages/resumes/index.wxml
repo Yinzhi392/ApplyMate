@@ -1,32 +1,38 @@
-<view class="page">
+<view class="page resumes-page">
   <view class="page-header">
-    <view class="title">我的简历</view>
-    <view class="subtitle">最多保存 3 份。只有确认后的结构化内容会用于生成。</view>
+    <view class="page-header-copy">
+      <view class="title">我的简历</view>
+      <view class="subtitle">最多保存 3 份，只有已确认事实会参与生成。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在读取简历。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
-  <view wx:if="{{resumes.length === 0 && !loading}}" class="empty">暂时没有简历。上传后可以逐项核对 AI 解析结果。</view>
+  <view wx:if="{{resumes.length === 0 && !loading}}" class="empty empty-resume">
+    <view class="section-title">还没有简历</view>
+    <view class="muted">上传后只需核对一次个人资料。</view>
+  </view>
 
   <view wx:if="{{resumes.length}}" class="resume-list">
-    <view wx:for="{{resumes}}" wx:key="resumeId" class="resume-item">
-      <view class="row-between">
-        <view>
+    <view wx:for="{{resumes}}" wx:key="resumeId" class="resume-card glass-surface">
+      <view class="resume-main">
+        <view class="resume-title-row">
           <view class="resume-name">{{item.name}}</view>
-          <view class="muted">{{item.statusLabel}}</view>
+          <view wx:if="{{item.isDefault}}" class="pill">默认</view>
         </view>
-        <view wx:if="{{item.isDefault}}" class="pill">默认</view>
+        <view class="muted">{{item.statusLabel}}</view>
       </view>
-      <view class="resume-actions">
-        <button wx:if="{{item.status === 'awaiting_confirmation'}}" class="button button-quiet" data-job-id="{{item.jobId}}" bindtap="continueConfirm">继续确认</button>
-        <button wx:if="{{item.status === 'confirmed' && !item.isDefault}}" class="button button-quiet" data-resume-id="{{item.resumeId}}" bindtap="setDefault">设为默认</button>
-        <button class="button button-danger-secondary" data-resume-id="{{item.resumeId}}" bindtap="deleteResume">删除</button>
-      </view>
+      <button class="resume-more" data-index="{{index}}" bindtap="openResumeActions" aria-label="更多简历操作">···</button>
     </view>
   </view>
 
-  <view class="sticky-action">
-    <button class="button" disabled="{{resumes.length >= 3}}" bindtap="addResume">添加简历</button>
-    <button wx:if="{{errorMessage}}" class="button button-secondary" bindtap="loadResumes">重新尝试</button>
+  <view class="resume-note">
+    <view class="section-title">一次核对，持续复用</view>
+    <view class="field-help">只有你确认过的事实会参与生成，之后提交岗位无需重复核对。</view>
   </view>
+
+  <view class="resume-add-action">
+    <button class="button" disabled="{{resumes.length >= 3}}" bindtap="addResume">添加一份简历</button>
+  </view>
+  <button wx:if="{{errorMessage}}" class="button button-secondary retry-button" bindtap="loadResumes">重新尝试</button>
 </view>

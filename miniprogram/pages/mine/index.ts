@@ -7,6 +7,7 @@ Page({
     errorMessage: "",
     isAdmin: false,
     loading: true,
+    remainingQuota: 0,
     resumeCount: 0,
   },
 
@@ -22,6 +23,7 @@ Page({
           user: {
             agreements: { userAgreement?: { version: string } };
             isAdmin: boolean;
+            remainingQuota: number;
           };
         }>("user.get", {}),
         runtime().api.read<{ resumes: unknown[] }>("resume.list", {}),
@@ -30,6 +32,7 @@ Page({
         agreementVersion: userResponse.user.agreements.userAgreement?.version ?? "未同意",
         isAdmin: userResponse.user.isAdmin,
         loading: false,
+        remainingQuota: Math.max(0, userResponse.user.remainingQuota),
         resumeCount: resumeResponse.resumes.length,
       });
     } catch (error) {

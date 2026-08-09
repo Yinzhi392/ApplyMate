@@ -7,9 +7,11 @@ export type AccessState =
 export interface LoginState {
   accessState: AccessState;
   agreementChecked: boolean;
+  inviteRequired: boolean;
   isAdmin: boolean;
   inviteCode: string;
   errorMessage: string;
+  justActivated: boolean;
 }
 
 export interface LoginView {
@@ -17,27 +19,23 @@ export interface LoginView {
   description: string;
   actionLabel: string;
   helperText: string;
+  mode: "form" | "success" | "disabled" | "redirect";
   showAgreement: boolean;
   showInviteInput: boolean;
   actionDisabled: boolean;
   errorMessage: string;
 }
 
-const LOGIN_COPY: Record<AccessState, Pick<LoginView, "title" | "description" | "actionLabel">> = {
+const LOGIN_COPY: Record<Exclude<AccessState, "active">, Pick<LoginView, "title" | "description" | "actionLabel">> = {
   agreement_required: {
-    title: "请先阅读并同意协议",
-    description: "确认数据处理范围后，再开始使用投了吗。",
-    actionLabel: "同意并继续",
+    title: "把真实经历，写进每一次开场",
+    description: "确认一次简历，之后提交岗位截图或文字，生成有事实依据的专属开场白。",
+    actionLabel: "验证并登录",
   },
   invite_required: {
-    title: "输入邀请码",
-    description: "邀请制内测只向已激活用户开放。",
-    actionLabel: "激活邀请码",
-  },
-  active: {
-    title: "登录成功",
-    description: "准备好简历后，就可以为岗位生成专属开场白。",
-    actionLabel: "进入首页",
+    title: "把真实经历，写进每一次开场",
+    description: "邀请码验证成功后，即可开始确认简历。",
+    actionLabel: "验证并登录",
   },
   disabled: {
     title: "账号已停用",
@@ -47,17 +45,29 @@ const LOGIN_COPY: Record<AccessState, Pick<LoginView, "title" | "description" | 
 };
 
 export function createLoginView(state: LoginState): LoginView {
-  const copy = LOGIN_COPY[state.accessState];
+  const mode = state.accessState === "active"
+    ? state.justActivated ? "success" : "redirect"
+    : state.accessState === "disabled" ? "disabled" : "form";
+  const copy = state.accessState === "active"
+    ? {
+        title: "验证成功",
+        description: "账号已激活。先确认一份简历，就可以开始生成专属开场白。",
+        actionLabel: "开始使用",
+      }
+    : LOGIN_COPY[state.accessState];
+  const showInviteInput = mode === "form" && state.inviteRequired && !state.isAdmin;
+  const showAgreement = mode === "form" && state.accessState === "agreement_required";
   return {
     ...copy,
     helperText: state.isAdmin
       ? "管理员已通过服务端白名单识别，无需邀请码。"
       : "微信身份只由服务端运行环境识别。",
-    showAgreement: state.accessState === "agreement_required",
-    showInviteInput: state.accessState === "invite_required" && !state.isAdmin,
+    mode,
+    showAgreement,
+    showInviteInput,
     actionDisabled:
-      (state.accessState === "agreement_required" && !state.agreementChecked) ||
-      (state.accessState === "invite_required" && state.inviteCode.trim() === ""),
+      (showAgreement && !state.agreementChecked) ||
+      (showInviteInput && state.inviteCode.trim() === ""),
     errorMessage: state.errorMessage,
   };
 }
@@ -74,6 +84,7 @@ export interface HomeState {
 }
 
 export interface HomeView extends HomeState {
+  primaryActionDescription: string;
   primaryActionLabel: string;
   generationEnabled: boolean;
   pauseTitle: string;
@@ -98,7 +109,10 @@ export function createHomeView(state: HomeState): HomeView {
 
   return {
     ...state,
-    primaryActionLabel: noResume ? "先添加简历" : "上传岗位 JD",
+    primaryActionLabel: noResume ? "先添加简历" : "提交岗位信息",
+    primaryActionDescription: noResume
+      ? "上传后只需核对一次个人资料"
+      : "添加最多 5 张截图，或直接粘贴岗位文字",
     generationEnabled,
     pauseTitle,
     pauseDescription,

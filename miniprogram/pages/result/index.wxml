@@ -1,72 +1,87 @@
-<view class="page">
-  <view class="page-header">
-    <view class="muted">{{companyDisplayName}} · {{jobTitle}}</view>
-    <view class="title">个性化开场白</view>
-    <view class="subtitle">AI 只起草，发送前请再次核对真实性。</view>
+<view class="page result-page">
+  <view class="page-header result-header">
+    <view class="page-header-copy">
+      <view class="title">专属开场白</view>
+      <view class="subtitle">{{companyDisplayName}} · {{jobTitle}}，内容已通过事实来源检查。</view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="status">加载中，正在整理结果。</view>
   <view wx:if="{{errorMessage}}" class="error">{{errorMessage}}</view>
 
-  <view wx:if="{{!loading}}" class="result-editor">
-    <textarea class="textarea textarea-result" value="{{greetingBody}}" maxlength="1000" bindinput="updateBody" />
-    <view class="counter">{{visibleCharacters}} 个可见字符，AI 建议 250 至 350 字</view>
-    <view wx:for="{{manualWarnings}}" wx:key="message" class="warning">{{item.message}}</view>
-    <view class="safe-note">复制时会另起一行附加：AI生成内容，请核对真实性</view>
-    <view class="result-primary-actions">
-      <button class="button" bindtap="copyBody">复制正文</button>
-      <button class="button button-secondary" bindtap="saveBody">保存修改</button>
+  <block wx:if="{{!loading}}">
+    <view class="greeting-surface glass-surface">
+      <textarea class="textarea greeting-editor" value="{{greetingBody}}" maxlength="1000" bindinput="updateBody" />
+      <view class="editor-meta"><text>{{visibleCharacters}} 个可见字符</text><text>AI 建议 250 至 350 字</text></view>
+      <view wx:for="{{manualWarnings}}" wx:key="message" class="warning warning-item">{{item.message}}</view>
+      <view class="field-help ai-label-note">复制时会另起一行附加：AI生成内容，请核对真实性</view>
     </view>
-    <button class="button button-secondary rewrite-action" bindtap="rewrite">基于当前文字 AI 改写</button>
-  </view>
 
-  <view wx:if="{{!loading}}" class="result-disclosure">
-    <button class="disclosure-trigger" bindtap="toggleDetails">
-      <text>匹配依据与核对项</text>
-      <text class="disclosure-state">{{detailsExpanded ? '收起' : '展开'}}</text>
-    </button>
-    <view wx:if="{{detailsExpanded}}" class="disclosure-content">
-      <view class="section-title">匹配依据</view>
-      <view wx:if="{{claims.length === 0}}" class="muted">暂时没有可展示的匹配依据。</view>
-      <view wx:for="{{claims}}" wx:key="claimId" wx:for-item="claim" class="evidence-item">
-        <view>{{claim.text}}</view>
-        <view wx:for="{{claim.sourceLabels}}" wx:key="*this" wx:for-item="source" class="sr-summary">{{source}}</view>
+    <view class="section primary-actions">
+      <button class="button" bindtap="copyBody">复制开场白</button>
+      <view class="secondary-action-row action-row">
+        <button class="button button-secondary" bindtap="saveBody">保存修改</button>
+        <button class="button button-secondary" bindtap="rewrite">AI 改写</button>
       </view>
-
-      <view class="divider"></view>
-      <view class="section-title">未采用要求</view>
-      <view wx:if="{{omittedRequirements.length === 0}}" class="muted">没有需要说明的未采用要求。</view>
-      <view wx:for="{{omittedRequirements}}" wx:key="*this" class="evidence-item">{{item}}</view>
-
-      <view wx:if="{{warningMessages.length}}" class="divider"></view>
-      <view wx:if="{{warningMessages.length}}" class="section-title">请核对</view>
-      <view wx:for="{{warningMessages}}" wx:key="*this" class="warning">{{item}}</view>
     </view>
-  </view>
 
-  <view wx:if="{{!loading}}" class="secondary-disclosure">
-    <button class="disclosure-trigger" bindtap="toggleSecondary">
-      <text>投递状态、备忘与反馈</text>
-      <text class="disclosure-state">{{secondaryExpanded ? '收起' : '展开'}}</text>
-    </button>
-    <view wx:if="{{secondaryExpanded}}" class="disclosure-content secondary-actions">
-      <view>
-        <label class="field-label">投递备忘</label>
-        <textarea class="textarea" value="{{memo}}" maxlength="500" placeholder="可选，最多 500 字" bindinput="updateMemo" />
-        <button class="button button-secondary" bindtap="saveMemo">保存备忘</button>
-      </view>
-      <button class="button" bindtap="markApplied">{{status === 'applied' ? '已投递' : '标记为已投递'}}</button>
-      <view>
-        <view class="field-label">这次结果怎么样？</view>
-        <view class="rating-actions">
-          <button class="button button-quiet" data-rating="satisfied" bindtap="setRating">满意</button>
-          <button class="button button-quiet" data-rating="needs_improvement" bindtap="setRating">需改进</button>
+    <view class="section disclosure-list">
+      <view class="disclosure">
+        <button class="disclosure-trigger" bindtap="toggleDetails">
+          <text>匹配依据、遗漏与提醒</text>
+          <text class="disclosure-state">{{detailsExpanded ? '收起' : '展开'}}</text>
+        </button>
+        <view wx:if="{{detailsExpanded}}" class="disclosure-content">
+          <view class="section-title">匹配依据</view>
+          <view wx:if="{{claims.length === 0}}" class="muted evidence-empty">暂时没有可展示的匹配依据。</view>
+          <view wx:for="{{claims}}" wx:key="claimId" wx:for-item="claim" class="evidence-item">
+            <view class="evidence-claim">{{claim.text}}</view>
+            <view wx:for="{{claim.sourceLabels}}" wx:key="*this" wx:for-item="source" class="sr-summary">{{source}}</view>
+          </view>
+          <view class="divider"></view>
+          <view class="section-title">未采用要求</view>
+          <view wx:if="{{omittedRequirements.length === 0}}" class="muted evidence-empty">没有需要说明的未采用要求。</view>
+          <view wx:for="{{omittedRequirements}}" wx:key="*this" class="evidence-item">{{item}}</view>
+          <view wx:for="{{warningMessages}}" wx:key="*this" class="warning warning-item">{{item}}</view>
         </view>
-        <textarea class="textarea" value="{{feedbackNote}}" maxlength="500" placeholder="可选说明，最多 500 字" bindinput="updateFeedbackNote" />
-        <button class="button button-secondary" disabled="{{!rating}}" bindtap="submitFeedback">提交反馈</button>
+      </view>
+
+      <view class="disclosure">
+        <button class="disclosure-trigger" bindtap="toggleSecondary">
+          <text>投递状态、备忘与反馈</text>
+          <text class="disclosure-state">{{secondaryExpanded ? '收起' : '展开'}}</text>
+        </button>
+        <view wx:if="{{secondaryExpanded}}" class="disclosure-content secondary-actions">
+          <view class="field-group">
+            <label class="field-label">投递备忘</label>
+            <textarea class="textarea secondary-textarea" value="{{memo}}" maxlength="500" placeholder="例如：8 月 7 日已发送" bindinput="updateMemo" />
+            <button class="button button-secondary" bindtap="saveMemo">保存备忘</button>
+          </view>
+          <button class="button button-secondary" bindtap="markApplied">{{status === 'applied' ? '已投递' : '标记为已投递'}}</button>
+          <view class="field-group">
+            <view class="field-label">这次结果怎么样？</view>
+            <view class="rating-actions action-row">
+              <button class="rating-button {{rating === 'satisfied' ? 'is-active' : ''}}" data-rating="satisfied" bindtap="setRating">满意</button>
+              <button class="rating-button {{rating === 'needs_improvement' ? 'is-active' : ''}}" data-rating="needs_improvement" bindtap="setRating">需改进</button>
+            </view>
+            <textarea class="textarea secondary-textarea" value="{{feedbackNote}}" maxlength="500" placeholder="可选说明，最多 500 字" bindinput="updateFeedbackNote" />
+            <button class="button button-secondary" disabled="{{!rating}}" bindtap="submitFeedback">提交反馈</button>
+          </view>
+        </view>
       </view>
     </view>
-  </view>
 
-  <button wx:if="{{errorMessage}}" class="button button-secondary rewrite-action" bindtap="loadResult">重新尝试</button>
+    <view class="section result-exit glass-surface">
+      <view class="result-exit-copy">
+        <view class="section-title">准备投下一个岗位？</view>
+        <view class="field-help">当前修改会先保存，再进入一份全新的岗位草稿。</view>
+      </view>
+      <view class="result-exit-actions action-row action-row-weighted">
+        <button class="button result-next-button" disabled="{{leaving}}" bindtap="continueNextJob">继续投下一个岗位</button>
+        <button class="button button-secondary result-home-button" disabled="{{leaving}}" bindtap="returnHome">返回首页</button>
+      </view>
+    </view>
+  </block>
+
+  <button wx:if="{{errorMessage}}" class="button button-secondary retry-button" bindtap="loadResult">重新尝试</button>
 </view>

@@ -2,7 +2,7 @@
 
 This function will authenticate the trusted CloudBase identity, validate actions, create or query jobs, and handle lightweight persistence. It must not call OCR or TokenHub directly.
 
-Phase 6 adds ordered JD validation, asynchronous `generation.create`, low-confidence `generation.confirmJd`, generation/application records, one total worker deadline, quality-gated persistence, quota settlement, and dispatch compensation. `src/identity-api.ts` composes these actions with the existing identity, agreement, invitation, idempotency, resource, resume, and task gates. A confirmed resume is the only resume eligible to become generation evidence.
+Phase 9 keeps ordered JD validation and asynchronous `generation.create`, but no longer exposes a JD confirmation action. Low-confidence fields are omitted, missing company/title values fall back to “贵司”/“该岗位”, and insufficient content fails without consuming quota. `src/identity-api.ts` composes generation and application actions with the existing identity, agreement, invitation, idempotency, resource, resume, and task gates. A confirmed resume is the only resume eligible to become generation evidence.
 
 Phase 8 adds two-step `user.delete`, irreversible pending deletion, audited administrator invitation/user/quota actions, `admin.stats`, and metadata-only resource usage logs. Deletion confirmations and invitation codes are stored only as hashes. Resource logs require an internal user ID and reject unlisted fields so account cleanup can remove them without retaining prompts or user content.
 

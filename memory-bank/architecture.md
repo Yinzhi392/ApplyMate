@@ -1,10 +1,10 @@
 # ApplyMate Architecture Memory
 
-**版本：** 微信小程序本地界面 v2.0
+**版本：** 阶段 9 验收完成版 v4.0
 
-**日期：** 2026-08-06
+**日期：** 2026-08-09
 
-**当前状态：** 阶段 9 的 14 个微信原生页面已按清爽效率型视觉完成前端返工：每页独立 WXSS，首页移除最近投递，生成页支持最多 5 张 JD 截图的批量追加、删除、长按拖动排序和双模式草稿，结果页把证据与次级操作折叠收纳。三标签导航、客户端边界、任务恢复和本地演示 API 保持不变，等待产品负责人在微信开发者工具与真机完成 9.15 验收；验收前不得进入阶段 10。客户端仍固定使用 `touristappid` 与进程内演示 API，不含 `wx.cloud` 调用。`api`、`worker` 与 `cleanup` 仍只有可注入领域服务和内存测试适配器；尚无 CloudBase 部署入口、生产仓储/云存储、真实异步派发器、腾讯 OCR 或 TokenHub 客户端。未创建云环境、外部账号、数据库或真实 AI/OCR 调用，30 组草案也尚未经产品负责人逐组确认。
+**当前状态：** 阶段 9 已完成。13 个原生页面、A“克制玻璃”、取消 JD 二次确认、一次性简历核对、原生兼容性、开发者工具取证及 9.14k 最终对齐均已落盘；产品负责人于 2026-08-09 明确确认真机检验通过并授权提交。首页问候为“你好，同学 👋”，管理入口使用右侧 34rpx 基线；“我的”四个入口以可触控 `view` 承载满宽三段 Flex。完整检查通过 91 个测试文件、327 项测试和五模块构建。阶段 10 尚未启动。客户端仍使用进程内演示 API且不含 `wx.cloud`；服务端仍只有可注入领域服务和内存测试适配器。未创建云环境、数据库或真实 AI/OCR 调用，30 组草案也尚未经产品负责人逐组确认。
 
 **权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
 
@@ -36,18 +36,18 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 2. `api` 完成权限、幂等和输入检查，创建 `ai_jobs`，立即返回 `jobId`。
 3. `api` 异步触发 `worker`；`worker` 事务认领任务，避免重复外部调用。
 4. 图片任务进入 OCR；文本任务直接进入解析。所有模型调用前执行脱敏。
-5. JD 关键字段可信时直接生成；岗位名缺失或关键字段低置信时进入等待用户确认。
+5. JD 包含足够可读职责或要求时直接生成；低置信字段省略并产生提醒，岗位名缺失使用“该岗位”，公司缺失使用“贵司”。内容不足时失败且释放额度，不进入确认页面。
 6. 生成或改写结果经过逐项证据、正文格式、敏感信息和提示注入质量门。
 7. 首次失败只用已提取脱敏文本纠错一次；再次失败释放额度。
 8. 客户端通过 `job.get` 恢复状态和结果。
 
 ## 4. 状态、时限与幂等
 
-任务状态固定为：排队、OCR、解析、等待用户确认、生成、校验、成功、失败。不适用状态可跳过，但状态不得倒退，成功和失败为终态。
+任务状态集合仍包含：排队、OCR、解析、等待用户确认、生成、校验、成功、失败。“等待用户确认”只允许简历解析使用；岗位生成必须从解析直接进入生成或失败。不适用状态可跳过，但状态不得倒退，成功和失败为终态。
 
 - 单次 worker 最多运行 45 秒；内部截止早于平台硬上限，以便正常写入失败终态。
 - 创建 10 分钟仍无终态的任务由 cleanup 失败并释放额度。
-- 等待用户确认不预留额度，最多保留 24 小时。
+- 简历解析后的等待用户确认不预留额度，最多保留 24 小时；岗位任务不得进入该状态。
 - 同一用户、action、requestId 和负载返回同一结果；同 requestId 不同负载返回冲突。
 - 终态幂等映射保留 24 小时。
 - `user.delete` 先签发只保存哈希的 10 分钟确认凭证；有效确认立即禁用并记录最迟 24 小时物理删除时间。cleanup 每次运行立即处理全部待删除账号，不等待截止时间。
@@ -83,12 +83,11 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `resume.confirm`，重算事实身份、删除原文件并完成解析任务
 - `resume.list`、`resume.setDefault`、`resume.delete`
 - `generation.create`，验证已确认简历和 JD 输入，创建 queued 任务并立即返回 `jobId`
-- `generation.confirmJd`，仅对本人的等待任务补齐严格 JD、预留额度并继续同一任务
 - `generation.rewrite`，从本人投递记录快照最新手动正文并立即返回异步 `jobId`
 - `application.list`、`application.get`、`application.update`、`application.delete`
 - `feedback.submit`，为本人单条投递记录创建或覆盖唯一反馈
 
-`user.delete` 已采用申请凭证与确认删除两段式负载；确认后不可由管理员恢复。`admin.stats` 只允许同意当前协议且账号启用的服务端白名单管理员读取，汇总用户、邀请、北京时间当日额度、审计及 OCR/模型/云函数/存储/流量五类资源元数据。管理员邀请码创建/撤销、用户启停和临时额度写操作均受 requestId 幂等保护并保存审计。`admin.quotaAdjust` 仍只增加当日临时次数，次日北京时间失效。
+`user.get` 返回当前用户安全资料、当日剩余额度与免费资源暂停说明，供首页和“我的”展示；不暴露身份哈希或外部凭证。`user.delete` 已采用申请凭证与确认删除两段式负载；确认后不可由管理员恢复。`admin.stats` 只允许同意当前协议且账号启用的服务端白名单管理员读取，汇总用户、邀请、北京时间当日额度、审计及 OCR/模型/云函数/存储/流量五类资源元数据。管理员邀请码创建/撤销、用户启停和临时额度写操作均受 requestId 幂等保护并保存审计。`admin.quotaAdjust` 仍只增加当日临时次数，次日北京时间失效。
 
 ## 8. 决策记录
 
@@ -115,7 +114,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 共享层保持纯 TypeScript + Zod，不引用 CloudBase、OCR、TokenHub、小程序或数据库 SDK；因此全部核心边界可在离线环境验证。
 - 可见字符按 Unicode 字素计数并排除空白，避免组合 emoji 和组合字符被重复计数；孤立代理字符在 API 输入边界拒绝。
 - `factId` 由版本域、来源类型及 NFC/空白归一后的事实文本生成；文本哈希保留完整 SHA-256，文本或来源变化时二者按规则更新。
-- JD 关键字段确认阈值固定为 0.8；岗位名缺失或已提取关键字段低于阈值时等待确认，公司缺失只产生“贵司”提醒。
+- 阶段 2 最初以 0.8 为 JD 等待确认阈值；该交互规则已被 2026-08-06 直接生成决定取代。置信度继续用于决定字段是否可引用，但不得触发 JD 用户确认。
 - 逐项证据同时校验 ID 格式和当前任务注册表归属；AI 正文质量门为硬失败，手动文本复用检测结果但仅产生非阻断警告。
 - API 负载在 Zod 转换前检查原始对象，拒绝原型污染式键、非普通对象、循环/非 JSON 数据、超长内容及无效 Unicode。
 - 当前繁简校验采用保守的常见繁体字符拒绝表，不等同于完整中文转换；阶段 0 模型评测和阶段 6 回归必须继续验证误报/漏报。
@@ -157,7 +156,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 - `generation.create` 只接受文本或 1–5 张 JD 图片，并把已确认简历与当前偏好复制为任务快照；简历图片继续独立允许最多 6 张。任务创建时不预留额度，进入真实生成前才预留。
 - JD 图片保持用户顺序，只进入 OCR 端口；提取后立即尝试删除。删除失败的 fileId 只保留为 cleanup 重试引用，不进入 TokenHub 或投递记录。
-- JD 严格结构化后以 0.8 阈值决定继续或等待。等待任务清除 worker claim、没有 reservation；`generation.confirmJd` 必须补齐岗位名及全部低置信关键字段，继续使用同一 jobId。
+- 阶段 6 原实现以 0.8 阈值进入等待并通过 `generation.confirmJd` 继续；阶段 9 已完整移除该动作和等待分支，0.8 现在只决定字段是否可引用。
 - 公司名缺失不是阻断条件，服务端统一提供“贵司”并写入 warning；岗位名、公司称呼、简体中文、250–350 可见字符、2–3 段和逐项证据均为 AI 硬门。
 - 文本模型网关只接收再次遮盖后的 JSON 文本，主/备各最多一次；超时、429、无效输出和提供商失败统一归一。日志契约只有模型、状态、耗时和内容哈希，不含 Prompt 或正文。
 - 第一次质量失败携带脱敏上下文、前一稿和错误码纠错一次；第二次失败释放额度，不写 application。成功只保存被引用的脱敏事实、脱敏 JD、逐项 evidence、warnings 和 omitted requirements。
@@ -186,7 +185,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 
 ### 2026-08-06：阶段 9 微信小程序本地界面
 
-- 页面采用原生 TypeScript、WXML、WXSS 和 app.json 三标签导航，不增加跨端框架或 UI 组件库。全局视觉使用暖白、深蓝灰与低饱和青绿，主触控目标至少 88rpx，并为底部安全区预留空间；14 页各自拥有非空页面级 WXSS。
+- 原生实现采用 TypeScript、WXML、WXSS 和 app.json 三标签导航，不增加跨端框架或 UI 组件库。全局视觉使用暖白、深蓝灰与低饱和青绿，主触控目标至少 88rpx，并为底部安全区预留空间；13 页均有独立布局和页面级 WXSS，不存在 JD 确认页。
 - 首页只保留当前简历、今日额度和岗位输入主动作，最近投递全部由记录页承载，首页不再请求 `application.list`。
 - JD 与简历图片边界拆为 `MAX_JD_IMAGE_COUNT = 5` 和 `MAX_RESUME_IMAGE_COUNT = 6`。生成页默认截图模式，允许按剩余数量批量追加、删除和长按拖动排序；截图与文字草稿切换后均保留，仅提交当前模式，任一输入或简历变化都会清空旧 requestId。
 - UI 只调用统一 `ApiClient` 的 read/write 接口。当前 app 注入 `createDemoApiClient()`，使协议、邀请码、简历、任务、生成、投递、反馈、删除和管理员契约可完全离线演示；源码完整性测试禁止出现 `wx.cloud`。
@@ -196,11 +195,113 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - 管理员入口只在 `user.get.isAdmin` 为真时显示，页面加载还会再次请求 `auth.status`，业务 API 仍是最终权限边界。演示普通用户无法通过直接路由取得管理员能力。
 - 阶段 9 自动化只证明页面文件、绑定、纯交互契约和 30 组合成结果映射。微信文件选择器、真实剪贴板、字号放大、前后台切换、iOS/Android 安全区和弱网行为必须由产品负责人完成 9.15 真机验收。
 
+### 2026-08-06：阶段 9 全量视觉返工
+
+- 产品负责人撤销 `0e02e3f` 的视觉完成结论，确认 13 页浏览器交互视觉稿后再重写原生页面；静态预览与生产小程序形成明确门禁，避免“存在样式文件”等同于视觉验收。
+- `docs/phase-9-v2-preview/index.html` 只提供预览外壳和设计方向契约；`styles.css` 保存暖白、深蓝灰、青绿、间距、触控、安全区与响应式规则；`preview.js` 保存 13 页合成内容、状态切换和主要交互。三者均不进入 TypeScript 构建或小程序产物。
+- 组合准入页在同一层级展示邀请码与协议；成功、错误、管理员、协议更新和禁用状态均留在同一页面。原生客户端依次调用 `agreement.accept` 与 `invite.activate`，不改变服务端 `AccessState`。
+- 根目录 `PRODUCT.md` 只记录经现有产品文档确认的持久产品事实；视觉规则仍以 `memory-bank/design-document.md` 和本阶段确认稿为准，不形成新的产品需求来源。
+- `scripts/check-format.mjs` 不再格式化微信开发者工具管理的 `project.config.json` 与 `project.private.config.json`；独立集成测试负责验证 JSON、`touristappid` 与 `miniprogramRoot`，避免本地工具改写阻断源码门禁。
+
+### 2026-08-06：阶段 9 原生候选版验收退回
+
+- 微信开发者工具已从根目录的 `miniprogram/` 加载最新工作区；截图出现仅存在于新 WXML 的组合登录文案，因此不是缓存或目录错误。
+- 原生登录页错误地使用整页垂直居中，并额外加入浏览器确认稿没有的品牌小标题，导致顶部大段空白和旧式信息层级；浏览器稿要求从顶部自然排布并以分隔线区分介绍与表单。
+- 协议勾选与邀请码输入必须共同驱动同一个可测试的提交可用状态；视觉勾选不能与 `actionDisabled` 分离。
+- 该退回项修复后，9.14c 以原生结构/交互契约和完整本地检查作为候选版门槛；开发者工具逐页截图、应用控制台和 iOS/Android 真机行为归入 9.15，仍须产品负责人明确验收。
+
+### 2026-08-06：阶段 9 原生返工候验版
+
+- `miniprogram/pages/login/` 使用自定义导航和顶部安全区布局；介绍与表单以分隔线分区，不再整页垂直居中。协议改由原生 `checkbox-group` 的 change 事件驱动，`miniprogram/core/login-flow.ts` 的纯规则同时校验协议、邀请码和管理员免码，避免视觉勾选与按钮禁用状态分离。
+- `miniprogram/pages/resume-upload/` 顶层只暴露“上传文件／粘贴文字”。上传文件内由文件选择结果自动判断 PDF/DOCX，也可改用最多 6 张图片；四类服务端输入契约保持不变，但用户不需要先理解文件技术分类。
+- 结果页首屏统一为“专属开场白”、完成、复制、保存和改写；“我的”删除装饰性身份块，改用求职资料、使用情况、隐私与账号三个分组。首页、记录、生成、任务、简历核对和管理员继续沿用已确认的单列分区结构。
+- 全局颜色与 `app.json` 导航颜色统一为暖白 `#f2f4ef`、深蓝灰 `#17343b` 和低饱和青绿 `#26766c`；页面级模式切换、删除、筛选、事实操作和反馈按钮均达到至少 88rpx 触控高度。
+- 阶段 0 样本 C14、C18、C19 已同步“低置信/缺标题/冲突字段省略后直接生成”的产品契约，防止后续模型评测重新引入 JD 确认。
+- 微信开发者工具日志未出现项目 WXML/WXSS/TypeScript 编译错误。截图中的红色计数来自工具自身的 CLI 服务端口、未安装插件清单、`touristappid` 测试库联网和渲染器异常；这些平台事件不替代 9.15 的人工逐页控制台与真机验证。
+
+### 2026-08-06：取消 JD 二次确认
+
+- 产品负责人明确要求上传 JD 后直接获得定制开场白，不再重复确认岗位信息。浏览器视觉稿删除 `jd-confirm`，从提交页经任务进度直接到结果页，总页面数由 14 减为 13。
+- 低置信不再等同于阻断：可靠字段参与生成，不可靠字段必须省略并写入结果提醒；岗位名缺失使用“该岗位”，公司缺失使用“贵司”。只有内容不足以识别任何有效职责或要求时才失败并提示重新提交，且不扣额度。
+- 原生路由、共享 action 契约、API 组合、生成准备/执行和测试已完成迁移；JD 内容充足时直接生成，内容不足在额度预留前失败。
+- 首页不读取或展示真实姓名，固定问候文案为“你好，同学”。
+
+### 2026-08-06：轻量简历核对与动态加分项排序
+
+- 简历事实确认继续作为可信事实边界，但不再要求用户逐模块填写或为能力打分；AI 负责提取、归类和排序，用户只对事实执行正确、修改或删除。
+- 首次核对展示三个主要加分项和七类市场基准权重：相关实习/工作 25%、项目与量化成果 25%、专业技能 20%、有事实支撑的个人能力 15%、教育匹配 8%、证书/语言/奖项/领导经历 5%、GPA/均分 2%。这些数值是产品排序先验，不是录用概率。
+- GPA 默认低权重，只在金融、咨询、量化、研究或 JD 明确要求时提高；学历、毕业时间、到岗和地点等硬条件单独核对，不能与加分项混算。
+- 个人能力必须由已确认经历支撑并保留 `factId` 来源，不能由模型生成无证据的主观标签。用户确认一次后，每个 JD 根据岗位字段重新排序事实，不再重复确认简历。
+- 原生 `resume-edit` 已实现轻量核对：展示前三项优势、七类基准权重和低置信事实；用户修改/删除/确认后仍由 `resume.confirm` 建立可信事实边界，后续 JD 不重复确认。
+
+### 2026-08-09：A“克制玻璃”视觉修订
+
+- 微信小程序不具备 Apple SwiftUI Liquid Glass API。本项目只用原生 WXSS 模拟半透明暖白表面、亮色细边、内高光、轻量青绿色阴影和按压反馈，不引入框架、UI 库、`backdrop-filter`、实时模糊或持续动画；不支持半透明效果时仍由实色背景、边框和间距维持层级。
+- `miniprogram/pages/home/` 使用纵向自适应布局，将问候、默认简历和额度合并为玻璃状态区，岗位主入口占满宽度，三步事实流程以 `margin-top: auto` 使用剩余空间，解决头重脚轻。
+- `miniprogram/core/resume-actions.ts` 是三类简历状态菜单的单一映射；列表页只渲染一个添加入口与一个“···”触发器，实际删除仍由页面执行原生二次确认。
+- `miniprogram/core/result-exit.ts` 把“未保存正文先持久化”置于导航之前。结果页保存失败时保持原页；成功后下一岗位清空最近 jobId 并用 `reLaunch` 重建岗位提交页，返回首页使用原生三标签切换，避免连续投递堆积导航栈。
+- `docs/phase-9-v2-preview/` 已同步相同的首页、简历菜单和结果双路径，用合成数据演示且不进入生产构建。9.15 仍是视觉完成与 Git 提交的唯一人工出口。
+
+### 2026-08-09：原生渲染兼容性返工
+
+- 浏览器预览与微信原生 WXSS 是不同渲染环境。阶段 9 从本记录起以微信开发者工具实际呈现为唯一视觉验收基准；浏览器稿只证明结构、文案与设计方向，不再作为无溢出证据。
+- 页面级关键布局禁止依赖 CSS Grid、`minmax()`、`repeat()` 或关键 `@media` 才能成立。分段控件、指标、筛选、图片操作、结果双按钮和管理员统计统一使用可收缩 Flex；共享 `.action-row` 要求子按钮 `min-width: 0`、容器内弹性分配且不得突破页面宽度。
+- `miniprogram/app.wxss` 承担原生材质、操作行、宽度约束和横向溢出保护；各页 `index.wxss` 只保留业务结构。半透明效果降级时仍由实色表面、边框、内高光和间距维持层级，不依赖实时模糊。
+- 集成测试静态拒绝高风险布局，并按 320px、375px、390px 的固定原生几何约束验证结果双按钮仍有可读宽度。该自动化只证明源码边界，13 页截图、控制台和 iOS/Android 仍须 9.15 人工验收。
+
+### 2026-08-09：首页与登录页视觉节奏尝试（登录部分已退回）
+
+- 微信开发者工具初步验收确认大部分页面通过，但首页的 `margin-top: auto` 在实际设备高度上制造了过大的模块间空白；登录介绍与独立表单表面也形成视觉断层。
+- `miniprogram/pages/home/` 现强制岗位入口容器和按钮占满可用宽度，事实流程紧随主入口并以单一纵向玻璃分组呈现；不改变首页数据、主操作或三标签导航。
+- `miniprogram/pages/login/` 在本步骤曾由一个 `login-shell` 包含品牌介绍和准入表单；该结构已在下一条决策中明确退回，不代表当前实现。
+- 首页全宽入口和非推底流程区继续生效；本步骤的单一登录面板契约已由 9.14g 的上下两层契约取代。
+
+### 2026-08-09：登录页上下两层纠正
+
+- 上一轮 `login-shell` 把品牌介绍和表单包进一张大玻璃卡，在微信开发者工具中造成标题靠近菜单、首屏构图生硬和品牌/操作层级混合，因此该登录方案被退回；首页的 9.14f 调整不受影响。
+- `miniprogram/pages/login/index.wxml` 现将品牌图形、标题和说明作为背景层介绍区，把邀请码、协议、错误、弱网提示和登录按钮放进独立 `login-form glass-surface`。成功与禁用状态继续使用原有独立状态面板。
+- `miniprogram/pages/login/index.wxss` 固定 50rpx 标题、品牌图形下 44rpx 留白、介绍区到表单 32rpx 间距、表单 32rpx 内边距和 24rpx 内容间距；按钮占满表单可用宽度，未增加外层容器、模糊、依赖或动画。
+- 页面契约禁止重新出现 `login-shell`，并锁定上述原生几何边界。邀请码、协议、管理员免码、旧协议、成功、禁用、错误恢复和路由行为均未改变。
+
+### 2026-08-09：登录页胶囊避让与动态构图
+
+- 产品负责人截图包含 9.14g 新结构，证明开发者工具加载路径和缓存不是原因；实际缺陷是自定义导航内容仍从静态安全区起排，标题进入右上角胶囊的垂直范围。
+- `miniprogram/core/login-layout.ts` 是登录页顶部几何的单一纯规则：按状态栏高度、窗口宽度与胶囊矩形计算品牌起点，并把 56rpx 品牌图形与 44rpx 标题间距换算为当前设备像素，保证标题低于胶囊至少 16px；胶囊信息无效时使用状态栏保守回退。
+- `miniprogram/pages/login/index.ts` 只在加载时读取微信原生窗口与胶囊信息并写入显示数据；WXML 用动态 `padding-top` 应用结果。登录按钮增加独立可收缩 Flex 行，避免微信原生 button 默认布局使禁用按钮视觉缩窄。
+- 该修复不改变准入 API、状态、路由、额度或隐私边界；原生登录布局测试覆盖 iPhone 刘海屏、320px Android 与无胶囊回退。
+- 自动检查通过后必须清除微信开发者工具 compile 缓存并从仓库根目录重新打开项目；缓存清理只能保证最新源码被重新编译，最终视觉仍以开发者工具模拟器和真机截图为准。
+
+### 2026-08-09：9.15 开发者工具原生取证
+
+- `docs/phase-9-native-review/README.md` 是 9.15 的设备验收索引；同目录保存 13 页原生 WebView 截图，以及 iPhone 5 320px 和 Nexus 5 的兼容性截图。截图只包含合成/空态演示数据，不含真实简历、JD、账号或密钥。
+- 逐页取证通过临时设置 `miniprogram/app.json` 的 `entryPagePath` 启动目标页，取证结束后已移除该字段；13 页注册顺序、三标签导航和业务路由没有变化。
+- 干净控制台编译后，项目文件来源的编译及运行时错误为零。工具显示的 5 条错误均为灰度基础库内部 `webapi_getwxaasyncsecinfo:fail`，堆栈只指向 `WAServiceMainContext.js`；警告来自灰度基础库和 `touristappid` 下的模拟 API。该分类必须保留，不能通过修改业务代码或隐藏控制台计数伪造归零。
+- 模拟器检查能证明原生 WXSS 在 320px、360px 和 390px 基准宽度下没有已观察到的横向溢出，但不能证明真实键盘、系统文件选择器、相册多选、长按排序、剪贴板、前后台和弱网行为。iOS/Android 真机记录仍是 9.15 与阶段 9 提交的最后门槛。
+
+### 2026-08-09：真机视觉反馈定向修订
+
+- 登录页保持“背景介绍 + 独立表单卡”两层结构，但两层外增加无视觉表面的 `login-content` Flex 容器，在胶囊安全起点以下的剩余高度中整体居中；内容超高时容器自然扩展，不引入固定屏高或全页玻璃卡。
+- “本地验证邀请码”不得渲染到登录 WXML。`APPLYMATE` 只属于当前演示适配器、README 和测试，正式邀请码仍必须由服务端管理员能力创建和校验；使用真实微信 AppID进行预览不会把本地演示运行时变成生产鉴权。
+- 核对页的三类高频事实标签使用系统 Emoji 作为扫读锚点，操作按钮强制等宽、双向居中和至少 88rpx 触控高度；“我的”标题及操作入口使用少量系统 Emoji，不引入图标包或网络资源。
+- `project.config.json` 属于产品负责人本地开发者工具配置。语义测试允许 `touristappid` 或格式合法的微信 AppID，以兼容模拟器和真机预览；测试继续锁定 `miniprogramRoot`、TypeScript 插件和源码零 `wx.cloud`，不得把真实 AppID误写成已接入 CloudBase。
+
+### 2026-08-09：首页与“我的”真机对齐修订
+
+- 首页状态区不再让原生文字按钮参与普通左右 Flex 分配；`home-manage` 固定在状态区右上操作位，标题区域为其预留宽度，副标题通过单行规则保持“准备好后，直接提交一个岗位。”完整呈现。
+- 微信真机对 `button` 子项排版可能与浏览器预览不同。“我的”四个可操作按钮因此各自增加占满按钮宽度的 `menu-row-content`，在其内部明确使用图标固定宽度、正文 `flex: 1 1 0%` 和右侧操作自动外推，避免整组内容被原生按钮居中。
+- 协议与隐私使用 🔒，删除账号使用 🗑️；两项与简历、偏好共享同一左右基线，删除仍沿用原有二次确认逻辑。使用情况为只读数据，不添加图标或新交互。
+
+### 2026-08-09：确认稿与原生触控容器
+
+- 产品负责人在改代码前确认了两张干净视觉稿：四个资料/账号入口的内容组贴左、操作贴右；首页管理入口贴右且问候为“你好，同学 👋”。确认稿只用于锁定几何关系，不进入生产构建。
+- 真机截图证明，即使原生 `button` 内存在 `width: 100%` 的 Flex 子容器，微信仍可能把整组内容向中间收拢。首页管理入口与“我的”四个入口因此改用带 `bindtap`、`aria-role`、`aria-label` 和 `hover-class` 的 `view`，业务处理器和至少 88rpx 触控高度保持不变。
+- 首页管理入口由状态卡相对定位上下文直接控制 `right: 34rpx`；“我的”仍由 `menu-row-content` 占满行宽，左右位置不再经过原生按钮匿名盒。测试禁止这些入口退回 `button`。
+
 ## 9. 实际构建与检查图
 
 根级 TypeScript 配置引用 shared、三个云函数和 miniprogram。`npm run typecheck` 对全部源代码与测试执行无输出严格检查；`npm run build` 编译五个模块，生成物进入 `dist/` 并被 Git 忽略。微信开发者工具同时使用 TypeScript 编译插件构建 `miniprogram/` 源码。
 
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 五模块构建。任一步失败都会保留非零退出码并停止后续命令。阶段 9 前端返工后为 86 个测试文件、286 项测试。微信开发者工具会按自身格式改写 `project.config.json` 和 `project.private.config.json`；两文件属于产品负责人本地配置，本次不覆盖、不提交，因此完整命令会在其排版不符合仓库格式规则时停在第一步。其余源文件格式、fixture 隔离、类型、全部测试和五模块构建须分别通过。环境变量检查单独执行，因为尚未获准配置真实外部资源。
+`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → TypeScript 检查 → 全部 Vitest → 五模块构建。任一步失败都会保留非零退出码并停止后续命令。当前为 91 个测试文件、327 项测试。微信开发者工具会按自身格式改写 `project.config.json` 和 `project.private.config.json`，因此格式检查明确跳过这两个本地配置；独立集成测试验证其 JSON 可解析、AppID 为 `touristappid` 或合法微信 AppID，并锁定 `miniprogramRoot`。两文件仍属于产品负责人本地配置，本次不覆盖、不提交。环境变量检查单独执行，因为尚未获准配置真实外部资源。
 
 ## 10. 仓库文件职责
 
@@ -228,33 +329,37 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 ### 产品与服务骨架
 
 - `miniprogram/README.md`：说明本地导入方式、演示邀请码、阶段 9 验收路径和未授权能力边界。
-- `miniprogram/app.json`：注册 14 个页面、三标签导航和全局窗口样式。
+- `miniprogram/app.json`：注册 13 个页面、三标签导航和全局窗口样式。
 - `miniprogram/app.ts`：创建小程序实例，并把单一演示运行时注入 globalData。
-- `miniprogram/app.wxss`：定义暖白/深蓝灰/青绿设计变量、基础表单/状态/按钮、88rpx 触控高度和安全区规则；页面专属布局留在各页 `index.wxss`。
+- `miniprogram/app.wxss`：定义暖白/深蓝灰/青绿与克制玻璃变量、基础表单/状态/按钮、可收缩操作行、宽度边界、横向溢出保护、按压反馈、88rpx 触控高度和安全区规则；页面专属布局留在各页 `index.wxss`。
 - `miniprogram/sitemap.json`：禁止邀请制内测页面进入微信搜索索引。
 - `miniprogram/tsconfig.json`：小程序独立严格 TypeScript 构建配置。
 - `miniprogram/core/routes.ts`：页面顺序、三标签清单和标签路由判断的单一来源。
 - `miniprogram/core/presenters.ts`：把登录准入、首页简历/额度/资源状态转换成稳定显示模型。
+- `miniprogram/core/login-flow.ts`：组合协议接受与邀请码激活顺序，并保留协议成功、邀请码失败的可恢复状态。
+- `miniprogram/core/login-layout.ts`：根据状态栏、窗口宽度和微信胶囊矩形计算登录页品牌与标题顶部位置，提供无胶囊信息的保守回退。
+- `miniprogram/core/resume-review.ts`：将简历事实转换为前三项优势、七类市场权重和待核对/已核对分组。
+- `miniprogram/core/resume-actions.ts`：根据待确认、非默认和默认三类简历状态生成原生操作菜单，避免模板散落权限判断。
 - `miniprogram/core/input-rules.ts`：客户端文档边界、简历/JD 独立图片上限、生成双模式草稿、追加/删除/重排、requestId 重置、偏好字数和分句预览纯规则。
-- `miniprogram/core/job-poller.ts`：有限退避轮询、终态/等待确认返回和可恢复暂停错误。
+- `miniprogram/core/job-poller.ts`：有限退避轮询、终态/简历等待确认返回、可恢复暂停错误及按任务类型区分的进度显示。
 - `miniprogram/core/result-presenter.ts`：把脱敏事实/JD 快照与逐项证据转换成结果页标签，并处理“贵司”和警告文案。
+- `miniprogram/core/result-exit.ts`：保证结果页未保存正文先持久化，成功后才执行下一岗位或首页导航，保存失败不离页。
 - `miniprogram/services/api-client.ts`：统一客户端 action、读写、UUID requestId、网络异常和 API 错误归一。
 - `miniprogram/services/demo-api.ts`：离线进程内演示协议、简历、任务、生成、记录、反馈、删除和管理员契约；禁止作为生产仓储或鉴权。
 - `miniprogram/services/runtime.ts`：持有演示 API、演示邀请码和最后 jobId 的微信本地存储恢复接口。
 - `miniprogram/services/page-utils.ts`：集中处理提示、错误消息和常用导航。
-- `miniprogram/pages/login/index.{json,wxml,ts}`：协议版本、邀请码、管理员免码/禁用状态和首页准入。
-- `miniprogram/pages/home/index.{json,wxml,ts,wxss}`：默认简历、今日额度、资源暂停和唯一 JD 入口，不读取或展示最近记录。
-- `miniprogram/pages/resumes/index.{json,wxml,ts}`：三份简历列表、等待确认恢复、默认切换和删除。
+- `miniprogram/pages/login/index.{json,wxml,ts,wxss}`：以背景层品牌介绍和独立紧凑表单卡组成上下两层登录页，内容组在胶囊安全区以下视觉居中且不渲染演示邀请码，并覆盖错误恢复、成功、管理员免码、旧协议和禁用/删除状态。
+- `miniprogram/pages/home/index.{json,wxml,ts,wxss}`：连续呈现玻璃状态区、默认简历、今日额度、“你好，同学 👋”、基于可触控 view 的固定右上管理入口、单行准备说明、完整宽度 JD 入口和纵向事实流程，不读取或展示最近记录。
+- `miniprogram/pages/resumes/index.{json,wxml,ts,wxss}`：三份简历状态卡片、单一添加入口、等待确认恢复、原生操作菜单、默认切换和二次确认删除。
 - `miniprogram/pages/resume-upload/index.{json,wxml,ts}`：PDF、DOCX、图片和文本选择及上传前边界提示。
-- `miniprogram/pages/resume-edit/index.{json,wxml,ts}`：解析任务恢复、结构化事实编辑和简历确认。
+- `miniprogram/pages/resume-edit/index.{json,wxml,ts,wxss}`：一次性个人资料核对、前三项优势、七类权重、三类语义 Emoji、低置信纠错、等宽事实操作和简历确认。
 - `miniprogram/pages/preferences/index.{json,wxml,ts}`：500 字偏好、分句预览、保存和清空。
 - `miniprogram/pages/generation/index.{json,wxml,ts,wxss}`：默认简历选择、最多 5 张 JD 截图批量追加/删除/长按拖动、文字双草稿、请求去重和任务创建。
-- `miniprogram/pages/job/index.{json,wxml,ts}`：jobId 恢复、状态轮询、弱网暂停和下一流程路由。
-- `miniprogram/pages/jd-confirm/index.{json,wxml,ts}`：岗位名必填、公司名可空、职责修订和同任务继续。
-- `miniprogram/pages/result/index.{json,wxml,ts,wxss}`：正文首屏、证据/遗漏/警告折叠、次级投递操作折叠、手动编辑、改写和复制。
+- `miniprogram/pages/job/index.{json,wxml,ts,wxss}`：jobId 恢复、按简历/首次生成/改写区分进度、弱网暂停和下一流程路由。
+- `miniprogram/pages/result/index.{json,wxml,ts,wxss}`：正文首屏、证据/遗漏/警告折叠、次级投递操作折叠、手动编辑、改写、复制、离开前保存，以及清栈下一岗位/返回首页双路径。
 - `miniprogram/pages/records/index.{json,wxml,ts,wxss}`：承接全部最近投递，提供未投递/已投递筛选、空态和详情导航。
 - `miniprogram/pages/application-detail/index.{json,wxml,ts}`：投递正文/备忘快照、结果编辑入口和单条删除。
-- `miniprogram/pages/mine/index.{json,wxml,ts}`：简历/偏好/协议入口、管理员隐藏入口和账号删除二次确认。
+- `miniprogram/pages/mine/index.{json,wxml,ts,wxss}`：以四个可触控 view 和满宽三段 Flex 对齐简历、偏好、协议与删除语义图标入口，并保留管理员隐藏入口和账号删除二次确认。
 - `miniprogram/pages/admin/index.{json,wxml,ts}`：二次管理员鉴权、统计、邀请码、用户启停和当日额度操作。
 - `shared/README.md`：说明共享 Schema、类型、错误码、状态机和纯规则边界。
 - `shared/tsconfig.json`：共享模块的独立构建配置。
@@ -266,10 +371,10 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `shared/src/facts.ts`：事实来源、文本归一、SHA-256 哈希和稳定 `factId`。
 - `shared/src/preferences.ts`：求职偏好分句、去重、500 字限制和 preference 事实生成。
 - `shared/src/resume-schema.ts`：严格 `ResumeProfile` 及各类简历事实 Zod Schema。
-- `shared/src/job-description.ts`：JD 字段 Schema、重复 ID 检查、0.8 阈值与“贵司”回退。
+- `shared/src/job-description.ts`：JD 字段 Schema、重复 ID、0.8 可用阈值、低置信省略、“该岗位/贵司”回退和内容充足性判断。
 - `shared/src/evidence.ts`：逐项陈述/来源 Schema 及当前事实、JD 注册表归属校验。
 - `shared/src/job-status.ts`：八状态常量、中文展示名和固定转换图。
-- `shared/src/api-contract.ts`：25 个 action、读写 requestId 规则、安全负载、统一响应和错误码。
+- `shared/src/api-contract.ts`：24 个 action、读写 requestId 规则、安全负载、统一响应和错误码；不包含 JD 确认动作。
 - `shared/src/greeting.ts`：AI 正文硬质量门及手动编辑非阻断警告。
 - `shared/src/copy-text.ts`：复制正文与指定 AI 标识的确定性组合。
 - `cloudfunctions/api/README.md`：限定 api 只负责身份、验证、任务和轻量读写。
@@ -286,12 +391,11 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/feedback-domain.ts`：满意/需改进、可选说明和首次/最新时间的数据类型。
 - `cloudfunctions/api/src/feedback-repository.ts`：以 applicationId 为唯一业务键的反馈仓储端口和覆盖式内存实现。
 - `cloudfunctions/api/src/feedback-service.ts`：反馈所有权、500 字边界、创建/覆盖/清空和详情读取规则。
-- `cloudfunctions/api/src/generation-domain.ts`：生成创建/确认请求 Schema、任务输入快照和生成领域状态。
+- `cloudfunctions/api/src/generation-domain.ts`：生成创建请求 Schema、任务输入快照和不含 JD 等待确认的生成领域状态。
 - `cloudfunctions/api/src/generation-repository.ts`：生成记录仓储端口及状态条件写入、job 查询和残留文件扫描的内存实现。
 - `cloudfunctions/api/src/jd-input-validation-service.ts`：JD 文本的 Unicode/20,000 字门禁及有序图片所有权/文件门禁组合。
 - `cloudfunctions/api/src/generation-workflow-service.ts`：`generation.create` 的确认简历访问、输入快照、任务创建、异步派发和派发失败图片补偿。
-- `cloudfunctions/api/src/generation-preparation-service.ts`：认领初始生成任务、OCR/解析状态、有序提取、图片删除、低置信等待和 44 秒准备截止。
-- `cloudfunctions/api/src/generation-confirmation-service.ts`：`generation.confirmJd` 的所有权/状态/Schema 校验、首次额度预留、同 job 继续派发和失败补偿。
+- `cloudfunctions/api/src/generation-preparation-service.ts`：认领初始生成任务、OCR/解析状态、有序提取、图片删除、低置信省略、内容不足失败和 44 秒准备截止。
 - `cloudfunctions/api/src/generation-execution-service.ts`：单一总截止、首次生成/一次纠错、确定性质量门、application 快照和终态额度结算。
 - `cloudfunctions/api/src/generation-rewrite-domain.ts`：四类改写输入 Schema、最新正文/application 版本快照和 rewrite 任务状态。
 - `cloudfunctions/api/src/generation-rewrite-repository.ts`：rewrite 任务仓储端口及内存实现。
@@ -302,7 +406,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
 - `cloudfunctions/api/src/agreement-service.ts`：协议版本接受、当前版本判断和业务动作门禁。
 - `cloudfunctions/api/src/invite-service.ts`：邀请码规范化哈希、7 天有效期、创建和原子消费。
-- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、任务、投递、删除和管理员运营 action 的本地 API。
+- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、额度/资源状态、任务、投递、删除和管理员运营 action 的本地 API。
 - `cloudfunctions/api/src/job-domain.ts`：任务种类、状态历史、认领信息、安全结果和错误的数据类型。
 - `cloudfunctions/api/src/job-repository.ts`：任务仓储端口及支持原子创建、认领、转换和超时扫描的内存实现。
 - `cloudfunctions/api/src/job-service.ts`：任务创建、用户隔离查询、状态转换及幂等终态写入规则。
@@ -404,7 +508,10 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/unit/jd-structure-parser.test.ts`：验证中英文、缺公司/岗位、重复字段冲突和一次备用解析。
 - `tests/unit/greeting-model-gateway.test.ts`：验证超时、429、无效 JSON、主备次数及日志无原文。
 - `tests/unit/operations-logging.test.ts`：验证资源日志拒绝原文字段，并按五类资源汇总调用、失败和成本元数据。
-- `tests/unit/miniprogram-routing.test.ts`：锁定 14 个页面顺序、三标签路由与普通流程页边界。
+- `tests/unit/miniprogram-routing.test.ts`：锁定 13 个页面顺序、三标签路由与无 JD 确认页边界。
+- `tests/unit/miniprogram-login-flow.test.ts`：验证组合登录顺序、协议失败恢复、邀请码必填和管理员免码。
+- `tests/unit/miniprogram-login-layout.test.ts`：验证登录标题按真实微信胶囊位置避让、窄屏与无胶囊信息回退，以及页面动态顶部绑定和全宽登录按钮。
+- `tests/unit/miniprogram-resume-review.test.ts`：验证前三项优势、七类权重与低置信事实分组。
 - `tests/unit/miniprogram-access-home.test.ts`：验证登录六态显示规则与首页无简历、额度耗尽、资源暂停，并锁定首页不承载最近记录。
 - `tests/unit/miniprogram-api-client.test.ts`：验证客户端读写 requestId、网络异常、失败响应、异常响应归一和弱网错误分类。
 - `tests/unit/miniprogram-inputs.test.ts`：验证客户端 PDF/DOCX、简历 6 张、JD 5 张、双模式草稿、追加/删除/重排、requestId 重置和偏好预览规则。
@@ -426,8 +533,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/integration/resume-cleanup.test.ts`：验证 24 小时草稿、1 小时孤立文件、引用保护和重复清理。
 - `tests/integration/resume-input-closure.test.ts`：用真实提取器与本地外部替身验证四类输入的解析—确认—默认完整闭环。
 - `tests/integration/generation-create-api.test.ts`：验证已确认简历、立即返回、资源暂停、幂等和派发失败图片补偿。
-- `tests/integration/generation-preparation.test.ts`：验证有序 OCR、遮盖、立即删除、低置信等待和安全失败。
-- `tests/integration/generation-confirm-jd.test.ts`：验证同任务确认继续、用户/状态隔离、额度延后预留和派发失败补偿。
+- `tests/integration/generation-preparation.test.ts`：验证有序 OCR、遮盖、立即删除、低置信省略、岗位/公司回退、直接生成和内容不足安全失败。
 - `tests/integration/generation-quality-execution.test.ts`：验证“贵司”、格式/证据质量门、一次纠错、二次失败、总截止和快照。
 - `tests/integration/generation-file-cleanup.test.ts`：验证 post-OCR 残留文件重试和引用清除。
 - `tests/integration/generation-quota-race.test.ts`：验证重复 worker 与 10 分钟 cleanup 竞争下唯一终态和额度非负。
@@ -439,10 +545,10 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `tests/integration/account-deletion-cleanup.test.ts`：验证简历与账号删除差异、全数据清除、跨用户保护、匿名聚合不可回连及重复 cleanup。
 - `tests/integration/admin-operations.test.ts`：验证四类管理员写操作的审计/幂等、可信白名单边界和统计输出。
 - `tests/integration/log-retention-cleanup.test.ts`：验证 180 天精确边界、账号关联日志清理和未完成任务/匿名指标/有效幂等保护。
-- `tests/integration/miniprogram-demo-api.test.ts`：离线走通协议/邀请码、简历/偏好、JD 确认、改写/复制/反馈和账号删除。
+- `tests/integration/miniprogram-demo-api.test.ts`：离线走通协议/邀请码、简历/偏好、JD 直接生成、改写/复制/反馈和账号删除。
 - `tests/integration/miniprogram-page-contracts.test.ts`：锁定路由、三标签、核心中文文案、加载/弱网/重试/AI 标识和可见破折号约束。
 - `tests/integration/miniprogram-result-fixtures.test.ts`：把阶段 0 的 30 个编号样本映射为结果视图，验证逐项来源与公司回退不缺失。
-- `tests/integration/miniprogram-ui-integrity.test.ts`：检查每个路由的配置/模板/控制器、WXML 处理器绑定、触控/安全区和零 wx.cloud 边界。
+- `tests/integration/miniprogram-ui-integrity.test.ts`：检查每个路由的配置/模板/控制器、WXML 处理器绑定、触控/安全区、零 wx.cloud 边界，并拒绝页面级 Grid/`minmax()`/`repeat()`/关键 `@media`，验证共享操作行及 320px、375px、390px 宽度边界。
 - `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落和六类字段真值。
 - `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵和人工确认流程。
 - `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构的阶段 0 样本草案与字段真值。
