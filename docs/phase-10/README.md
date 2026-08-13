@@ -6,7 +6,7 @@
 - `privacy-policy-draft.md`
 - `ai-service-disclosure-draft.md`
 
-当前状态：**产品负责人已于 2026-08-09 确认用于 30 至 100 人邀请制体验版**。草案未经专业法律审查，不代表已经满足公开发布条件；公开发布前仍须专业复核。该确认不构成对微信、CloudBase、腾讯 OCR 或 TokenHub 真实资源的操作授权，任何真实资源仍须逐项另行许可。
+当前状态：**产品负责人已于 2026-08-09 确认用于 30 至 100 人邀请制体验版，并于 2026-08-13 明确体验成员使用真实 AI**。草案未经专业法律审查，不代表已经满足公开发布条件；公开发布前仍须专业复核。真实 CloudBase、腾讯 OCR 和 TokenHub 仅在零费用与安全门禁通过时启用。
 
 微信测试资源核对见 [`wechat-test-resource-review.md`](./wechat-test-resource-review.md)。该记录只证明小程序测试号的开发和二维码预览能力，不代表个人主体类目或正式发布资格通过。
 
@@ -20,13 +20,13 @@ TokenHub 免费资源核对见 [`tokenhub-free-resource-review.md`](./tokenhub-f
 
 外发链路证据见 [`phase0-egress-audit.md`](./phase0-egress-audit.md)。阶段 10.6 已实际运行一次完全合成的“腾讯 OCR → 本地脱敏 → Hy3”链路：5 类受保护信息均被遮盖，图片只出现在 OCR 请求，Hy3 收到的请求不含图片、Base64、fileId 或受保护文本；证据不保存请求/响应原文或凭证。30 组五类资源用量、目录价估算和实际零费用证据见 [`phase0-resource-cost-audit.md`](./phase0-resource-cost-audit.md)。0.14 与 10.6 均不替代发布前 10.12 的账单再复核。
 
-当前端到端、安全与删除验证边界见 [`e2e-security-deletion-test-report.md`](./e2e-security-deletion-test-report.md)。本地完整闭环与删除语义、云端未认证失败关闭、合成可靠性链和八集合合成账号物理删除均已通过；10.7 与 10.8 完成，普通用户业务流量及真实账号删除仍关闭。
+当前端到端、安全与删除验证边界见 [`e2e-security-deletion-test-report.md`](./e2e-security-deletion-test-report.md)。本地完整闭环与删除语义、云端未认证失败关闭、合成可靠性链和八集合合成账号物理删除均已通过；开发者/体验成员真实业务流量已获授权，普通账号删除仍关闭。
 
 测试体验版发布候选的统一结论见 [`test-release-report.md`](./test-release-report.md)。报告只支持受限的开发者/体验成员测试，不支持正式公开发布；10.9 真机与第二微信身份消费均按产品负责人要求豁免并作为残余风险保留。产品负责人已于 2026-08-13 完成 10.14 明确批准。
 
 产品负责人已完成 10.14 批准。手动上传步骤见 [`experience-version-upload-guide.md`](./experience-version-upload-guide.md)；该指南在“设为体验版”处停止，明确禁止提交审核或正式发布。
 
-阶段 0.15 的统一结论见 [`phase0-decision-report.md`](./phase0-decision-report.md) 与机器可读的 [`phase0-decision-report.json`](./phase0-decision-report.json)。0.11R 的 30 组全量复验将 OCR 中位时延降至 1,429 ms、最大时延降至 1,940 ms，字段为 180/180，调用后实际费用仍为 0 元；阶段 0 的技术门槛、0.17 批准记录和 10.6 外发审计均已完成。真实 AI 入口和云端部署仍保持关闭，未经产品负责人对具体步骤的明确授权不进入 10.7、10.12 或发布流程。
+阶段 0.15 的统一结论见 [`phase0-decision-report.md`](./phase0-decision-report.md) 与机器可读的 [`phase0-decision-report.json`](./phase0-decision-report.json)。0.11R 的 30 组全量复验将 OCR 中位时延降至 1,429 ms、最大时延降至 1,940 ms，字段为 180/180，调用后实际费用仍为 0 元；阶段 0 的技术门槛、0.17 批准记录和 10.6 外发审计均已完成。本轮体验版真实 AI 授权取代此前“真实入口关闭”的历史边界，但不授权付费兜底、正式审核或公开发布。
 
 阶段 0.11R 的安全诊断证据见 [`ocr-latency-diagnostic.md`](./ocr-latency-diagnostic.md) 与 [`ocr-latency-remediation-evaluation.md`](./ocr-latency-remediation-evaluation.md)。未来运行时保留用户原图，只向 OCR 发送 720×1080、质量 80 的 JPEG 临时副本，随后删除两者。
 

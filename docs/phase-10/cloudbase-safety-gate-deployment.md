@@ -1,5 +1,7 @@
 # CloudBase 安全门禁部署记录
 
+> **历史记录：** 本文是 2026-08-11 的只读安全门部署证据。当前体验版目标已改为开发者/体验成员使用真实 AI，以 `experience-version-upload-guide.md` 和 `test-release-report.md` 为准。
+
 **记录时间：** 2026-08-11（北京时间）
 **环境：** `applymate-mvp-d0g005nnw103af4c3`（上海、体验版、预付费）
 

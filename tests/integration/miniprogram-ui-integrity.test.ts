@@ -149,7 +149,7 @@ describe("native mini-program UI integrity", () => {
     },
   );
 
-  it("opens in local demo mode while keeping an explicit CloudBase identity-test switch", () => {
+  it("opens the experience build on CloudBase while keeping demo mode explicit", () => {
     const project = JSON.parse(readFileSync(join(process.cwd(), "project.config.json"), "utf8")) as {
       appid: string;
       miniprogramRoot: string;
@@ -160,7 +160,8 @@ describe("native mini-program UI integrity", () => {
       setting: { useCompilerPlugins: ["typescript"] },
     });
     expect(project.appid).toMatch(/^(?:touristappid|wx[a-f0-9]{16})$/u);
-    expect(read("services/runtime.ts")).toContain('mode === "cloudbase_identity_test"');
+    expect(read("services/runtime.ts")).toContain('mode === "demo"');
+    expect(read("services/runtime.ts")).toContain('"cloudbase_experience"');
     expect(read("services/runtime.ts")).toContain('mode === "demo" ? "APPLYMATE" : ""');
     expect(read("services/cloudbase-api.ts")).toContain("wx.cloud.callFunction");
     expect(read("app.ts")).toContain("initializeCloudBase()");

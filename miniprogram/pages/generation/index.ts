@@ -12,6 +12,7 @@ import {
 import { createRequestId } from "../../services/api-client.js";
 import { isWeakNetwork, messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
+import { uploadTemporaryFiles } from "../../services/cloud-storage.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 type PickerEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
@@ -192,8 +193,14 @@ Page({
     const requestId = this.data.requestId || createRequestId();
     this.setData({ errorMessage: "", loading: true, requestId, weakNetwork: false });
     try {
+      const submittedInput = activeInput.inputType === "images"
+        ? {
+            inputType: "images" as const,
+            fileIds: await uploadTemporaryFiles(this.data.images.map(({ path }) => path)),
+          }
+        : activeInput;
       const result = await runtime().api.write<{ jobId: string }>("generation.create", {
-        ...activeInput,
+        ...submittedInput,
         resumeId: resume.resumeId,
       }, requestId);
       runtime().setLastJobId(result.jobId);

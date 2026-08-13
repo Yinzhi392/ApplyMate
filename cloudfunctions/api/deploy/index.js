@@ -15,6 +15,10 @@ function hasValue(value) {
   return typeof value === "string" && value.length > 0;
 }
 
+function realAiEnabled() {
+  return process.env.APPLYMATE_REAL_AI_ENABLED === "true";
+}
+
 exports.main = async (event, context) => {
   const cloudbaseContext = CloudBase.getCloudbaseContext(context);
   if (event && event.healthcheck === true) {
@@ -22,8 +26,8 @@ exports.main = async (event, context) => {
       ok: true,
       data: {
         runtime: "api",
-        state: "invite_live_limited",
-        acceptsUserTraffic: false,
+        state: realAiEnabled() ? "experience_real_ai_live" : "experience_real_ai_paused",
+        acceptsUserTraffic: realAiEnabled(),
         credentialDiagnostic: {
           hasSecretId: hasValue(cloudbaseContext.TENCENTCLOUD_SECRETID),
           hasSecretKey: hasValue(cloudbaseContext.TENCENTCLOUD_SECRETKEY),
@@ -44,6 +48,14 @@ exports.main = async (event, context) => {
   });
   return createLiveApiHandler({
     database: app.database(),
+    experienceEnabled: realAiEnabled(),
+    dispatchExperienceJob: async (jobId) => {
+      if (!realAiEnabled()) {
+        return { ok: false, error: { code: "RESOURCE_PAUSED", message: "Real AI is not enabled.", retryable: true } };
+      }
+      const response = await app.callFunction({ name: "worker", data: { jobId }, parse: true });
+      return typeof response.result === "string" ? JSON.parse(response.result) : response.result;
+    },
     dispatchReliabilityProbe: async (jobId) => {
       const response = await app.callFunction({
         name: "worker",

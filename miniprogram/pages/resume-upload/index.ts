@@ -5,6 +5,7 @@ import {
 } from "../../core/input-rules.js";
 import { messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
+import { uploadTemporaryFiles } from "../../services/cloud-storage.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 type UploadInputType = "pdf" | "docx" | "images";
@@ -88,33 +89,33 @@ Page({
   },
 
   async submit(): Promise<void> {
-    const payload: Record<string, unknown> = { inputType: this.data.inputType };
-    if (this.data.inputType === "text") {
-      if (this.data.text.trim() === "") {
-        this.setData({ errorMessage: "请先粘贴简历文字。" });
-        return;
-      }
-      payload.text = this.data.text;
-    } else if (this.data.inputType === "images") {
-      const validation = validateResumeImageSelection(this.data.images);
-      if (!validation.valid) {
-        this.setData({ errorMessage: validation.message });
-        return;
-      }
-      payload.fileIds = this.data.images.map(({ path }) => `demo:${path}`);
-    } else {
-      const validation = validateResumeDocument({
-        name: this.data.selectedName,
-        size: this.data.selectedSize,
-      });
-      if (!validation.valid) {
-        this.setData({ errorMessage: validation.message });
-        return;
-      }
-      payload.fileIds = [`demo:${this.data.documentPath}`];
-    }
     this.setData({ errorMessage: "", loading: true });
     try {
+      const payload: Record<string, unknown> = { inputType: this.data.inputType };
+      if (this.data.inputType === "text") {
+        if (this.data.text.trim() === "") {
+          this.setData({ errorMessage: "请先粘贴简历文字。", loading: false });
+          return;
+        }
+        payload.text = this.data.text;
+      } else if (this.data.inputType === "images") {
+        const validation = validateResumeImageSelection(this.data.images);
+        if (!validation.valid) {
+          this.setData({ errorMessage: validation.message, loading: false });
+          return;
+        }
+        payload.fileIds = await uploadTemporaryFiles(this.data.images.map(({ path }) => path));
+      } else {
+        const validation = validateResumeDocument({
+          name: this.data.selectedName,
+          size: this.data.selectedSize,
+        });
+        if (!validation.valid) {
+          this.setData({ errorMessage: validation.message, loading: false });
+          return;
+        }
+        payload.fileIds = await uploadTemporaryFiles([this.data.documentPath]);
+      }
       const result = await runtime().api.write<{ jobId: string; resumeId: string }>(
         "resume.parse",
         payload,

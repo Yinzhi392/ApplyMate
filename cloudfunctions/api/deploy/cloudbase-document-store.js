@@ -29,6 +29,14 @@ async function findOne(collection, query) {
   return result.data.length > 0 ? result.data[0] : null;
 }
 
+async function findMany(collection, query, limit = 100) {
+  const result = assertDatabaseResult(await collection.where(query).limit(limit).get(), "get");
+  if (!Array.isArray(result.data)) {
+    throw new Error("CloudBase database get returned an invalid response.");
+  }
+  return result.data;
+}
+
 async function addDocument(collection, document) {
   return assertDatabaseResult(await collection.add(document), "add");
 }
@@ -65,6 +73,7 @@ module.exports = {
   addIfAbsent,
   assertDatabaseResult,
   findOne,
+  findMany,
   updateDocument,
   updateExactlyOne,
 };

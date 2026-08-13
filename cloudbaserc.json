@@ -5,11 +5,11 @@
   "functions": [
     {
       "name": "api",
-      "timeout": 10,
+      "timeout": 45,
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/api/deploy",
-      "description": "ApplyMate identity runtime. Only auth, agreement and user status are live; all job and AI traffic remains paused.",
+      "description": "ApplyMate experience runtime. Auth, resume and greeting workflows use real OCR and AI behind a zero-cost fail-closed gate.",
       "installDependency": true
     },
     {
@@ -18,7 +18,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/worker/deploy",
-      "description": "ApplyMate worker reliability-probe runtime. Only synthetic probe jobs are accepted; OCR and model traffic remain paused.",
+      "description": "ApplyMate experience worker. Handles synthetic probes plus real resume and greeting tasks when explicitly enabled.",
       "installDependency": true
     },
     {

@@ -3,7 +3,7 @@ import { createRequestId } from "./api-client.js";
 import { createAnalyticsTracker, type ClientAnalyticsEvent } from "../core/analytics.js";
 import {
   createCloudBaseApiClient,
-  isCloudBaseIdentityTestMode,
+  isExplicitDemoMode,
   RUNTIME_MODE_STORAGE_KEY,
 } from "./cloudbase-api.js";
 import { createDemoApiClient } from "./demo-api.js";
@@ -12,7 +12,7 @@ const JOB_STORAGE_KEY = "applymate:last-job-id";
 
 export interface RuntimeState {
   api: ApiClient;
-  mode: "demo" | "cloudbase_identity_test";
+  mode: "cloudbase_experience" | "demo";
   demoInviteCode: string;
   getLastJobId(): string;
   setLastJobId(jobId: string): void;
@@ -24,14 +24,12 @@ interface RuntimeApp {
 }
 
 export function createRuntime(): RuntimeState {
-  const mode = isCloudBaseIdentityTestMode({
+  const mode = isExplicitDemoMode({
     get: (key) => wx.getStorageSync(key),
   })
-    ? "cloudbase_identity_test"
-    : "demo";
-  const api = mode === "cloudbase_identity_test"
-    ? createCloudBaseApiClient()
-    : createDemoApiClient();
+    ? "demo"
+    : "cloudbase_experience";
+  const api = mode === "demo" ? createDemoApiClient() : createCloudBaseApiClient();
   const analytics = createAnalyticsTracker(
     api,
     {
@@ -55,11 +53,11 @@ export function createRuntime(): RuntimeState {
 }
 
 export function enableCloudBaseIdentityTestMode(): void {
-  wx.setStorageSync(RUNTIME_MODE_STORAGE_KEY, "cloudbase_identity_test");
+  wx.removeStorageSync(RUNTIME_MODE_STORAGE_KEY);
 }
 
 export function disableCloudBaseIdentityTestMode(): void {
-  wx.removeStorageSync(RUNTIME_MODE_STORAGE_KEY);
+  wx.setStorageSync(RUNTIME_MODE_STORAGE_KEY, "demo");
 }
 
 export function runtime(): RuntimeState {

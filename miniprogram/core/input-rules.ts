@@ -146,7 +146,7 @@ export function reorderJdImage(
 }
 
 export type ActiveGenerationInput =
-  | { inputType: "images"; fileIds: string[] }
+  | { inputType: "images"; paths: string[] }
   | { inputType: "text"; text: string };
 
 export function buildActiveGenerationInput(
@@ -155,7 +155,7 @@ export function buildActiveGenerationInput(
   if (draft.inputMode === "images") {
     const validation = validateJdImageSelection(draft.images);
     return validation.valid
-      ? { inputType: "images", fileIds: draft.images.map(({ path }) => `demo:${path}`) }
+      ? { inputType: "images", paths: draft.images.map(({ path }) => path) }
       : undefined;
   }
   const text = draft.text.trim();

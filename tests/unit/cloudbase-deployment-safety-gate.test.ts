@@ -17,7 +17,7 @@ describe("CloudBase deployment safety gates", () => {
         ok: true,
         data: {
           runtime,
-          state: "reliability_probe_live",
+          state: runtime === "worker" ? "experience_real_ai_paused" : "reliability_probe_live",
           acceptsUserTraffic: false,
         },
       });

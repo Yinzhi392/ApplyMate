@@ -169,7 +169,7 @@ flowchart LR
 - `cleanup` 处理残留文件、10 分钟无终态任务、过期幂等记录和待删除账号。
 - 单次 worker 任务最多运行 45 秒；超过 10 分钟仍无终态的任务由 cleanup 标记失败并释放额度。
 - 所有服务严格使用免费资源；创建或开通微信、CloudBase、OCR、TokenHub 资源必须逐项取得授权。
-- CloudBase 体验版当前已部署同名 `api`、`worker`、`cleanup` 安全门禁：仅健康检查允许通过，任何真实用户业务请求返回可重试暂停。它用于验证运行时、超时和费用边界，不替代本图的真实仓储与异步处理架构；小程序在真实适配器完成前继续使用本地演示 API。
+- CloudBase 体验版使用同名 `api`、`worker`、`cleanup`。开发者/体验成员默认进入真实 CloudBase 链路：文件上传到 `temporary/` 云存储，`api` 创建任务，`worker` 调用腾讯 OCR、遮盖敏感信息并调用 TokenHub Hy3，终态后清理临时文件。`APPLYMATE_REAL_AI_ENABLED` 缺失、免费额度不足或模型信息不完整时失败关闭；显式 demo 仅用于合成界面测试。
 
 ## 8. OCR、模型与适配边界
 

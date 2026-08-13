@@ -122,7 +122,7 @@ describe("mini-program input rules", () => {
 
     expect(buildActiveGenerationInput(base)).toEqual({
       inputType: "images",
-      fileIds: ["demo:a.jpg"],
+      paths: ["a.jpg"],
     });
     const textMode = updateGenerationDraft(base, { inputMode: "text", resumeIndex: 2 });
     expect(textMode.requestId).toBe("");

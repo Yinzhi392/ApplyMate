@@ -22,8 +22,9 @@ describe("CloudBase identity-test client", () => {
 
     expect(applyRuntimeModeFromLaunchQuery(undefined, storage)).toBe(false);
     expect(applyRuntimeModeFromLaunchQuery({ [RUNTIME_MODE_LAUNCH_QUERY_KEY]: "demo" }, storage))
-      .toBe(false);
-    expect(values.size).toBe(0);
+      .toBe(true);
+    expect(values.get(RUNTIME_MODE_STORAGE_KEY)).toBe("demo");
+    values.clear();
 
     expect(applyRuntimeModeFromLaunchQuery({
       [RUNTIME_MODE_LAUNCH_QUERY_KEY]: "cloudbase_identity_test",

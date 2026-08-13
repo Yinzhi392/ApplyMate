@@ -8,6 +8,7 @@ const {
   updateDocument,
 } = require("./cloudbase-document-store");
 const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
+const { createExperienceApiHandler } = require("./experience-api");
 
 const CURRENT_VERSIONS = Object.freeze({
   userAgreementVersion: "user-2026-08-09",
@@ -110,7 +111,7 @@ function isAdmin(user) {
   return Array.isArray(user.roles) && user.roles.includes("admin");
 }
 
-function safeUser(user) {
+function safeUser(user, experienceEnabled = false) {
   return {
     userId: user.userId,
     accountStatus: user.accountStatus,
@@ -120,7 +121,7 @@ function safeUser(user) {
     preferenceFacts: clone(user.preferenceFacts || []),
     isAdmin: isAdmin(user),
     remainingQuota: 5,
-    resourcePauseReason: "OCR、模型与任务处理尚未启用",
+    resourcePauseReason: experienceEnabled ? "" : "OCR、模型与任务处理尚未启用",
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -183,6 +184,8 @@ function canUseInvite(user) {
 
 function createLiveApiHandler({
   database,
+  dispatchExperienceJob = async () => paused(),
+  experienceEnabled = false,
   dispatchReliabilityProbe = async () => undefined,
   readTrustedOpenId,
   readBootstrapTokenHash = () => process.env.APPLYMATE_ADMIN_BOOTSTRAP_TOKEN_SHA256,
@@ -252,7 +255,7 @@ function createLiveApiHandler({
       if (!isEmptyPayload(event.payload)) {
         return invalidRequest();
       }
-      return { ok: true, data: { accessState: accessState(user), user: safeUser(user) } };
+      return { ok: true, data: { accessState: accessState(user), user: safeUser(user, experienceEnabled) } };
     }
 
     if (event.action === "job.get") {
@@ -287,6 +290,18 @@ function createLiveApiHandler({
           ...(job.error === undefined ? {} : { error: clone(job.error) }),
         },
       };
+    }
+
+    if (experienceEnabled) {
+      const experienceResult = await createExperienceApiHandler({
+        database,
+        dispatchExperienceJob,
+        accessState,
+        now,
+      })({ event, user });
+      if (experienceResult !== null) {
+        return experienceResult;
+      }
     }
 
     if (event.action === "admin.reliabilityProbeCreate") {

@@ -38,7 +38,7 @@ Page({
     }
     this.setData({ errorMessage: "", loading: true, weakNetwork: false });
     const poller = createJobPoller({
-      delaysMs: [0, 300, 600],
+      delaysMs: [0, 500, 1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000],
       getJob: async (jobId) => runtime().api.read<ClientJob>("job.get", { jobId }),
       wait: async (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
     });
