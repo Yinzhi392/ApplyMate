@@ -25,6 +25,7 @@ export interface JobRepository {
     updates?: JobTransitionUpdates,
   ): Promise<JobRecord | null>;
   listStaleJobs(updatedAtOrBefore: Date): Promise<JobRecord[]>;
+  listAllForMetrics(): Promise<JobRecord[]>;
   deleteByUserId(userId: string): Promise<number>;
 }
 
@@ -112,6 +113,10 @@ export class InMemoryJobRepository implements JobRepository {
           new Date(job.updatedAt).getTime() <= updatedAtOrBefore.getTime(),
       )
       .map(cloneJob);
+  }
+
+  async listAllForMetrics(): Promise<JobRecord[]> {
+    return Array.from(this.#jobs.values(), cloneJob);
   }
 
   async deleteByUserId(userId: string): Promise<number> {

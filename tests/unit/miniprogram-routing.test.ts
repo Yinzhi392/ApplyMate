@@ -8,7 +8,7 @@ import {
 } from "../../miniprogram/core/routes.js";
 
 describe("mini-program route manifest", () => {
-  it("locks the three approved tab routes and all thirteen approved pages", () => {
+  it("locks the three approved tab routes and all fourteen approved pages", () => {
     expect(TAB_ROUTES).toEqual([
       { pagePath: "pages/home/index", text: "首页" },
       { pagePath: "pages/records/index", text: "记录" },
@@ -20,11 +20,12 @@ describe("mini-program route manifest", () => {
       "pages/resumes/index",
       "pages/generation/index",
       "pages/result/index",
+      "pages/legal/index",
       "pages/records/index",
       "pages/mine/index",
     ]));
     expect(FLOW_ROUTES).toContain("pages/job/index");
-    expect(PAGE_ROUTES).toHaveLength(13);
+    expect(PAGE_ROUTES).toHaveLength(14);
     expect(FLOW_ROUTES).not.toContain("pages/jd-confirm/index");
   });
 

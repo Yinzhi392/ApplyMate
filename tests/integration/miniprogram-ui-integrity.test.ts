@@ -149,24 +149,21 @@ describe("native mini-program UI integrity", () => {
     },
   );
 
-  it("opens in local demo mode without calling unapproved cloud resources", () => {
+  it("opens in local demo mode while keeping an explicit CloudBase identity-test switch", () => {
     const project = JSON.parse(readFileSync(join(process.cwd(), "project.config.json"), "utf8")) as {
       appid: string;
       miniprogramRoot: string;
       setting: { useCompilerPlugins: string[] };
     };
-    const source = [
-      read("app.ts"),
-      ...PAGE_ROUTES.map((route) => read(`${route}.ts`)),
-      ...["api-client.ts", "demo-api.ts", "runtime.ts"].map((file) => read(`services/${file}`)),
-    ].join("\n");
-
     expect(project).toMatchObject({
       miniprogramRoot: "miniprogram/",
       setting: { useCompilerPlugins: ["typescript"] },
     });
     expect(project.appid).toMatch(/^(?:touristappid|wx[a-f0-9]{16})$/u);
-    expect(source).not.toContain("wx.cloud");
+    expect(read("services/runtime.ts")).toContain('mode === "cloudbase_identity_test"');
+    expect(read("services/runtime.ts")).toContain('mode === "demo" ? "APPLYMATE" : ""');
+    expect(read("services/cloudbase-api.ts")).toContain("wx.cloud.callFunction");
+    expect(read("app.ts")).toContain("initializeCloudBase()");
   });
 
   it("keeps WeChat Developer Tools local configuration parseable without formatting it", () => {

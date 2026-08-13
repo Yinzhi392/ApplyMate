@@ -15,6 +15,7 @@ import {
 } from "../../cloudfunctions/api/src/index.js";
 import {
   countVisibleCharacters,
+  createDemoGenerationDisclosureSnapshot,
   createFactId,
   hashFactText,
   validateAiGreetingForJob,
@@ -146,13 +147,19 @@ async function harness(
     generate: vi.fn(async (_record, request) => {
       modes.push(request.mode);
       if (options.neverResolve === true) {
-        return new Promise<GreetingDraft>(() => undefined);
+        return new Promise<never>(() => undefined);
       }
       const draft = drafts.shift();
       if (draft === undefined) {
         throw new Error("No synthetic draft configured.");
       }
-      return draft;
+      return {
+        draft,
+        generationDisclosure: createDemoGenerationDisclosureSnapshot(
+          "synthetic-quality-model",
+          "greeting-v1",
+        ),
+      };
     }),
   };
   const execution = new GenerationExecutionService(

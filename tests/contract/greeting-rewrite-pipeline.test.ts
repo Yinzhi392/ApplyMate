@@ -10,6 +10,14 @@ import type {
 } from "../../cloudfunctions/api/src/index.js";
 import type { GreetingDraft } from "../../shared/src/index.js";
 
+const model = {
+  mode: "demo" as const,
+  providerName: "本地测试适配器",
+  modelName: "合成模型响应",
+  modelId: "synthetic-rewrite-model",
+  filingReference: "本地演示不适用",
+};
+
 const output: GreetingDraft = {
   body: "合成测试输出",
   claims: [],
@@ -71,9 +79,9 @@ describe("greeting rewrite privacy and instruction contract", () => {
   it("uses a fixed instruction for every preset mode and keeps immutable rules", async () => {
     const inputs: string[] = [];
     const gateway = {
-      generate: async (input: string) => {
+      generateWithMetadata: async (input: string) => {
         inputs.push(input);
-        return output;
+        return { draft: output, model };
       },
     } as GreetingModelGateway;
     const pipeline = new GreetingRewritePipeline(gateway);
@@ -100,9 +108,9 @@ describe("greeting rewrite privacy and instruction contract", () => {
   it("treats custom text as untrusted data and masks all protected text", async () => {
     let captured = "";
     const gateway = {
-      generate: async (input: string) => {
+      generateWithMetadata: async (input: string) => {
         captured = input;
-        return output;
+        return { draft: output, model };
       },
     } as GreetingModelGateway;
     const pipeline = new GreetingRewritePipeline(gateway);

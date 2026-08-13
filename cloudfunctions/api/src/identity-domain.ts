@@ -15,9 +15,20 @@ export interface UserRecord {
   identityHash: string;
   accountStatus: AccountStatus;
   activationStatus: ActivationStatus;
+  activatedAt?: string;
   agreements: Partial<Record<AgreementType, AgreementAcceptance>>;
   preferenceText: string;
   preferenceFacts: PreferenceFact[];
+  participation?: {
+    firstAppOpenedAt?: string;
+    lastAppOpenedAt?: string;
+    firstGreetingCopiedAt?: string;
+    returnedWithinSevenDaysAt?: string;
+  };
+  inviteAttemptState?: {
+    failureTimestamps: string[];
+    lockedUntil?: string;
+  };
   deletionStatus?: "pending";
   deletionRequestedAt?: string;
   deletionDeadlineAt?: string;

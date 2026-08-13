@@ -3,7 +3,7 @@ import { runtime } from "../../services/runtime.js";
 
 Page({
   data: {
-    agreementVersion: "mvp-1",
+    agreementVersion: "正在读取",
     errorMessage: "",
     isAdmin: false,
     loading: true,
@@ -55,11 +55,7 @@ Page({
   },
 
   showAgreements(): void {
-    wx.showModal({
-      title: "协议与隐私",
-      content: `当前记录版本：${this.data.agreementVersion}。协议发生实质变化后必须重新同意。`,
-      showCancel: false,
-    });
+    openPage("/pages/legal/index?document=user-agreement");
   },
 
   async deleteAccount(): Promise<void> {

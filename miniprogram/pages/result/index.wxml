@@ -14,7 +14,11 @@
       <textarea class="textarea greeting-editor" value="{{greetingBody}}" maxlength="1000" bindinput="updateBody" />
       <view class="editor-meta"><text>{{visibleCharacters}} 个可见字符</text><text>AI 建议 250 至 350 字</text></view>
       <view wx:for="{{manualWarnings}}" wx:key="message" class="warning warning-item">{{item.message}}</view>
-      <view class="field-help ai-label-note">复制时会另起一行附加：AI生成内容，请核对真实性</view>
+      <view class="ai-disclosure surface-panel">
+        <view class="ai-label-note">AI生成内容，请核对真实性</view>
+        <view class="field-help generation-disclosure-message">{{generationDisclosureMessage}}</view>
+        <view wx:if="{{generationDisclosureDetails}}" class="field-help generation-disclosure-details">{{generationDisclosureDetails}}</view>
+      </view>
     </view>
 
     <view class="section primary-actions">

@@ -1,0 +1,54 @@
+<view class="page legal-page">
+  <view class="page-header legal-header">
+    <view class="page-header-copy">
+      <view class="eyebrow">邀请制体验版</view>
+      <view class="title">协议与隐私</view>
+      <view class="subtitle">查看当前适用文本、版本和同意记录。</view>
+    </view>
+  </view>
+
+  <scroll-view class="document-switcher" scroll-x enhanced show-scrollbar="{{false}}">
+    <view class="document-switcher-row">
+      <button
+        class="document-option {{currentDocumentId === 'user-agreement' ? 'document-option-active' : ''}}"
+        data-document="user-agreement"
+        bindtap="selectDocument"
+      >用户协议</button>
+      <button
+        class="document-option {{currentDocumentId === 'privacy-policy' ? 'document-option-active' : ''}}"
+        data-document="privacy-policy"
+        bindtap="selectDocument"
+      >隐私政策</button>
+      <button
+        class="document-option {{currentDocumentId === 'ai-service' ? 'document-option-active' : ''}}"
+        data-document="ai-service"
+        bindtap="selectDocument"
+      >AI 服务说明</button>
+    </view>
+  </scroll-view>
+
+  <view class="legal-summary glass-surface">
+    <view class="section-title">{{currentDocument.title}}</view>
+    <view class="legal-meta">
+      <view>版本：{{currentDocument.version}}</view>
+      <view>生效日期：{{currentDocument.effectiveDate}}</view>
+      <view>同意时间：{{acceptedTimeLabel}}</view>
+    </view>
+    <view class="draft-status">{{currentDocument.reviewStatus}}</view>
+    <view class="muted legal-summary-copy">{{currentDocument.summary}}</view>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="warning legal-warning">{{errorMessage}}</view>
+
+  <view class="legal-body surface-panel">
+    <view wx:for="{{currentDocument.sections}}" wx:key="heading" class="legal-section">
+      <view class="section-title legal-section-title">{{item.heading}}</view>
+      <view wx:for="{{item.paragraphs}}" wx:for-item="paragraph" wx:key="*this" class="legal-paragraph">{{paragraph}}</view>
+    </view>
+  </view>
+
+  <view class="legal-footer glass-surface">
+    <view class="field-help">复制内容包含标题、版本、生效日期、正文和联系邮箱，方便离线核对。</view>
+    <button class="button legal-copy" bindtap="copyDocument">复制全文</button>
+  </view>
+</view>

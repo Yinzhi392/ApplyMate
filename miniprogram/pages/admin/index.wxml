@@ -27,6 +27,20 @@
 
   <view wx:if="{{authorized}}" class="section">
     <view class="section-heading">
+      <view class="section-title">产品指标</view>
+      <view class="muted">去重分子 / 分母</view>
+    </view>
+    <view class="list-group metric-list">
+      <view wx:for="{{productMetrics}}" wx:key="label" class="metric-row">
+        <view class="metric-label">{{item.label}}</view>
+        <view class="metric-counts">{{item.counts}}</view>
+        <view class="metric-value">{{item.value}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{authorized}}" class="section">
+    <view class="section-heading">
       <view class="section-title">邀请码</view>
       <view class="muted">邀请制内测</view>
     </view>

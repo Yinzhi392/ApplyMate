@@ -12,6 +12,7 @@ import {
 import { ActionRegistry, type ApiExecutionContext } from "./action-registry.js";
 import { AccountDeletionService } from "./account-deletion-service.js";
 import type { AdminStatsService } from "./admin-stats-service.js";
+import type { AnalyticsService } from "./analytics-service.js";
 import {
   AgreementService,
   type AgreementVersions,
@@ -103,6 +104,15 @@ const FeedbackSubmitPayloadSchema = z
     note: z.string().optional(),
   })
   .strict();
+const AnalyticsTrackPayloadSchema = z.discriminatedUnion("event", [
+  z.object({ event: z.literal("app_opened") }).strict(),
+  z
+    .object({
+      event: z.literal("greeting_copied"),
+      applicationId: z.string().trim().min(1).max(100),
+    })
+    .strict(),
+]);
 const UserDeletePayloadSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("request") }).strict(),
   z
@@ -126,6 +136,7 @@ export interface IdentityAccessApiDependencies {
   rewrite?: GenerationRewriteWorkflowService;
   applications?: ApplicationService;
   feedback?: FeedbackService;
+  analytics?: AnalyticsService;
   resourceGate?: ApiEntryDependencies["resourceGate"];
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
@@ -774,6 +785,25 @@ export function createIdentityAccessApi(
           dependencies.now(),
         ),
       });
+    });
+  }
+
+  const analytics = dependencies.analytics;
+  if (analytics !== undefined) {
+    registry.register("analytics.track", async (payload, context) => {
+      const parsed = AnalyticsTrackPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "analytics.track");
+      if (parsed.data.event === "greeting_copied") {
+        agreements.assertActionAgreement(user, "analytics.track");
+        assertActivated(user);
+      }
+      return success(
+        await analytics.track(user.userId, parsed.data, dependencies.now()),
+      );
     });
   }
 

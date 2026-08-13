@@ -35,6 +35,27 @@
   margin-top: 16rpx;
 }
 
+.ai-disclosure {
+  margin-top: 18rpx;
+  padding: 20rpx;
+}
+
+.ai-disclosure .ai-label-note {
+  margin-top: 0;
+  color: var(--color-text);
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+.generation-disclosure-message {
+  margin-top: 8rpx;
+}
+
+.generation-disclosure-details {
+  margin-top: 6rpx;
+  word-break: break-all;
+}
+
 .secondary-action-row,
 .rating-actions {
   margin-top: 16rpx;

@@ -185,6 +185,12 @@ describe("full generation chain", () => {
       generator: new GreetingGenerationPipeline(
         new GreetingModelGateway({
           modelId: "synthetic-model",
+          disclosure: {
+            mode: "demo",
+            providerName: "ApplyMate 本地演示适配器",
+            modelName: "本地合成响应",
+            filingReference: "本地演示不适用",
+          },
           generate: async () => greeting(),
         }),
       ),
@@ -221,6 +227,13 @@ describe("full generation chain", () => {
     await expect(applications.getByJobId("job_full_chain")).resolves.toMatchObject({
       applicationId: "application_job_full_chain",
       status: "not_applied",
+      generationDisclosure: {
+        mode: "demo",
+        providerName: "ApplyMate 本地演示适配器",
+        modelName: "本地合成响应",
+        modelId: "synthetic-model",
+        promptVersion: "greeting-v1",
+      },
     });
   });
 });

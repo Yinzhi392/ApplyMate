@@ -29,6 +29,43 @@
   font-size: 22rpx;
 }
 
+.metric-list {
+  padding: 0 24rpx;
+}
+
+.metric-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 88rpx;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.metric-row + .metric-row {
+  border-top: 1rpx solid var(--color-border);
+}
+
+.metric-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.metric-counts {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-size: 23rpx;
+}
+
+.metric-value {
+  width: 88rpx;
+  flex: 0 0 88rpx;
+  color: var(--color-primary);
+  font-weight: 700;
+  text-align: right;
+}
+
 .menu-action {
   flex-shrink: 0;
   color: var(--color-primary);

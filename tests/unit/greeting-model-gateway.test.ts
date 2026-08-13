@@ -62,6 +62,33 @@ describe("greeting model gateway", () => {
     expect(serialized).toContain("inputHash");
   });
 
+  it("returns the successful fallback model metadata for persistence", async () => {
+    const gateway = new GreetingModelGateway(
+      { modelId: "primary", generate: async () => "{bad-json" },
+      {
+        modelId: "fallback",
+        disclosure: {
+          mode: "real",
+          providerName: "已核实提供方",
+          modelName: "已核实模型",
+          filingReference: "已核实备案信息",
+        },
+        generate: async () => DRAFT,
+      },
+    );
+
+    await expect(gateway.generateWithMetadata("masked input")).resolves.toEqual({
+      draft: DRAFT,
+      model: {
+        mode: "real",
+        providerName: "已核实提供方",
+        modelName: "已核实模型",
+        modelId: "fallback",
+        filingReference: "已核实备案信息",
+      },
+    });
+  });
+
   it("bounds timeout behavior below 45 seconds", async () => {
     const gateway = new GreetingModelGateway(
       {

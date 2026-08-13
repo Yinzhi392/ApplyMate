@@ -1,4 +1,8 @@
 import { countVisibleCharacters } from "../../core/input-rules.js";
+import {
+  describeGenerationDisclosure,
+  type ClientGenerationDisclosure,
+} from "../../core/generation-disclosure.js";
 import { createResultView } from "../../core/result-presenter.js";
 import { leaveResult, type ResultExitDestination } from "../../core/result-exit.js";
 import { messageFrom, openPage, showSuccess } from "../../services/page-utils.js";
@@ -9,6 +13,7 @@ type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 interface ApplicationDetail {
   application: Parameters<typeof createResultView>[0] & { memo?: string };
   copyText: string;
+  generationDisclosure?: ClientGenerationDisclosure;
   feedback?: { note?: string; rating: "satisfied" | "needs_improvement" };
 }
 
@@ -21,6 +26,8 @@ Page({
     detailsExpanded: false,
     errorMessage: "",
     feedbackNote: "",
+    generationDisclosureDetails: "",
+    generationDisclosureMessage: "生成信息不可用",
     greetingBody: "",
     jobTitle: "该岗位",
     leaving: false,
@@ -57,11 +64,16 @@ Page({
         memo: response.application.memo ?? "",
       };
       const view = createResultView(input);
+      const disclosure = describeGenerationDisclosure(
+        response.generationDisclosure,
+      );
       this.setData({
         claims: view.claims,
         companyDisplayName: view.companyDisplayName,
         copyText: response.copyText,
         feedbackNote: response.feedback?.note ?? "",
+        generationDisclosureDetails: disclosure.details,
+        generationDisclosureMessage: disclosure.message,
         greetingBody: view.greetingBody,
         jobTitle: view.jobTitle,
         loading: false,
@@ -155,6 +167,10 @@ Page({
       });
       await wx.setClipboardData({ data: response.copyText });
       this.setData({ copyText: response.copyText });
+      await runtime().trackAnalytics({
+        event: "greeting_copied",
+        applicationId: this.data.applicationId,
+      });
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error) });
     }

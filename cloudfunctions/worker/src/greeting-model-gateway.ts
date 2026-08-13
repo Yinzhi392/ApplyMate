@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 
 import {
   GreetingDraftSchema,
+  ModelRuntimeDisclosureSchema,
   type GreetingDraft,
+  type ModelRuntimeDisclosure,
 } from "../../../shared/src/index.js";
 
 import { GenerationProcessingError } from "./generation-processing-error.js";
@@ -21,7 +23,13 @@ export class TextModelProviderError extends Error {
 
 export interface GreetingTextModelProvider {
   modelId: string;
+  disclosure?: Omit<ModelRuntimeDisclosure, "modelId">;
   generate(maskedInput: string, signal?: AbortSignal): Promise<unknown>;
+}
+
+export interface GreetingModelResult {
+  draft: GreetingDraft;
+  model: ModelRuntimeDisclosure;
 }
 
 export interface ModelCallLog {
@@ -78,6 +86,13 @@ export class GreetingModelGateway {
   }
 
   async generate(maskedInput: string, signal?: AbortSignal): Promise<GreetingDraft> {
+    return (await this.generateWithMetadata(maskedInput, signal)).draft;
+  }
+
+  async generateWithMetadata(
+    maskedInput: string,
+    signal?: AbortSignal,
+  ): Promise<GreetingModelResult> {
     const providers = [
       this.primary,
       ...(this.fallback === undefined ? [] : [this.fallback]),
@@ -119,7 +134,16 @@ export class GreetingModelGateway {
           continue;
         }
         await this.writeLog(provider.modelId, "succeeded", started, maskedInput, output);
-        return parsed;
+        return {
+          draft: parsed,
+          model: ModelRuntimeDisclosureSchema.parse({
+            mode: provider.disclosure?.mode ?? "demo",
+            providerName: provider.disclosure?.providerName ?? "本地测试适配器",
+            modelName: provider.disclosure?.modelName ?? "合成模型响应",
+            modelId: provider.modelId,
+            filingReference: provider.disclosure?.filingReference ?? "本地演示不适用",
+          }),
+        };
       } catch (error) {
         const status =
           error instanceof ProviderDeadlineError ||

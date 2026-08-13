@@ -1,5 +1,6 @@
 import type {
   GeneratedClaim,
+  GenerationDisclosureSnapshot,
   GreetingQualityError,
   JobDescription,
 } from "../../../shared/src/index.js";
@@ -24,6 +25,7 @@ export interface ApplicationRecord {
   jdSnapshot: JobDescription;
   omittedRequirements: string[];
   warnings: string[];
+  generationDisclosure?: GenerationDisclosureSnapshot;
   createdAt: string;
   updatedAt: string;
 }

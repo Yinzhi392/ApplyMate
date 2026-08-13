@@ -3,6 +3,7 @@ import {
   maskSensitiveText,
   validateAiGreetingForJob,
   type GreetingDraft,
+  type GenerationDisclosureSnapshot,
   type JobDescription,
   type ResumeProfile,
 } from "../../../shared/src/index.js";
@@ -32,7 +33,10 @@ export interface GreetingGenerator {
     record: GenerationRecord,
     request: GenerationRequest,
     signal?: AbortSignal,
-  ): Promise<GreetingDraft>;
+  ): Promise<{
+    draft: GreetingDraft;
+    generationDisclosure: GenerationDisclosureSnapshot;
+  }>;
 }
 
 export interface GenerationExecutionDependencies {
@@ -304,11 +308,13 @@ export class GenerationExecutionService {
         companyDisplayName,
         jobTitle: jd.jobTitle.text,
       };
-      let draft = await this.dependencies.generator.generate(
+      let generated = await this.dependencies.generator.generate(
         record,
         request,
         signal,
       );
+      let draft = generated.draft;
+      let generationDisclosure = generated.generationDisclosure;
       await this.dependencies.jobs.transitionJob(
         jobId,
         "validating",
@@ -327,7 +333,7 @@ export class GenerationExecutionService {
       );
       if (!quality.valid) {
         const firstDraft = draft;
-        draft = await this.dependencies.generator.generate(
+        generated = await this.dependencies.generator.generate(
           record,
           {
             ...request,
@@ -337,6 +343,8 @@ export class GenerationExecutionService {
           },
           signal,
         );
+        draft = generated.draft;
+        generationDisclosure = generated.generationDisclosure;
         quality = validateAiGreetingForJob(
           draft,
           registry,
@@ -364,6 +372,7 @@ export class GenerationExecutionService {
         jdSnapshot: sanitizeJobDescription(jd),
         omittedRequirements: [...draft.omittedRequirements],
         warnings,
+        generationDisclosure,
         createdAt: timestamp,
         updatedAt: timestamp,
       };

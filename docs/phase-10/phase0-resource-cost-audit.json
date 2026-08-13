@@ -1,0 +1,98 @@
+{
+  "auditVersion": "phase0-cost-v1",
+  "auditedAt": "2026-08-11T15:45:02+08:00",
+  "scope": "phase0-formal-30-cases",
+  "sampleVersion": "phase0-v1.0",
+  "resources": [
+    {
+      "resource": "ocr",
+      "calls": 32,
+      "units": 32,
+      "unitName": "requests",
+      "estimatedUnitCostYuan": 0.15,
+      "estimatedCostYuan": 4.8,
+      "actualCostYuan": 0,
+      "estimateBasis": "GeneralBasicOCR first-tier postpaid list price; two repeated calls are included"
+    },
+    {
+      "resource": "model",
+      "calls": 30,
+      "units": 20008,
+      "unitName": "tokens",
+      "estimatedUnitCostYuan": 0.002668,
+      "estimatedCostYuan": 0.080032,
+      "actualCostYuan": 0,
+      "estimateBasis": "conservative Hy3 upper bound treating all known tokens as output tokens"
+    },
+    {
+      "resource": "cloud_function",
+      "calls": 0,
+      "units": 0,
+      "unitName": "GBs",
+      "estimatedUnitCostYuan": 0,
+      "estimatedCostYuan": 0,
+      "actualCostYuan": 0,
+      "estimateBasis": "formal evaluation ran locally; no cloud function was deployed or invoked"
+    },
+    {
+      "resource": "storage",
+      "calls": 0,
+      "units": 0,
+      "unitName": "MB-days",
+      "estimatedUnitCostYuan": 0,
+      "estimatedCostYuan": 0,
+      "actualCostYuan": 0,
+      "estimateBasis": "all generated fixtures and checkpoints remained in temporary local storage"
+    },
+    {
+      "resource": "traffic",
+      "calls": 0,
+      "units": 0,
+      "unitName": "bytes",
+      "estimatedUnitCostYuan": 0,
+      "estimatedCostYuan": 0,
+      "actualCostYuan": 0,
+      "estimateBasis": "no CloudBase function or storage traffic was used by the formal evaluation"
+    }
+  ],
+  "estimatedCostYuan": 4.880032,
+  "actualCostYuan": 0,
+  "actualCostIsZero": true,
+  "controlPlaneSnapshot": {
+    "ocr": {
+      "freePackageTotalCalls": 44050,
+      "usedCalls": 34,
+      "remainingCalls": 44016,
+      "postpaidEnabled": false
+    },
+    "tokenHub": {
+      "hy3RemainingPercent": 96.9,
+      "deepseekV4FlashRemainingPercent": 99.8,
+      "paidTokenBillingEnabled": false
+    },
+    "cloudBase": {
+      "plan": "free-trial",
+      "resourcePointsUsed": 1.13,
+      "resourcePointsTotal": 3000,
+      "databaseCalls": 49,
+      "environmentApiCalls": 15,
+      "cloudFunctionInvocations": 0,
+      "cloudFunctionGbSeconds": 0,
+      "storageReadRequests": 0,
+      "storageWriteRequests": 0,
+      "storageMbDays": 0,
+      "cloudFunctionOutboundKb": 0,
+      "storageCdnBytes": 0
+    },
+    "billing": {
+      "period": "2026-08-unbilled-realtime-detail",
+      "totalCostYuan": 0,
+      "cashPaidYuan": 0,
+      "giftCreditPaidYuan": 0,
+      "revenueSharePaidYuan": 0,
+      "couponPaidYuan": 0
+    }
+  },
+  "storesCredentials": false,
+  "storesUserContent": false
+}

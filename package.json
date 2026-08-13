@@ -12,6 +12,17 @@
   "scripts": {
     "format:check": "node scripts/check-format.mjs",
     "fixtures:check": "node scripts/check-fixtures.mjs",
+    "tokenhub:plan": "node scripts/run-phase0-tokenhub-benchmark.mjs --plan",
+    "tokenhub:smoke": "node --env-file=.env.phase0.local scripts/run-phase0-tokenhub-benchmark.mjs --smoke",
+    "tokenhub:full": "node --env-file=.env.phase0.local scripts/run-phase0-tokenhub-benchmark.mjs --full",
+    "egress:audit": "node --env-file=.env.phase0.local scripts/run-phase0-egress-audit.mjs --confirmed-preflight",
+    "ocr:latency:plan": "node scripts/run-phase0-ocr-latency-diagnostic.mjs --plan",
+    "ocr:latency:prepare": "python3 scripts/prepare-phase0-ocr-latency-variants.py --input /private/tmp/applymate-phase0-ocr --output /private/tmp/applymate-phase0-ocr-latency",
+    "ocr:latency:diagnose": "node --env-file=.env.phase0.local scripts/run-phase0-ocr-latency-diagnostic.mjs --diagnose --confirmed-preflight",
+    "ocr:latency:full": "node --env-file=.env.phase0.local scripts/run-phase0-ocr-latency-diagnostic.mjs --full --confirmed-preflight",
+    "ocr:latency:cleanup": "node scripts/run-phase0-ocr-latency-diagnostic.mjs --cleanup",
+    "ocr:credentials": "node scripts/configure-tencent-ocr-credentials.mjs",
+    "sensitive:check": "node scripts/check-sensitive.mjs",
     "env:check": "node scripts/check-env.mjs",
     "typecheck": "tsc -p tsconfig.check.json --pretty false",
     "test:unit": "vitest run tests/unit",
@@ -21,9 +32,11 @@
     "test": "vitest run",
     "clean": "tsc -b --clean",
     "build": "tsc -b --pretty false",
-    "check": "npm run format:check && npm run fixtures:check && npm run typecheck && npm test && npm run build"
+    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "3.7.1",
+    "@cloudbase/signature-nodejs": "2.0.0",
     "mammoth": "1.12.0",
     "unpdf": "1.8.0",
     "zod": "4.4.3"

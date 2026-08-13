@@ -31,6 +31,15 @@ export interface IdentityRepository {
     userId: string,
     now: Date,
   ): Promise<{ invite: InviteRecord; user: UserRecord } | null>;
+  isInviteActivationLocked(userId: string, now: Date): Promise<boolean>;
+  recordInviteActivationFailure(
+    userId: string,
+    now: Date,
+    windowMilliseconds: number,
+    maximumFailures: number,
+    lockMilliseconds: number,
+  ): Promise<UserRecord | null>;
+  clearInviteActivationFailures(userId: string, now: Date): Promise<void>;
   setUserEnabledWithAudit(
     targetUserId: string,
     enabled: boolean,
@@ -46,6 +55,7 @@ export interface IdentityRepository {
     deletionDeadlineAt: string,
   ): Promise<UserRecord | null>;
   listUsersPendingDeletion(): Promise<UserRecord[]>;
+  listUsersForMetrics(): Promise<UserRecord[]>;
   deleteAccountData(userId: string): Promise<boolean>;
   listAuditRecords(): AuditRecord[];
   getAdminStats(): Promise<IdentityAdminStats>;
@@ -216,6 +226,7 @@ export class InMemoryIdentityRepository implements IdentityRepository {
     const activated: UserRecord = {
       ...user,
       activationStatus: "active",
+      activatedAt: timestamp,
       updatedAt: timestamp,
     };
     this.#invitesById.set(invite.inviteId, consumed);
@@ -224,6 +235,56 @@ export class InMemoryIdentityRepository implements IdentityRepository {
       invite: cloneInvite(consumed),
       user: cloneUser(activated),
     };
+  }
+
+  async isInviteActivationLocked(userId: string, now: Date): Promise<boolean> {
+    const user = this.#usersById.get(userId);
+    const lockedUntil = user?.inviteAttemptState?.lockedUntil;
+    return lockedUntil !== undefined && new Date(lockedUntil).getTime() > now.getTime();
+  }
+
+  async recordInviteActivationFailure(
+    userId: string,
+    now: Date,
+    windowMilliseconds: number,
+    maximumFailures: number,
+    lockMilliseconds: number,
+  ): Promise<UserRecord | null> {
+    const user = this.#usersById.get(userId);
+    if (user === undefined) {
+      return null;
+    }
+    const cutoff = now.getTime() - windowMilliseconds;
+    const failureTimestamps = [
+      ...(user.inviteAttemptState?.failureTimestamps ?? []).filter(
+        (timestamp) => new Date(timestamp).getTime() > cutoff,
+      ),
+      now.toISOString(),
+    ];
+    const lockedUntil =
+      failureTimestamps.length >= maximumFailures
+        ? new Date(now.getTime() + lockMilliseconds).toISOString()
+        : undefined;
+    const updated: UserRecord = {
+      ...user,
+      inviteAttemptState: {
+        failureTimestamps,
+        ...(lockedUntil === undefined ? {} : { lockedUntil }),
+      },
+      updatedAt: now.toISOString(),
+    };
+    this.#usersById.set(userId, updated);
+    return cloneUser(updated);
+  }
+
+  async clearInviteActivationFailures(userId: string, now: Date): Promise<void> {
+    const user = this.#usersById.get(userId);
+    if (user === undefined || user.inviteAttemptState === undefined) {
+      return;
+    }
+    const updated = { ...user, updatedAt: now.toISOString() };
+    delete updated.inviteAttemptState;
+    this.#usersById.set(userId, updated);
   }
 
   async setUserEnabledWithAudit(
@@ -301,6 +362,10 @@ export class InMemoryIdentityRepository implements IdentityRepository {
     return Array.from(this.#usersById.values())
       .filter((user) => user.deletionStatus === "pending")
       .map(cloneUser);
+  }
+
+  async listUsersForMetrics(): Promise<UserRecord[]> {
+    return Array.from(this.#usersById.values(), cloneUser);
   }
 
   async deleteAccountData(userId: string): Promise<boolean> {

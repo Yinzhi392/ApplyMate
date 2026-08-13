@@ -3,6 +3,33 @@ import { runtime } from "../../services/runtime.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 
+interface RateMetric {
+  numerator: number;
+  denominator: number;
+  rate: number | null;
+}
+
+const METRIC_LABELS = [
+  ["firstResumeConfirmationRate", "首份简历确认率"],
+  ["generationSuccessRate", "生成成功率"],
+  ["copyRate", "复制率"],
+  ["satisfactionRate", "满意率"],
+  ["sevenDayReturnRate", "7 日回访率"],
+] as const;
+
+function formatProductMetrics(
+  metrics: Partial<Record<(typeof METRIC_LABELS)[number][0], RateMetric>> = {},
+): Array<{ label: string; value: string; counts: string }> {
+  return METRIC_LABELS.map(([key, label]) => {
+    const metric = metrics[key] ?? { numerator: 0, denominator: 0, rate: null };
+    return {
+      label,
+      value: metric.rate === null ? "—" : `${Math.round(metric.rate * 100)}%`,
+      counts: `${metric.numerator} / ${metric.denominator}`,
+    };
+  });
+}
+
 Page({
   data: {
     authorized: false,
@@ -13,6 +40,7 @@ Page({
     loading: true,
     quotaIncrease: "1",
     reason: "",
+    productMetrics: formatProductMetrics(),
     targetUserId: "",
     usageSucceeded: 0,
     userTotal: 0,
@@ -31,15 +59,21 @@ Page({
         return;
       }
       const stats = await runtime().api.read<{
-        dailyUsage: { succeeded: number };
+        dailyUsage?: { succeeded: number };
         invitations: { active: number };
+        productMetrics?: Partial<
+          Record<(typeof METRIC_LABELS)[number][0], RateMetric>
+        >;
+        quota?: { succeeded: number };
         users: { total: number };
       }>("admin.stats", {});
       this.setData({
         authorized: true,
         inviteActive: stats.invitations.active,
         loading: false,
-        usageSucceeded: stats.dailyUsage.succeeded,
+        productMetrics: formatProductMetrics(stats.productMetrics),
+        usageSucceeded:
+          stats.dailyUsage?.succeeded ?? stats.quota?.succeeded ?? 0,
         userTotal: stats.users.total,
       });
     } catch (error) {

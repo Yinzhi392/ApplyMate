@@ -7,6 +7,10 @@ import {
   InMemoryIdentityRepository,
   InMemoryOperationsRepository,
   InMemoryQuotaRepository,
+  InMemoryFeedbackRepository,
+  InMemoryJobRepository,
+  InMemoryResumeRepository,
+  ProductMetricsService,
   QuotaService,
   UserService,
   createIdentityAccessApi,
@@ -46,6 +50,9 @@ describe("administrator operations", () => {
     const identities = new InMemoryIdentityRepository();
     const quotaRepository = new InMemoryQuotaRepository();
     const operations = new InMemoryOperationsRepository();
+    const resumes = new InMemoryResumeRepository();
+    const jobs = new InMemoryJobRepository();
+    const feedback = new InMemoryFeedbackRepository();
     const target = await new UserService(identities).getOrCreateUser(
       "wx_admin_stats_target",
       NOW,
@@ -77,6 +84,13 @@ describe("administrator operations", () => {
         identities,
         quotaRepository,
         operations,
+        new ProductMetricsService(
+          identities,
+          resumes,
+          jobs,
+          feedback,
+          new Set(["user_admin_synthetic"]),
+        ),
       ),
       currentVersions: VERSIONS,
       adminOpenIds: ["wx_admin_stats_admin"],
@@ -163,6 +177,13 @@ describe("administrator operations", () => {
           { resource: "storage", calls: 0, actualCostYuan: 0 },
           { resource: "traffic", calls: 0, actualCostYuan: 0 },
         ],
+        productMetrics: {
+          firstResumeConfirmationRate: { numerator: 0, denominator: 0, rate: null },
+          generationSuccessRate: { numerator: 0, denominator: 0, rate: null },
+          copyRate: { numerator: 0, denominator: 0, rate: null },
+          satisfactionRate: { numerator: 0, denominator: 0, rate: null },
+          sevenDayReturnRate: { numerator: 0, denominator: 0, rate: null },
+        },
       },
     });
 

@@ -5,7 +5,17 @@ import {
   submitLoginFlow,
 } from "../../core/login-flow.js";
 import { calculateLoginLayout } from "../../core/login-layout.js";
-import { isWeakNetwork, messageFrom, switchHome } from "../../services/page-utils.js";
+import {
+  PRIVACY_POLICY_VERSION,
+  USER_AGREEMENT_VERSION,
+  type LegalDocumentId,
+} from "../../core/legal-documents.js";
+import {
+  isWeakNetwork,
+  messageFrom,
+  openPage,
+  switchHome,
+} from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
@@ -19,6 +29,10 @@ Page({
     actionLabel: "同意并继续",
     agreementChecked: false,
     contentTopPx: 56,
+    currentVersions: {
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      userAgreementVersion: USER_AGREEMENT_VERSION,
+    },
     description: "",
     errorMessage: "",
     helperText: "",
@@ -27,6 +41,7 @@ Page({
     isAdmin: false,
     loading: true,
     mode: "form" as "form" | "success" | "disabled" | "redirect",
+    runtimeMode: runtime().mode,
     showAgreement: true,
     showInviteInput: false,
     title: "正在确认登录状态",
@@ -54,6 +69,10 @@ Page({
         agreementRequired: boolean;
         inviteRequired: boolean;
         isAdmin: boolean;
+        currentVersions: {
+          privacyPolicyVersion: string;
+          userAgreementVersion: string;
+        };
       }>("auth.status", {});
       const view = createLoginView({
         accessState: response.accessState,
@@ -68,6 +87,7 @@ Page({
         ...view,
         accessState: response.accessState,
         agreementRequired: response.agreementRequired,
+        currentVersions: response.currentVersions,
         inviteRequired: response.inviteRequired,
         isAdmin: response.isAdmin,
         loading: false,
@@ -111,12 +131,10 @@ Page({
   },
 
   showDocument(event: WechatMiniprogram.BaseEvent): void {
-    const documentName = String(event.currentTarget.dataset.document ?? "协议");
-    wx.showModal({
-      title: documentName,
-      content: "当前为邀请制内测版本。正式协议内容将在发布准备阶段由产品负责人确认。",
-      showCancel: false,
-    });
+    const documentId = String(
+      event.currentTarget.dataset.document ?? "user-agreement",
+    ) as LegalDocumentId;
+    openPage(`/pages/legal/index?document=${documentId}`);
   },
 
   async submit(): Promise<void> {
@@ -132,8 +150,8 @@ Page({
         inviteRequired: this.data.inviteRequired && !this.data.isAdmin,
       }, {
         acceptAgreement: () => runtime().api.write("agreement.accept", {
-          privacyPolicyVersion: "mvp-1",
-          userAgreementVersion: "mvp-1",
+          privacyPolicyVersion: this.data.currentVersions.privacyPolicyVersion,
+          userAgreementVersion: this.data.currentVersions.userAgreementVersion,
         }),
         activateInvite: (code) => runtime().api.write("invite.activate", { code }),
       });

@@ -6,6 +6,10 @@ import type { IdentityRepository } from "./identity-repository.js";
 
 const INVITE_LIFETIME_MILLISECONDS = 7 * 24 * 60 * 60 * 1_000;
 const INVITE_CODE_PATTERN = /^[A-Z0-9-]{8,32}$/;
+const INVITE_FAILURE_WINDOW_MILLISECONDS = 15 * 60 * 1_000;
+const INVITE_LOCK_MILLISECONDS = 15 * 60 * 1_000;
+const MAXIMUM_INVITE_FAILURES = 5;
+const GENERIC_INVITE_ERROR = "Invitation is invalid or unavailable.";
 
 function normalizeInviteCode(code: string): string {
   return code.trim().toUpperCase();
@@ -84,12 +88,13 @@ export class InviteService {
     plaintextCode: string,
     now: Date,
   ): Promise<UserRecord> {
+    if (await this.repository.isInviteActivationLocked(user.userId, now)) {
+      throw new DomainError("LIMIT_EXCEEDED", GENERIC_INVITE_ERROR);
+    }
     const normalizedCode = normalizeInviteCode(plaintextCode);
     if (!INVITE_CODE_PATTERN.test(normalizedCode)) {
-      throw new DomainError(
-        "INVALID_REQUEST",
-        "Invitation is invalid or unavailable.",
-      );
+      await this.recordFailure(user.userId, now);
+      throw new DomainError("INVALID_REQUEST", GENERIC_INVITE_ERROR);
     }
 
     const result = await this.repository.consumeInviteAndActivateUser(
@@ -98,11 +103,20 @@ export class InviteService {
       now,
     );
     if (result === null) {
-      throw new DomainError(
-        "INVALID_REQUEST",
-        "Invitation is invalid or unavailable.",
-      );
+      await this.recordFailure(user.userId, now);
+      throw new DomainError("INVALID_REQUEST", GENERIC_INVITE_ERROR);
     }
+    await this.repository.clearInviteActivationFailures(user.userId, now);
     return result.user;
+  }
+
+  private async recordFailure(userId: string, now: Date): Promise<void> {
+    await this.repository.recordInviteActivationFailure(
+      userId,
+      now,
+      INVITE_FAILURE_WINDOW_MILLISECONDS,
+      MAXIMUM_INVITE_FAILURES,
+      INVITE_LOCK_MILLISECONDS,
+    );
   }
 }

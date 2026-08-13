@@ -133,6 +133,20 @@ describe("application management", () => {
       },
     });
     await expect(
+      api({
+        action: "application.get",
+        payload: { applicationId: "application_owner_new" },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        generationDisclosure: {
+          availability: "unavailable",
+          message: "生成信息不可用",
+        },
+      },
+    });
+    await expect(
       api({ action: "application.list", payload: { status: "applied" } }),
     ).resolves.toMatchObject({
       ok: true,

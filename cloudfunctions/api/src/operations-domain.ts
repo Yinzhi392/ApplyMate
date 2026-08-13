@@ -39,3 +39,50 @@ export interface ResourceUsageStats {
   actualCostYuan: number;
   failures: number;
 }
+
+export interface ResourceCostSummary {
+  resources: Array<{
+    resource: ResourceKind;
+    calls: number;
+    estimatedCostYuan: number;
+    actualCostYuan: number;
+  }>;
+  estimatedCostYuan: number;
+  actualCostYuan: number;
+  actualCostIsZero: boolean;
+}
+
+export function calculateResourceCostSummary(
+  input: readonly ResourceUsageLog[],
+): ResourceCostSummary {
+  const logs = input.map((log) => ResourceUsageLogSchema.parse(log));
+  const resources = RESOURCE_KINDS.map((resource) => {
+    const matching = logs.filter((log) => log.resource === resource);
+    return {
+      resource,
+      calls: matching.length,
+      estimatedCostYuan: matching.reduce(
+        (total, log) => total + log.estimatedCostYuan,
+        0,
+      ),
+      actualCostYuan: matching.reduce(
+        (total, log) => total + log.actualCostYuan,
+        0,
+      ),
+    };
+  });
+  const estimatedCostYuan = resources.reduce(
+    (total, resource) => total + resource.estimatedCostYuan,
+    0,
+  );
+  const actualCostYuan = resources.reduce(
+    (total, resource) => total + resource.actualCostYuan,
+    0,
+  );
+  return {
+    resources,
+    estimatedCostYuan,
+    actualCostYuan,
+    actualCostIsZero: actualCostYuan === 0,
+  };
+}

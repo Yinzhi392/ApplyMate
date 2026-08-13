@@ -43,6 +43,34 @@ describe("native mini-program page contracts", () => {
     labels.forEach((label) => expect(content).toContain(label));
   });
 
+  it("shows the AI label and generation disclosure beside every result", () => {
+    const template = read("pages/result/index.wxml");
+    const controller = read("pages/result/index.ts");
+
+    expect(template).toContain("AI生成内容，请核对真实性");
+    expect(template).toContain("generationDisclosureMessage");
+    expect(template).toContain("generationDisclosureDetails");
+    expect(controller).toContain("generationDisclosure");
+    expect(controller).toContain("生成信息不可用");
+  });
+
+  it("shows all five deduplicated product metrics to authorized administrators", () => {
+    const template = read("pages/admin/index.wxml");
+    const controller = read("pages/admin/index.ts");
+    for (const label of [
+      "首份简历确认率",
+      "生成成功率",
+      "复制率",
+      "满意率",
+      "7 日回访率",
+    ]) {
+      expect(controller).toContain(label);
+    }
+    expect(template).toContain("productMetrics");
+    expect(template).toContain("item.counts");
+    expect(template).toContain("item.value");
+  });
+
   it("keeps recent applications in records instead of the home page", () => {
     expect(read("pages/home/index.wxml")).not.toContain("最近记录");
     expect(read("pages/home/index.ts")).not.toContain("application.list");
@@ -78,11 +106,33 @@ describe("native mini-program page contracts", () => {
     expect(controller).toContain("wx.showActionSheet");
   });
 
-  it("ships thirteen pages and no JD confirmation surface", () => {
-    expect(PAGE_ROUTES).toHaveLength(13);
+  it("ships fourteen pages and no JD confirmation surface", () => {
+    expect(PAGE_ROUTES).toHaveLength(14);
+    expect(PAGE_ROUTES).toContain("pages/legal/index");
     expect(PAGE_ROUTES).not.toContain("pages/jd-confirm/index");
     expect(read("pages/job/index.ts")).not.toContain("jd-confirm");
     expect(read("services/api-client.ts")).not.toContain("generation.confirmJd");
+  });
+
+  it("opens the reusable legal surface and submits the server-provided versions", () => {
+    const legal = read("pages/legal/index.wxml");
+    const legalController = read("pages/legal/index.ts");
+    const login = read("pages/login/index.ts");
+    const loginTemplate = read("pages/login/index.wxml");
+    const mine = read("pages/mine/index.ts");
+
+    expect(legal).toContain("用户协议");
+    expect(legal).toContain("隐私政策");
+    expect(legal).toContain("AI 服务说明");
+    expect(legal).toContain("复制全文");
+    expect(legal).toContain("同意时间");
+    expect(legalController).toContain("renderLegalDocumentPlainText");
+    expect(login).toContain("currentVersions");
+    expect(login).not.toContain('privacyPolicyVersion: "mvp-1"');
+    expect(login).not.toContain('userAgreementVersion: "mvp-1"');
+    expect(loginTemplate).toContain('data-document="user-agreement"');
+    expect(loginTemplate).toContain('data-document="privacy-policy"');
+    expect(mine).toContain('/pages/legal/index?document=user-agreement');
   });
 
   it("renders the lightweight one-time resume review structure", () => {

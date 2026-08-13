@@ -1,6 +1,7 @@
 import {
   maskSensitiveText,
   type GreetingDraft,
+  type GenerationDisclosureSnapshot,
   type JobDescription,
   type PreferenceFact,
   type ResumeProfile,
@@ -21,6 +22,11 @@ export interface GreetingGenerationRequest {
   jobTitle: string;
   previousDraft?: GreetingDraft;
   qualityErrors?: string[];
+}
+
+export interface GreetingGenerationOutput {
+  draft: GreetingDraft;
+  generationDisclosure: GenerationDisclosureSnapshot;
 }
 
 function facts(profile: ResumeProfile) {
@@ -44,7 +50,7 @@ export class GreetingGenerationPipeline {
     source: GreetingGenerationSource,
     request: GreetingGenerationRequest,
     signal?: AbortSignal,
-  ): Promise<GreetingDraft> {
+  ): Promise<GreetingGenerationOutput> {
     const modelContext = {
       promptVersion: "greeting-v1",
       mode: request.mode,
@@ -74,7 +80,12 @@ export class GreetingGenerationPipeline {
         : {}),
     };
     const maskedInput = maskSensitiveText(JSON.stringify(modelContext)).text;
-    return this.gateway.generate(maskedInput, signal);
+    return this.gateway.generateWithMetadata(maskedInput, signal).then(({ draft, model }) => ({
+      draft,
+      generationDisclosure: {
+        ...model,
+        promptVersion: "greeting-v1",
+      },
+    }));
   }
 }
-

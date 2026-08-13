@@ -15,6 +15,7 @@ export const FLOW_ROUTES = [
   "pages/result/index",
   "pages/application-detail/index",
   "pages/admin/index",
+  "pages/legal/index",
 ] as const;
 
 export const PAGE_ROUTES = [

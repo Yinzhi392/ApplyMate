@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { ApiClientError } from "../../miniprogram/services/api-client.js";
 import { createDemoApiClient } from "../../miniprogram/services/demo-api.js";
+import {
+  PRIVACY_POLICY_VERSION,
+  USER_AGREEMENT_VERSION,
+} from "../../miniprogram/core/legal-documents.js";
 
 describe("mini-program local UI gateway", () => {
   it("walks through agreement, invitation and administrator access states", async () => {
@@ -11,8 +15,8 @@ describe("mini-program local UI gateway", () => {
       isAdmin: false,
     });
     await user.write("agreement.accept", {
-      userAgreementVersion: "mvp-1",
-      privacyPolicyVersion: "mvp-1",
+      userAgreementVersion: USER_AGREEMENT_VERSION,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
     });
     await expect(user.write("invite.activate", { code: "INVALID" })).rejects.toEqual(
       new ApiClientError("INVALID_REQUEST", "邀请码无效或已过期。", false),
@@ -22,14 +26,31 @@ describe("mini-program local UI gateway", () => {
 
     const administrator = createDemoApiClient({ isAdmin: true });
     await administrator.write("agreement.accept", {
-      userAgreementVersion: "mvp-1",
-      privacyPolicyVersion: "mvp-1",
+      userAgreementVersion: USER_AGREEMENT_VERSION,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
     });
     await expect(administrator.read("auth.status", {})).resolves.toMatchObject({
       accessState: "active",
       isAdmin: true,
       inviteRequired: false,
     });
+  });
+
+  it("rejects stale agreement versions and reports the current versions", async () => {
+    const client = createDemoApiClient();
+
+    await expect(client.read("auth.status", {})).resolves.toMatchObject({
+      currentVersions: {
+        userAgreementVersion: USER_AGREEMENT_VERSION,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      },
+    });
+    await expect(client.write("agreement.accept", {
+      userAgreementVersion: "mvp-1",
+      privacyPolicyVersion: "mvp-1",
+    })).rejects.toEqual(
+      new ApiClientError("INVALID_REQUEST", "协议版本已更新，请重新阅读并同意。", false),
+    );
   });
 
   it("supports resume parse, recovery, confirmation, default selection and preferences", async () => {
@@ -132,12 +153,18 @@ describe("mini-program local UI gateway", () => {
       application: { status: string; memo: string };
       copyText: string;
       feedback: { rating: string; note: string };
+      generationDisclosure: { availability: string; mode: string; message: string };
     }>("application.get", { applicationId });
     expect(detail.application).toMatchObject({ status: "applied", memo: "已发送" });
     expect(detail.copyText).toContain("\nAI生成内容，请核对真实性");
     expect(detail.feedback).toMatchObject({
       rating: "needs_improvement",
       note: "希望更简洁",
+    });
+    expect(detail.generationDisclosure).toMatchObject({
+      availability: "available",
+      mode: "demo",
+      message: "本地演示数据，未调用真实 OCR 或模型",
     });
     const applications = await client.read<{ applications: Array<{ applicationId: string }> }>(
       "application.list",

@@ -2,6 +2,7 @@ import {
   evaluateJobDescription,
   validateAiGreetingForJob,
   type EvidenceSourceRegistry,
+  type GenerationDisclosureSnapshot,
   type GreetingDraft,
   type JobDescription,
 } from "../../../shared/src/index.js";
@@ -29,7 +30,10 @@ export interface GreetingRewriter {
     record: RewriteRecord,
     request: RewriteGenerationRequest,
     signal?: AbortSignal,
-  ): Promise<GreetingDraft>;
+  ): Promise<{
+    draft: GreetingDraft;
+    generationDisclosure: GenerationDisclosureSnapshot;
+  }>;
 }
 
 export interface GenerationRewriteExecutionDependencies {
@@ -219,11 +223,13 @@ export class GenerationRewriteExecutionService {
           ? {}
           : { customInstruction: record.customInstruction }),
       };
-      let draft = await this.dependencies.rewriter.rewrite(
+      let rewritten = await this.dependencies.rewriter.rewrite(
         record,
         baseRequest,
         signal,
       );
+      let draft = rewritten.draft;
+      let generationDisclosure = rewritten.generationDisclosure;
       await this.dependencies.jobs.transitionJob(
         jobId,
         "validating",
@@ -238,7 +244,7 @@ export class GenerationRewriteExecutionService {
       );
       if (!quality.valid) {
         const previousDraft = draft;
-        draft = await this.dependencies.rewriter.rewrite(
+        rewritten = await this.dependencies.rewriter.rewrite(
           record,
           {
             ...baseRequest,
@@ -248,6 +254,8 @@ export class GenerationRewriteExecutionService {
           },
           signal,
         );
+        draft = rewritten.draft;
+        generationDisclosure = rewritten.generationDisclosure;
         quality = validateAiGreetingForJob(
           draft,
           registry,
@@ -282,6 +290,7 @@ export class GenerationRewriteExecutionService {
         omittedRequirements: [...draft.omittedRequirements],
         warnings: Array.from(new Set([...record.warnings, ...draft.warnings])),
         manualWarnings: [],
+        generationDisclosure,
         updatedAt: timestamp,
       };
       const saved = await this.dependencies.applications.saveIfUpdatedAt(

@@ -22,6 +22,7 @@ export const API_ACTIONS = [
   "application.update",
   "application.delete",
   "feedback.submit",
+  "analytics.track",
   "admin.inviteCreate",
   "admin.inviteRevoke",
   "admin.userSetEnabled",

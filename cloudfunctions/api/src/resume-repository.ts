@@ -13,6 +13,7 @@ export interface ResumeRepository {
     expectedStatus: ResumeRecord["status"],
   ): Promise<ResumeRecord | null>;
   listByUser(userId: string): Promise<ResumeRecord[]>;
+  listAllForMetrics(): Promise<ResumeRecord[]>;
   deleteById(resumeId: string): Promise<boolean>;
   setDefaultForUser(
     userId: string,
@@ -89,6 +90,10 @@ export class InMemoryResumeRepository implements ResumeRepository {
       .filter((resume) => resume.userId === userId)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
       .map(cloneResume);
+  }
+
+  async listAllForMetrics(): Promise<ResumeRecord[]> {
+    return Array.from(this.#resumes.values(), cloneResume);
   }
 
   async deleteById(resumeId: string): Promise<boolean> {

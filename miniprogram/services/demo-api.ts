@@ -1,12 +1,15 @@
 import { createPreferenceDraft } from "../core/input-rules.js";
 import {
+  PRIVACY_POLICY_VERSION,
+  USER_AGREEMENT_VERSION,
+} from "../core/legal-documents.js";
+import {
   ApiClientError,
   type ApiClient,
   type ClientApiAction,
 } from "./api-client.js";
 
 const AI_COPY_LABEL = "AI生成内容，请核对真实性";
-const AGREEMENT_VERSION = "mvp-1";
 const DEMO_INVITE_CODE = "APPLYMATE";
 
 interface DemoOptions {
@@ -90,6 +93,14 @@ interface DemoApplication {
   jdSnapshot: DemoJobDescription;
   omittedRequirements: string[];
   warnings: string[];
+  generationDisclosure: {
+    mode: "demo";
+    providerName: string;
+    modelName: string;
+    modelId: string;
+    promptVersion: string;
+    filingReference: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -314,6 +325,14 @@ function createApplication(
     jdSnapshot,
     omittedRequirements: ["岗位要求中的商业化经验未写入正文"],
     warnings: jdSnapshot.companyName === undefined ? ["COMPANY_NAME_MISSING"] : [],
+    generationDisclosure: {
+      mode: "demo",
+      providerName: "ApplyMate 本地演示适配器",
+      modelName: "本地合成响应",
+      modelId: "demo-local-v1",
+      promptVersion: "greeting-v1",
+      filingReference: "本地演示不适用",
+    },
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -404,8 +423,8 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
         agreementRequired: !state.agreementsAccepted,
         inviteRequired: !state.isAdmin && !state.activated,
         currentVersions: {
-          userAgreementVersion: AGREEMENT_VERSION,
-          privacyPolicyVersion: AGREEMENT_VERSION,
+          userAgreementVersion: USER_AGREEMENT_VERSION,
+          privacyPolicyVersion: PRIVACY_POLICY_VERSION,
         },
       }) as T;
     }
@@ -418,8 +437,8 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
           activationStatus: state.activated || state.isAdmin ? "active" : "pending_invite",
           agreements: state.agreementsAccepted
             ? {
-                userAgreement: { version: AGREEMENT_VERSION, acceptedAt: now() },
-                privacyPolicy: { version: AGREEMENT_VERSION, acceptedAt: now() },
+                userAgreement: { version: USER_AGREEMENT_VERSION, acceptedAt: now() },
+                privacyPolicy: { version: PRIVACY_POLICY_VERSION, acceptedAt: now() },
               }
             : {},
           preferenceText: state.preferenceText,
@@ -452,6 +471,11 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       return clone({
         application,
         copyText: `${application.greetingBody.trimEnd()}\n${AI_COPY_LABEL}`,
+        generationDisclosure: {
+          availability: "available",
+          ...application.generationDisclosure,
+          message: "本地演示数据，未调用真实 OCR 或模型",
+        },
         ...(feedback === undefined ? {} : { feedback }),
       }) as T;
     }
@@ -463,6 +487,13 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
         dailyUsage: { succeeded: state.succeededUsage, reserved: 0, temporaryIncrease: 0 },
         auditEvents: 0,
         resources: [],
+        productMetrics: {
+          firstResumeConfirmationRate: { numerator: 0, denominator: 0, rate: null },
+          generationSuccessRate: { numerator: 0, denominator: 0, rate: null },
+          copyRate: { numerator: 0, denominator: 0, rate: null },
+          satisfactionRate: { numerator: 0, denominator: 0, rate: null },
+          sevenDayReturnRate: { numerator: 0, denominator: 0, rate: null },
+        },
       }) as T;
     }
     throw new ApiClientError("INVALID_REQUEST", `演示读取动作未实现：${action}。`, false);
@@ -470,6 +501,16 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
 
   async function write<T>(action: ClientApiAction, payload: Record<string, unknown>): Promise<T> {
     if (action === "agreement.accept") {
+      if (
+        payload.userAgreementVersion !== USER_AGREEMENT_VERSION ||
+        payload.privacyPolicyVersion !== PRIVACY_POLICY_VERSION
+      ) {
+        throw new ApiClientError(
+          "INVALID_REQUEST",
+          "协议版本已更新，请重新阅读并同意。",
+          false,
+        );
+      }
       state.agreementsAccepted = true;
       return clone({ accepted: true, accessState: accessState(state) }) as T;
     }
@@ -497,6 +538,18 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       }
       state.accountStatus = "disabled";
       return clone({ deletionStatus: "pending", accountStatus: "disabled" }) as T;
+    }
+    if (action === "analytics.track") {
+      const keys = Object.keys(payload).sort();
+      const valid =
+        (payload.event === "app_opened" && keys.join(",") === "event") ||
+        (payload.event === "greeting_copied" &&
+          typeof payload.applicationId === "string" &&
+          keys.join(",") === "applicationId,event");
+      if (!valid) {
+        throw new ApiClientError("INVALID_REQUEST", "分析事件格式无效。", false);
+      }
+      return clone({ tracked: true }) as T;
     }
     assertActive(state);
     if (action === "user.updatePreferences") {
@@ -660,6 +713,10 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       const timestamp = now();
       application.greetingBody = demoGreeting(application.jdSnapshot.companyName?.text ?? "贵司");
       application.manualWarnings = [];
+      application.generationDisclosure = {
+        ...application.generationDisclosure,
+        promptVersion: "greeting-rewrite-v1",
+      };
       application.updatedAt = timestamp;
       state.succeededUsage += 1;
       state.jobs.push({

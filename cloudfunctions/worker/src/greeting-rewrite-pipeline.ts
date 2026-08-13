@@ -1,6 +1,7 @@
 import {
   maskSensitiveText,
   type GeneratedClaim,
+  type GenerationDisclosureSnapshot,
   type GreetingDraft,
   type JobDescription,
 } from "../../../shared/src/index.js";
@@ -38,6 +39,11 @@ export interface GreetingRewriteRequest {
   qualityErrors?: string[];
 }
 
+export interface GreetingRewriteOutput {
+  draft: GreetingDraft;
+  generationDisclosure: GenerationDisclosureSnapshot;
+}
+
 const PRESET_REWRITE_INSTRUCTIONS: Readonly<
   Record<Exclude<GreetingRewriteMode, "custom">, string>
 > = {
@@ -62,7 +68,7 @@ export class GreetingRewritePipeline {
     source: GreetingRewriteSource,
     request: GreetingRewriteRequest,
     signal?: AbortSignal,
-  ): Promise<GreetingDraft> {
+  ): Promise<GreetingRewriteOutput> {
     const modelContext = {
       promptVersion: "greeting-rewrite-v1",
       mode: request.mode,
@@ -94,6 +100,12 @@ export class GreetingRewritePipeline {
         : {}),
     };
     const maskedInput = maskSensitiveText(JSON.stringify(modelContext)).text;
-    return this.gateway.generate(maskedInput, signal);
+    return this.gateway.generateWithMetadata(maskedInput, signal).then(({ draft, model }) => ({
+      draft,
+      generationDisclosure: {
+        ...model,
+        promptVersion: "greeting-rewrite-v1",
+      },
+    }));
   }
 }

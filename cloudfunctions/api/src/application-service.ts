@@ -4,9 +4,11 @@ import {
   composeGreetingCopy,
   countVisibleCharacters,
   evaluateManualGreeting,
+  createGenerationDisclosureView,
   hasValidUnicode,
   type EvidenceSourceRegistry,
   type GreetingDraft,
+  type GenerationDisclosureView,
   type ManualGreetingEvaluation,
 } from "../../../shared/src/index.js";
 
@@ -27,6 +29,7 @@ export interface ApplicationUpdate {
 export interface ApplicationDetail {
   application: ApplicationRecord;
   copyText: string;
+  generationDisclosure: GenerationDisclosureView;
 }
 
 export interface ApplicationDependentDataRepository {
@@ -115,6 +118,9 @@ export class ApplicationService {
     return {
       application,
       copyText: composeGreetingCopy(application.greetingBody),
+      generationDisclosure: createGenerationDisclosureView(
+        application.generationDisclosure,
+      ),
     };
   }
 

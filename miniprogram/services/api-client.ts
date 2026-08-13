@@ -18,6 +18,7 @@ export type ClientApiAction =
   | "application.update"
   | "application.delete"
   | "feedback.submit"
+  | "analytics.track"
   | "admin.inviteCreate"
   | "admin.inviteRevoke"
   | "admin.userSetEnabled"

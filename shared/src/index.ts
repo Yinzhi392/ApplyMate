@@ -3,6 +3,8 @@ export * from "./copy-text.js";
 export * from "./evidence.js";
 export * from "./facts.js";
 export * from "./greeting.js";
+export * from "./generation-disclosure.js";
+export * from "./model-evaluation.js";
 export * from "./job-description.js";
 export * from "./job-status.js";
 export * from "./limits.js";

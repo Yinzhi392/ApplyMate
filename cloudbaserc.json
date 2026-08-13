@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "applymate-mvp-d0g005nnw103af4c3",
+  "functionRoot": "cloudfunctions",
+  "functions": [
+    {
+      "name": "api",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "dir": "cloudfunctions/api/deploy",
+      "description": "ApplyMate identity runtime. Only auth, agreement and user status are live; all job and AI traffic remains paused.",
+      "installDependency": true
+    },
+    {
+      "name": "worker",
+      "timeout": 45,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "dir": "cloudfunctions/worker/deploy",
+      "description": "ApplyMate worker reliability-probe runtime. Only synthetic probe jobs are accepted; OCR and model traffic remain paused.",
+      "installDependency": true
+    },
+    {
+      "name": "cleanup",
+      "timeout": 45,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "dir": "cloudfunctions/cleanup/deploy",
+      "description": "ApplyMate cleanup reliability-probe runtime. Only synthetic timeout recovery is enabled; user deletion remains paused.",
+      "installDependency": true
+    }
+  ]
+}

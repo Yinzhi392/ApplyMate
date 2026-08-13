@@ -1,0 +1,93 @@
+{
+  "reportVersion": "phase0-decision-v2",
+  "decidedAt": "2026-08-11T19:02:00+08:00",
+  "sampleVersion": "phase0-v1.0",
+  "decision": "continue",
+  "stage0CanContinue": true,
+  "requiredGates": [
+    {
+      "gateId": "human_confirmed_cases",
+      "status": "passed",
+      "actual": 30,
+      "threshold": "30/30"
+    },
+    {
+      "gateId": "ocr_field_accuracy",
+      "status": "passed",
+      "actual": 1,
+      "threshold": 0.9
+    },
+    {
+      "gateId": "model_field_accuracy",
+      "status": "passed",
+      "actual": 0.988889,
+      "threshold": 0.9
+    },
+    {
+      "gateId": "greeting_compliance",
+      "status": "passed",
+      "actual": 1,
+      "threshold": 0.95
+    },
+    {
+      "gateId": "hallucination_count",
+      "status": "passed",
+      "actual": 0,
+      "threshold": 0
+    },
+    {
+      "gateId": "token_pipeline_median_ms",
+      "status": "passed",
+      "actual": 3410,
+      "threshold": 10000
+    },
+    {
+      "gateId": "ocr_median_ms",
+      "status": "passed",
+      "actual": 1429,
+      "threshold": 10000
+    },
+    {
+      "gateId": "ocr_worker_max_ms",
+      "status": "passed",
+      "actual": 1940,
+      "threshold": 45000
+    },
+    {
+      "gateId": "privacy_egress",
+      "status": "passed",
+      "actual": true,
+      "threshold": true
+    },
+    {
+      "gateId": "actual_cost_zero",
+      "status": "passed",
+      "actual": 0,
+      "threshold": 0
+    }
+  ],
+  "blockingGateIds": [],
+  "releaseDependencies": [
+    {
+      "id": "personal_subject_category",
+      "status": "pending"
+    },
+    {
+      "id": "cloudbase_sdk_security",
+      "status": "pending"
+    },
+    {
+      "id": "production_cloud_runtime",
+      "status": "pending"
+    },
+    {
+      "id": "release_bill_recheck",
+      "status": "pending"
+    }
+  ],
+  "nextStageAuthorized": true,
+  "authorizationScope": "phase0.17_approval_record_only",
+  "authorizedAt": "2026-08-11T19:11:55+08:00",
+  "storesUserContent": false,
+  "storesCredentials": false
+}

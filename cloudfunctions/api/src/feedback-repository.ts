@@ -3,6 +3,7 @@ import type { FeedbackRecord } from "./feedback-domain.js";
 export interface FeedbackRepository {
   getByApplicationId(applicationId: string): Promise<FeedbackRecord | null>;
   listByUser(userId: string): Promise<FeedbackRecord[]>;
+  listAllForMetrics(): Promise<FeedbackRecord[]>;
   upsert(record: FeedbackRecord): Promise<void>;
   deleteByApplicationId(applicationId: string): Promise<void>;
   deleteByUserId(userId: string): Promise<number>;
@@ -26,6 +27,10 @@ export class InMemoryFeedbackRepository implements FeedbackRepository {
     return Array.from(this.#records.values())
       .filter((record) => record.userId === userId)
       .map(cloneFeedback);
+  }
+
+  async listAllForMetrics(): Promise<FeedbackRecord[]> {
+    return Array.from(this.#records.values(), cloneFeedback);
   }
 
   async upsert(record: FeedbackRecord): Promise<void> {

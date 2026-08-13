@@ -1,0 +1,1138 @@
+{
+  "schemaVersion": "ocr-phase0-evaluation-v1",
+  "sourceVersion": "phase0-v1.0",
+  "evaluatedAtBeijing": "2026-08-11T14:04:44+08:00",
+  "provider": "Tencent Cloud OCR",
+  "interface": "GeneralBasicOCR",
+  "method": {
+    "name": "locked-source-evidence-preservation",
+    "fieldRule": "A field is correct when the OCR transcription preserves at least 90% of the locked case resume and JD source characters. Missing, conflicting, cropped, and low-confidence values are evaluated as boundaries that must remain unsupported rather than invented.",
+    "limitations": "Synthetic case composites test OCR legibility and preservation of field-supporting text; they do not reproduce every production app screenshot layout or validate semantic model parsing."
+  },
+  "summary": {
+    "confirmedCases": 30,
+    "correctFields": 180,
+    "totalFields": 180,
+    "accuracy": 1,
+    "accuracyGatePassed": true,
+    "medianDurationMs": 19773.5,
+    "p95DurationMs": 43474.05,
+    "maxDurationMs": 55362,
+    "medianLatencyGatePassed": false,
+    "workerDeadlineGatePassed": false
+  },
+  "verdicts": [
+    {
+      "caseId": "C01",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C02",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C03",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C04",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C05",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C06",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C07",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C08",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C09",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C10",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C11",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C12",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C13",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C14",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C15",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C16",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C17",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C18",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C19",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C20",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C21",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C22",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C23",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C24",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C25",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C26",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C27",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C28",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C29",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "caseId": "C30",
+      "humanConfirmed": true,
+      "fields": [
+        {
+          "fieldId": "position",
+          "correct": true
+        },
+        {
+          "fieldId": "responsibilities",
+          "correct": true
+        },
+        {
+          "fieldId": "hard_skills",
+          "correct": true
+        },
+        {
+          "fieldId": "experience_education",
+          "correct": true
+        },
+        {
+          "fieldId": "location_work_mode",
+          "correct": true
+        },
+        {
+          "fieldId": "availability_duration",
+          "correct": true
+        }
+      ]
+    }
+  ],
+  "caseMetrics": [
+    {
+      "caseId": "C01",
+      "imageSha256": "f68b756234c8c33dfeaaf7f35887db1d96132233f06261e78f424ff1b4e65f40",
+      "durationMs": 18438,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C02",
+      "imageSha256": "2ba0d15c4ffd3099ac84d0c76d17e43901a6afb8e34fcd9aa20bb4561fdcf725",
+      "durationMs": 14134,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C03",
+      "imageSha256": "79066581b3cf30f4a7d5295d997e10be7a76498e2b14088b2bd3440c2ae3fd81",
+      "durationMs": 14274,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C04",
+      "imageSha256": "b4dfa3cddef78fdec01b929e0593cf1ce9ca914df04596791cc66c04e1ff2b66",
+      "durationMs": 19753,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C05",
+      "imageSha256": "b1bd175421132347db6ab91a3580bc415cbd3c0a00b603bcb6d779ca0be300dc",
+      "durationMs": 23717,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C06",
+      "imageSha256": "cf977e17c42a3d4bd487a92fe4e79cdf288629be550e84e33fe0d003941416cc",
+      "durationMs": 18539,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C07",
+      "imageSha256": "6897e6f0d665f6c22e1e30a8262d599df6cc98875558ff0deb7477e36a27b71e",
+      "durationMs": 21178,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C08",
+      "imageSha256": "35faf073177f046087e5bdca3717e40c57e3dfad967d57f7a80f16e7b3a48b4b",
+      "durationMs": 16923,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C09",
+      "imageSha256": "0baa70c04200e378be261967fa35da5db90fdad5b390a8bd49804f48f56a3860",
+      "durationMs": 21497,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C10",
+      "imageSha256": "6d73e36c48f6547c7327525cab04c5adce472cb9a53a4c5e0f1650d1dd4412d8",
+      "durationMs": 22605,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C11",
+      "imageSha256": "e0330ef1de05420626324323094ded889d94e05c28e392befa75ce8fb146f7db",
+      "durationMs": 16609,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C12",
+      "imageSha256": "153b5c12c724b92992bf520e092fc8e6e47da71494e691e2a07bdab07130364b",
+      "durationMs": 17809,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C13",
+      "imageSha256": "30ebb8550f7e4539f7db761cfccb3ab9701c4b855b267dcbf4dad45f3a7cb9d5",
+      "durationMs": 25330,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C14",
+      "imageSha256": "02f60e690d92584c8ba343f55b8f2160720974d5f41ba511469d60347d96a965",
+      "durationMs": 29103,
+      "sourceCharacterRecall": 0.988889,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C15",
+      "imageSha256": "cb65555bc0fa924f3b23b3296dbdd76603704701e21fa57d13ce225a336e20e7",
+      "durationMs": 20403,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C16",
+      "imageSha256": "fe4213519d893a8d590cb6f142f5a6f2cfc00777f22b968a5ed6a52280cb04b3",
+      "durationMs": 19794,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C17",
+      "imageSha256": "9b2249f0aff36d33bd8362da71511ef3d4b78f35b4224fbf0ff0575df47a0d26",
+      "durationMs": 23502,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C18",
+      "imageSha256": "b2542d0610aedac6777c13c9d325557b07051dcf4ebf773c9bd13206fbcd257b",
+      "durationMs": 18765,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C19",
+      "imageSha256": "d22598fb1dd644b99034659f02e9649a9931f7f59add5294e327f4f6cb5c971a",
+      "durationMs": 15827,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C20",
+      "imageSha256": "98aad54a37a1a79b340c9d212a2e4e1c0320ddbee0aad6ac92459b65136b506f",
+      "durationMs": 17833,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C21",
+      "imageSha256": "fb6fcc5126293d61397a2472faf76d16e132fc266e5b7594d1dc8609778d57f0",
+      "durationMs": 14448,
+      "sourceCharacterRecall": 0.990654,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C22",
+      "imageSha256": "3b08d98a21b3ed6cf685bd2c39d85432f355baa1a2b69696016e0b6a14668105",
+      "durationMs": 18859,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C23",
+      "imageSha256": "29d4981fb77d76109aa7a0c54ea4d9fe5891d224a055713d6d8f7ca09c091cb3",
+      "durationMs": 18582,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C24",
+      "imageSha256": "aea5bbf902a833eb3cc74ea6a15da8ac6077fb891d3aa77790be24a197a3e87e",
+      "durationMs": 35669,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C25",
+      "imageSha256": "9937eef8065da0093e1d69724e09d1bcad775c3ea74879952472c5225f13724c",
+      "durationMs": 49860,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C26",
+      "imageSha256": "6f479463b5037379e5fd524c5aa88ea80db546829413b7ccc2339ee7ffc3a1e1",
+      "durationMs": 55362,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C27",
+      "imageSha256": "863cc99c2edcc41526d679f3e166282f55f7b9ae120ea9d67009e5355e0f0eac",
+      "durationMs": 29201,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C28",
+      "imageSha256": "a41983abd311d5a604e7f97b29777a2db7e72e9d9ea1fdb547c9471de5242f3d",
+      "durationMs": 20255,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C29",
+      "imageSha256": "f8328a0203e8b81c9bd14dbec59073c7c87951f95f1acd14d97712c07caf419a",
+      "durationMs": 30323,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    },
+    {
+      "caseId": "C30",
+      "imageSha256": "0d02934a81be150433c7c4df541c9fc89570f5fd398a838b6261866fa6e8e63f",
+      "durationMs": 14054,
+      "sourceCharacterRecall": 1,
+      "fieldVerdictBasis": "locked source evidence preserved"
+    }
+  ]
+}

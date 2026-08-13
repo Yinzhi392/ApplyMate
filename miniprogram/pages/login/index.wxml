@@ -1,6 +1,7 @@
 <view class="page login-page" style="padding-top: {{contentTopPx}}px;">
   <view class="login-glow login-glow-one"></view>
   <view class="login-glow login-glow-two"></view>
+  <view wx:if="{{runtimeMode === 'cloudbase_identity_test'}}" class="live-test-badge">真实邀请验证模式</view>
   <view wx:if="{{loading}}" class="login-loading">
     <view class="brand-symbol"></view>
     <view class="status">加载中，正在确认微信身份。</view>
@@ -47,7 +48,7 @@
         <checkbox-group wx:if="{{showAgreement}}" bindchange="changeAgreement">
           <label class="agreement-row">
             <checkbox value="accepted" checked="{{agreementChecked}}" color="#26766c" />
-            <view>我已阅读并同意<text class="agreement-link" data-document="用户协议" catchtap="showDocument">《用户协议》</text>和<text class="agreement-link" data-document="隐私政策" catchtap="showDocument">《隐私政策》</text>，理解简历与岗位信息的处理方式。</view>
+            <view>我已阅读并同意<text class="agreement-link" data-document="user-agreement" catchtap="showDocument">《用户协议》</text>和<text class="agreement-link" data-document="privacy-policy" catchtap="showDocument">《隐私政策》</text>，理解简历与岗位信息的处理方式。</view>
           </label>
         </checkbox-group>
         <view wx:elif="{{!agreementRequired}}" class="agreement-complete">✓ 当前版本协议已确认</view>

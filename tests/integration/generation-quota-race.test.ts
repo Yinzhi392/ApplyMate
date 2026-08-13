@@ -16,6 +16,7 @@ import {
 } from "../../cloudfunctions/api/src/index.js";
 import {
   countVisibleCharacters,
+  createDemoGenerationDisclosureSnapshot,
   createFactId,
   hashFactText,
   type GreetingDraft,
@@ -131,7 +132,13 @@ describe("generation quota settlement race", () => {
         generate: async () => {
           generatorStarted();
           await generatorBlocked;
-          return draft();
+          return {
+            draft: draft(),
+            generationDisclosure: createDemoGenerationDisclosureSnapshot(
+              "synthetic-race-model",
+              "greeting-v1",
+            ),
+          };
         },
       },
       now: () => CREATED,
