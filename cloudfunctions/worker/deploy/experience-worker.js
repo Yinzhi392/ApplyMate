@@ -12,6 +12,33 @@ function failure(code, message, retryable = false) {
   return { ok: false, error: { code, message, retryable } };
 }
 
+const PUBLIC_PROCESSING_ERRORS = Object.freeze({
+  APPLICATION_NOT_FOUND: ["找不到需要改写的投递记录，请返回记录页重试。", false],
+  DOCUMENT_EMPTY: ["没有读取到文档内容，请检查文件后重试。", false],
+  GREETING_LENGTH_INVALID: ["生成内容未通过长度检查，请重新生成。", true],
+  INSUFFICIENT_FACTS: ["已确认的简历事实不足，暂时无法生成可靠内容。", false],
+  MODEL_CREDENTIALS_MISSING: ["AI 服务配置未完成，请联系管理员。", false],
+  MODEL_FAILED: ["AI 服务暂时不可用，请稍后重试。", true],
+  MODEL_INVALID_OUTPUT: ["AI 返回内容未通过格式检查，请重新提交。", true],
+  OCR_CREDENTIALS_MISSING: ["图片识别服务配置未完成，请联系管理员。", false],
+  OCR_EMPTY: ["图片中没有识别到可用文字，请换一张更清晰的图片。", false],
+  OCR_FAILED: ["图片识别暂时失败，请稍后重试。", true],
+  OCR_INVALID_OUTPUT: ["图片识别结果异常，请换一张图片重试。", true],
+  PDF_PAGE_LIMIT: ["PDF 超过 10 页，请精简后重新上传。", false],
+  RESUME_NOT_FOUND: ["找不到已确认简历，请返回简历管理重新确认。", false],
+  SCANNED_PDF_SCREENSHOT_REQUIRED: ["扫描版 PDF 无法读取文字，请改传页面截图。", false],
+});
+
+function publicProcessingError(error) {
+  const internalCode = String(error?.message || "PROCESSING_FAILED");
+  const known = Object.prototype.hasOwnProperty.call(PUBLIC_PROCESSING_ERRORS, internalCode);
+  const code = known ? internalCode : "PROCESSING_FAILED";
+  const [message, retryable] = known
+    ? PUBLIC_PROCESSING_ERRORS[internalCode]
+    : ["AI 处理失败，请稍后重试。", true];
+  return { code, message, retryable };
+}
+
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -182,6 +209,27 @@ function jdPrompt(text, facts) {
   return `提取 JD 并选择 2至4 个最匹配简历 factId。不得臆测。严格返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"selectedFactIds":[],"omittedRequirements":[],"warnings":[]} 。\nJD：${maskProtectedText(text).slice(0, 24_000)}\n可引用事实：${JSON.stringify(safeFacts).slice(0, 24_000)}`;
 }
 
+function rewritePrompt(application, mode) {
+  const facts = Array.isArray(application.factSnapshot) ? application.factSnapshot : [];
+  const instruction = {
+    rephrase: "保持信息完整，换一种更自然专业的表达",
+    shorten: "删去重复表达，但正文仍须达到 250 个可见字符",
+    add_detail: "只依据给定事实增加具体细节",
+  }[mode] || "保持原意重新表达";
+  return `改写以下中文求职开场白。${instruction}。只能使用已给出的简历事实和 JD，不得新增公司、学校、经历、技能、数字或日期。正文必须为简体中文、2至3个非空段落、250至350个可见字符。严格返回 {"body":""}。\n当前正文：${maskProtectedText(application.greetingBody).slice(0, 4_000)}\n简历事实：${JSON.stringify(facts).slice(0, 20_000)}\nJD：${JSON.stringify(application.jdSnapshot || {}).slice(0, 12_000)}`;
+}
+
+function normalizeRewriteModel(value) {
+  const body = typeof value?.body === "string" ? value.body.trim() : "";
+  if (visibleLength(body) < 250 || visibleLength(body) > 350) throw new Error("GREETING_LENGTH_INVALID");
+  const paragraphs = body.split(/\n+/u).map((item) => item.trim()).filter(Boolean);
+  if (paragraphs.length < 2 || paragraphs.length > 3) throw new Error("MODEL_INVALID_OUTPUT");
+  if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) || /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  return body;
+}
+
 function buildJdSnapshot(value) {
   const make = (kind, text) => ({ fieldId: fieldId(kind, text), text, confidence: 0.9 });
   const list = (kind) => Array.isArray(value[kind]) ? value[kind].filter((item) => typeof item === "string" && item.trim()).slice(0, 20).map((text) => make(kind, text.trim())) : [];
@@ -237,6 +285,25 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
     if (!claimed) return failure("CONFLICT", "Job is already processing.", true);
     const fileIds = Array.isArray(job.input?.fileIds) ? job.input.fileIds : [];
     try {
+      if (job.kind === "greeting_rewrite") {
+        await jobs.transitionJob(job.jobId, "queued", "generating", now());
+        const application = await findOne(database.collection("applications"), {
+          recordType: "application", applicationId: job.input.applicationId,
+          userId: job.userId,
+        });
+        if (!application) throw new Error("APPLICATION_NOT_FOUND");
+        const greetingBody = normalizeRewriteModel(await callModel(rewritePrompt(application, job.input.mode)));
+        await jobs.transitionJob(job.jobId, "generating", "validating", now());
+        await updateDocument(database.collection("applications").doc(application._id), {
+          greetingBody,
+          generationDisclosure: disclosure(),
+          updatedAt: now().toISOString(),
+        });
+        await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), {
+          result: { applicationId: application.applicationId },
+        });
+        return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId: application.applicationId } };
+      }
       const firstStatus = fileIds.length > 0 && job.input.inputType === "images" ? "ocr" : "parsing";
       await jobs.transitionJob(job.jobId, "queued", firstStatus, now());
       const rawText = await readInputText(app, job.input, credentials);
@@ -274,15 +341,16 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
       await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), { result: { applicationId } });
       return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId } };
     } catch (error) {
+      const publicError = publicProcessingError(error);
       const current = await jobs.getJobById(job.jobId);
       if (current && !TERMINAL.has(current.status)) {
-        await jobs.transitionJob(job.jobId, current.status, "failed", now(), { error: { code: String(error?.message || "PROCESSING_FAILED"), message: "AI processing failed.", retryable: true } });
+        await jobs.transitionJob(job.jobId, current.status, "failed", now(), { error: publicError });
       }
-      return failure("PROCESSING_FAILED", "AI processing failed. Please retry.", true);
+      return failure(publicError.code, publicError.message, publicError.retryable);
     } finally {
       if (fileIds.length > 0) await app.deleteFile({ fileList: fileIds }).catch(() => undefined);
     }
   };
 }
 
-module.exports = { createExperienceWorker, maskProtectedText, renderGreeting };
+module.exports = { createExperienceWorker, maskProtectedText, publicProcessingError, renderGreeting };

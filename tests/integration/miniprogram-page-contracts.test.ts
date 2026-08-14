@@ -203,13 +203,15 @@ describe("native mini-program page contracts", () => {
 
     expect(mine).toContain("我的 👋");
     expect(mine.match(/class="menu-icon(?: [^"]*)?"/gu)).toHaveLength(4);
-    expect(mine.match(/class="menu-row-content"/gu)).toHaveLength(4);
+    expect(mine.match(/class="menu-row-content"/gu)).toHaveLength(5);
     expect(mine).toContain("📄");
     expect(mine).toContain("🎯");
     expect(mine).toContain("🔒");
     expect(mine).toContain("🗑️");
     expect(mine.match(/<view\n        class="list-row profile-menu-row/gu)).toHaveLength(4);
     expect(mine).not.toContain('<button class="list-row profile-menu-row"');
+    expect(mine).toContain('class="list-row profile-menu-row admin-menu-row"');
+    expect(mine).not.toContain('<button wx:if="{{isAdmin}}" class="list-row"');
     expect(mineStyles).toMatch(/\.profile-menu-row\s*\{[^}]*display:\s*block/isu);
     expect(mineStyles).toMatch(/\.menu-row-content\s*\{[^}]*display:\s*flex[^}]*width:\s*100%/isu);
     expect(mineStyles).toMatch(/\.menu-icon\s*\{[^}]*flex:\s*0\s+0\s+72rpx/isu);

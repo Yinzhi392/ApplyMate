@@ -1,10 +1,20 @@
 # ApplyMate Architecture Memory
 
-**版本：** 阶段 10 真实 AI 体验版里程碑 v8.3
+**版本：** 阶段 10 真实 AI 体验版里程碑 v8.4
 
-**日期：** 2026-08-13
+**日期：** 2026-08-14
 
 **当前状态：** 阶段 9 已完成并以 `f369de7` 作为基线。阶段 10.1–10.8、10.10–10.15 已完成；10.9 由产品负责人明确风险豁免，不代表双端真机通过。产品负责人确认 CloudBase 与腾讯云账单 0 元、OCR 后付费关闭、TokenHub 按 Token 计费关闭，并批准仅用于开发者/体验成员测试。体验版默认使用真实 CloudBase、腾讯 OCR 与 TokenHub；普通账号删除、正式审核和公开发布保持关闭。体验版上传仍是独立人工平台操作。
+
+### 2026-08-14：真机解析超时修复
+
+- 真机“上传后一直转圈再失败”的根因不是体验版能力限制，而是 `cloudfunctions/api/deploy/index.js` 曾通过 CloudBase SDK 同步调用 `worker`；OCR 与 TokenHub 被包含在外层 `api` 的等待时间内，违背“API 立即返回 jobId”的既定架构。
+- `cloudfunctions/api/deploy/scf-async-invoker.js` 使用运行时临时凭证和 TC3 签名调用腾讯 SCF `Invoke`，固定 `InvocationType=Event`、函数名 `worker`、当前 namespace，并以 8 秒为派发接受截止。凭证、请求正文、RequestId 和用户内容均不写日志。
+- `api` 在任务持久化后只等待 SCF 接受异步事件；同一 requestId 若曾在派发阶段失败，可对仍为 queued/available 的同一任务安全重派。worker 继续用原子 claim 防止重复 OCR 或模型调用。
+- `cloudfunctions/worker/deploy/experience-worker.js` 增加真实 `generation.rewrite` 分支和安全中文错误映射；任务详情只暴露稳定错误码、可理解说明与 retryable，不回传上游响应或内部异常文本。
+- “我的”页管理员入口不再使用具有原生内部排版的 `button`，改为与同组状态行一致的全宽 `view + Flex`，使标题和右侧入口与上方两行共用左右基线。
+- 2026-08-14 已重新部署 `api`、`worker`。healthcheck 显示两者均为 `experience_real_ai_live`；worker 的非敏感诊断确认 TokenHub Key 与 OCR 三项运行时临时凭证存在。真实内容冒烟仍需从小程序体验端完成。
+- 最终本地门禁通过 114 个测试文件、413 项测试和五模块构建；敏感扫描通过，未把任何云端凭证或用户内容写入仓库。
 
 ### 2026-08-13：体验版真实 AI 边界纠正
 
@@ -13,7 +23,7 @@
 - `cloudfunctions/api/deploy/experience-api.js` 在可信身份、协议和邀请码门禁后创建真实简历解析或开场白任务；`cloudfunctions/worker/deploy/experience-worker.js` 负责下载临时文件、调用腾讯 OCR、遮盖敏感信息、调用 TokenHub Hy3、保存结果并清理原文件。
 - `APPLYMATE_REAL_AI_ENABLED=true` 必须同时配置在 `api` 和 `worker`。关闭或缺失时继续失败关闭；OCR 或 TokenHub 免费额度不足时也不得自动启用付费。
 - 结果页保存真实模型快照并展示 AI 标识。真实能力只面向开发者/体验成员；普通账号删除、提交审核和公开发布仍不在本次范围内。
-- 本轮本地门禁为 112 个测试文件、408 项测试和五模块构建。Codex 的外部部署调用被工具授权额度拒绝，未发生云端变更；必须以部署后的 healthcheck 与真实简历/JD 冒烟结果作为云端完成证据。
+- 该提交的原始本地门禁为 112 个测试文件、408 项测试和五模块构建；其“尚未部署”状态已被 2026-08-14 的异步派发修复及云端重部署取代。
 - 下文关于 `acceptsUserTraffic=false`、默认 demo 和“真实 AI 关闭”的记录属于此前受限部署的历史基线，已由本节取代，不再描述当前体验版目标。
 
 ### 2026-08-13：发布前零费用复核

@@ -9,21 +9,22 @@
 1. 在微信开发者工具打开 `/Users/mayinzhi/Desktop/投了吗`。
 2. 确认右上角显示当前正式注册的小程序 AppID，而不是旧测试号。
 3. 点击“编译”，确认模拟器正常打开，Console 没有应用错误。
-4. 确认 CloudBase 环境为 `applymate-mvp-d0g005nnw103af4c3`，`api`、`worker`、`cleanup` 均已部署。
+4. 确认 CloudBase 环境为 `applymate-mvp-d0g005nnw103af4c3`；2026-08-14 的 `api` 与 `worker` 修复版本已经部署，`cleanup` 保持现有部署。
 5. 在 `api` 与 `worker` 的环境变量中设置 `APPLYMATE_REAL_AI_ENABLED=true`。在 `worker` 设置 `TOKENHUB_API_KEY`、`TOKENHUB_MODEL=hy3`、`TOKENHUB_BASE_URL=https://tokenhub.tencentmaas.com/v1`。OCR 优先使用 CloudBase 运行时临时凭证；如运行时没有凭证，再由产品负责人于 `worker` 填入 `TENCENTCLOUD_SECRET_ID` 和 `TENCENTCLOUD_SECRET_KEY`。
 6. 确认 OCR 后付费、TokenHub 按 Token 计费和 CloudBase 超额付费均关闭。不要把密钥写入代码、备注或截图。
 7. 分别调用 `api` 和 `worker` 的 `{ healthcheck: true }`，应返回 `state=experience_real_ai_live` 且 `acceptsUserTraffic=true`。
 
 ## 先部署真实 AI 云函数
 
-在项目根目录打开终端，确认 CloudBase CLI 已登录后执行：
+只有修改云函数源码后才需要重新部署。在项目根目录打开终端，确认 CloudBase CLI 已登录后分别执行：
 
 ```bash
 cd /Users/mayinzhi/Desktop/投了吗
-npx tcb fn deploy --all --force
+npx tcb fn deploy api --force
+npx tcb fn deploy worker --force
 ```
 
-CloudBase CLI 会读取仓库根目录的 `cloudbaserc.json`，把 `api`、`worker`、`cleanup` 部署到固定环境。若命令要求网页授权，用当前腾讯云账号完成授权后回到终端等待三项部署结束。不要在终端或聊天中粘贴任何 Secret、TokenHub Key 或 CloudBase API Key。
+CloudBase CLI 会读取仓库根目录的 `cloudbaserc.json`，只把 `api`、`worker` 更新到固定环境。若命令要求网页授权，用当前腾讯云账号完成授权后回到终端等待部署结束。不要在终端或聊天中粘贴任何 Secret、TokenHub Key 或 CloudBase API Key。
 
 部署结束后进入 CloudBase 控制台逐项核对：
 
@@ -38,7 +39,7 @@ wx.cloud.callFunction({ name: "api", data: { healthcheck: true } }).then(console
 wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(console.log)
 ```
 
-两者都必须返回 `experience_real_ai_live` 和 `acceptsUserTraffic: true`。否则不要上传微信体验版。
+两者都必须返回 `experience_real_ai_live` 和 `acceptsUserTraffic: true`；worker 的 `credentialDiagnostic` 中四个布尔值也必须均为 `true`。否则不要上传微信体验版。
 
 ## 上传为开发版本
 

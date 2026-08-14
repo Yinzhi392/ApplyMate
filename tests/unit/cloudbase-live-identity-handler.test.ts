@@ -149,6 +149,14 @@ describe("CloudBase live identity and invite handler", () => {
             createLiveApiHandler: () => async () => ({ ok: true }),
           };
         }
+        if (moduleId === "./scf-async-invoker") {
+          return {
+            createScfAsyncInvoker: () => async () => ({
+              ok: true,
+              data: { accepted: true },
+            }),
+          };
+        }
         throw new Error(`Unexpected module: ${moduleId}`);
       },
     });

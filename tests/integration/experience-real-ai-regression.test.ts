@@ -34,5 +34,27 @@ describe("experience build real AI regression", () => {
     expect(api).toContain("APPLYMATE_REAL_AI_ENABLED");
     expect(worker).toContain("createExperienceWorker");
     expect(worker).toContain("APPLYMATE_REAL_AI_ENABLED");
+    expect(worker).toContain("hasModelApiKey");
+    expect(worker).toContain("hasOcrSessionToken");
+  });
+
+  it("dispatches real AI jobs through the SCF asynchronous event API", () => {
+    const api = read("cloudfunctions/api/deploy/index.js");
+    const invoker = read("cloudfunctions/api/deploy/scf-async-invoker.js");
+
+    expect(api).toContain("createScfAsyncInvoker");
+    expect(api).not.toMatch(/dispatchExperienceJob:[\s\S]*?app\.callFunction\(\{\s*name:\s*"worker"/u);
+    expect(invoker).toContain('InvocationType: "Event"');
+    expect(invoker).toContain('FunctionName: "worker"');
+  });
+
+  it("keeps resume parsing, greeting generation, and AI rewrite on the real worker", () => {
+    const api = read("cloudfunctions/api/deploy/experience-api.js");
+    const worker = read("cloudfunctions/worker/deploy/experience-worker.js");
+
+    expect(api).toContain('"generation.create", "generation.rewrite"');
+    expect(api).toContain('kind: "greeting_rewrite"');
+    expect(worker).toContain('job.kind === "greeting_rewrite"');
+    expect(worker).toContain("rewritePrompt(application, job.input.mode)");
   });
 });

@@ -52,10 +52,19 @@
         <view class="list-row-main"><text>已确认简历</text><text>最多保存 3 份</text></view>
         <view class="menu-action">{{resumeCount}} / 3</view>
       </view>
-      <button wx:if="{{isAdmin}}" class="list-row" bindtap="openAdmin">
-        <view class="list-row-main"><text>管理员工具</text><text>受服务端白名单保护</text></view>
-        <view class="menu-action">进入 ›</view>
-      </button>
+      <view
+        wx:if="{{isAdmin}}"
+        class="list-row profile-menu-row admin-menu-row"
+        hover-class="profile-menu-row-hover"
+        aria-role="button"
+        aria-label="管理员工具"
+        bindtap="openAdmin"
+      >
+        <view class="menu-row-content">
+          <view class="list-row-main"><text>管理员工具</text><text>受服务端白名单保护</text></view>
+          <view class="menu-action">进入 ›</view>
+        </view>
+      </view>
     </view>
   </view>
 

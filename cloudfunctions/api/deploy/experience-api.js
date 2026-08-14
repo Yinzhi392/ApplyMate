@@ -6,7 +6,7 @@ const { addIfAbsent, findMany, findOne, updateDocument } = require("./cloudbase-
 const ACTIONS = new Set([
   "analytics.track", "user.updatePreferences",
   "resume.parse", "resume.confirm", "resume.list", "resume.setDefault", "resume.delete",
-  "generation.create",
+  "generation.create", "generation.rewrite",
   "application.list", "application.get", "application.update", "application.delete",
   "feedback.submit",
 ]);
@@ -78,6 +78,8 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
           kind: "resume_parse", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
           input: clone(payload), resumeId, claimState: "available", createdAt: timestamp, updatedAt: timestamp,
         });
+      }
+      if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
         const result = await dispatchExperienceJob(jobId);
         if (!result || result.ok !== true) return result || failure("WORKER_FAILED", "Resume processing failed.", true);
       }
@@ -137,8 +139,38 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
           kind: "greeting_generate", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
           input: clone(payload), resumeId: payload.resumeId, claimState: "available", createdAt: timestamp, updatedAt: timestamp,
         });
+      }
+      if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
         const result = await dispatchExperienceJob(jobId);
         if (!result || result.ok !== true) return result || failure("WORKER_FAILED", "Generation failed.", true);
+      }
+      return { ok: true, data: { jobId } };
+    }
+
+    if (event.action === "generation.rewrite") {
+      if (
+        typeof payload.applicationId !== "string" ||
+        !["rephrase", "shorten", "add_detail"].includes(payload.mode) ||
+        typeof event.requestId !== "string"
+      ) return invalid();
+      const application = await findOne(applications, {
+        recordType: "application", userId: user.userId, applicationId: payload.applicationId,
+      });
+      if (application === null) return failure("NOT_FOUND", "Application was not found.");
+      const suffix = hashId("generation-rewrite-v1", `${user.userId}:${event.requestId}`);
+      const jobId = `job_generation_${suffix}`;
+      const existing = await findOne(jobs, { recordType: "ai_job", jobId });
+      if (existing === null) {
+        await addIfAbsent(jobs, {
+          _id: jobId, recordType: "ai_job", jobId, userId: user.userId,
+          kind: "greeting_rewrite", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
+          input: { applicationId: payload.applicationId, mode: payload.mode },
+          resumeId: application.resumeId, claimState: "available", createdAt: timestamp, updatedAt: timestamp,
+        });
+      }
+      if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
+        const result = await dispatchExperienceJob(jobId);
+        if (!result || result.ok !== true) return result || failure("WORKER_FAILED", "Rewrite failed.", true);
       }
       return { ok: true, data: { jobId } };
     }

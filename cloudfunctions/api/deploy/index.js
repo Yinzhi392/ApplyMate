@@ -2,6 +2,7 @@
 
 const CloudBase = require("@cloudbase/js-sdk");
 const { createLiveApiHandler } = require("./live-api");
+const { createScfAsyncInvoker } = require("./scf-async-invoker");
 
 function readTrustedOpenId() {
   return process.env.WX_OPENID;
@@ -46,16 +47,27 @@ exports.main = async (event, context) => {
   const app = CloudBase.init({
     env: CloudBase.SYMBOL_DEFAULT_ENV,
   });
+  const dispatchExperienceJob = async (jobId) => {
+    if (!realAiEnabled()) {
+      return { ok: false, error: { code: "RESOURCE_PAUSED", message: "Real AI is not enabled.", retryable: true } };
+    }
+    try {
+      const invokeWorkerAsynchronously = createScfAsyncInvoker({
+        secretId: cloudbaseContext.TENCENTCLOUD_SECRETID,
+        secretKey: cloudbaseContext.TENCENTCLOUD_SECRETKEY,
+        sessionToken: cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN,
+        region: cloudbaseContext.TENCENTCLOUD_REGION || process.env.TENCENTCLOUD_REGION || "ap-shanghai",
+        namespace: cloudbaseContext.SCF_NAMESPACE || cloudbaseContext.TCB_ENV,
+      });
+      return await invokeWorkerAsynchronously(jobId);
+    } catch {
+      return { ok: false, error: { code: "WORKER_DISPATCH_FAILED", message: "AI task could not be queued.", retryable: true } };
+    }
+  };
   return createLiveApiHandler({
     database: app.database(),
     experienceEnabled: realAiEnabled(),
-    dispatchExperienceJob: async (jobId) => {
-      if (!realAiEnabled()) {
-        return { ok: false, error: { code: "RESOURCE_PAUSED", message: "Real AI is not enabled.", retryable: true } };
-      }
-      const response = await app.callFunction({ name: "worker", data: { jobId }, parse: true });
-      return typeof response.result === "string" ? JSON.parse(response.result) : response.result;
-    },
+    dispatchExperienceJob,
     dispatchReliabilityProbe: async (jobId) => {
       const response = await app.callFunction({
         name: "worker",

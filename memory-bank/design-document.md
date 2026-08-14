@@ -164,7 +164,7 @@ flowchart LR
     CLEAN --> TMP
 ```
 
-- `api` 从 CloudBase 上下文读取可信 OpenID，完成鉴权、输入校验、任务创建和查询。
+- `api` 从 CloudBase 上下文读取可信 OpenID，完成鉴权、输入校验、任务创建和查询；任务落库后使用 SCF Event 异步触发 `worker` 并立即返回 `jobId`，不等待 OCR 或模型完成。
 - `worker` 执行 OCR、结构化解析、生成、事实校验和最多一次自动纠错。
 - `cleanup` 处理残留文件、10 分钟无终态任务、过期幂等记录和待删除账号。
 - 单次 worker 任务最多运行 45 秒；超过 10 分钟仍无终态的任务由 cleanup 标记失败并释放额度。

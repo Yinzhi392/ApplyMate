@@ -107,11 +107,11 @@ CloudBase 普通云函数支持异步任务模式，适合把创建请求和重�
 
 三个函数均使用当前 CloudBase 支持且阶段 0 验证通过的 Node.js LTS 运行时。运行时版本写入部署配置，不在业务逻辑里推断。
 
-当前免费环境 `applymate-mvp-d0g005nnw103af4c3` 已交付文档型数据库，八个固定集合均为 `ADMINONLY`。腾讯官方云函数文档推荐 `@cloudbase/node-sdk`，但候选版本公开依赖仍包含 `axios@0.27.2`，故不进入本项目依赖。改用经 `npm audit --omit=dev` 验证为 0 漏洞的官方 `@cloudbase/js-sdk@3.7.1` Node 入口；除下述受限 `api` 身份切片外，真实仓储仍未实现，`worker` 与 `cleanup` 均保持零依赖安全门禁。
+当前免费环境 `applymate-mvp-d0g005nnw103af4c3` 已交付文档型数据库，八个固定集合均为 `ADMINONLY`。腾讯官方云函数文档推荐 `@cloudbase/node-sdk`，但候选版本公开依赖仍包含 `axios@0.27.2`，故不进入本项目依赖。项目使用经 `npm audit --omit=dev` 验证为 0 漏洞的 `@cloudbase/js-sdk@3.7.1` Node 入口访问文档数据库和云存储；`api`、`worker` 与 `cleanup` 均已具备各自受限的真实 CloudBase 适配器。
 
-`api` 已升级为受限身份闭环：云函数内使用 `@cloudbase/js-sdk@3.7.1` 访问 `users`，并且只开放可信身份状态与协议同意。`worker`、`cleanup` 继续零依赖。小程序只在显式 `cloudbase_identity_test` 本地开关下调用该函数，默认仍为 demo；这避免在邀请码、文件、额度与任务仓储尚未完成时意外启用真实业务流量。
+体验版默认使用 `cloudbase_experience`；显式 `demo` 只用于本地合成界面测试。`api` 负责可信身份、协议、邀请码、用户数据与任务创建，`worker` 负责 OCR、脱敏、真实模型、解析/生成/改写和临时文件清理，`cleanup` 保留严格受限的可靠性和删除清理入口。
 
-`api` 只负责可靠地创建任务并异步触发 `worker`，不得等待 OCR 或 TokenHub 完成。`worker` 通过事务认领任务，重复触发时只有一个执行者进入外部调用。`cleanup` 对终态转换、额度释放和删除操作保持幂等。阶段 10 新增的 `analytics.track` 仍是 `api` 内的轻量写动作，不引入分析 SDK、消息队列或新数据库集合。
+`api` 只负责可靠地创建任务并异步触发 `worker`，不得等待 OCR 或 TokenHub 完成。部署适配器通过腾讯 SCF `Invoke` 的 `InvocationType=Event` 发送 jobId，并使用 8 秒接受截止；`worker` 通过事务认领任务，重复触发时只有一个执行者进入外部调用。`cleanup` 对终态转换、额度释放和删除操作保持幂等。阶段 10 新增的 `analytics.track` 仍是 `api` 内的轻量写动作，不引入分析 SDK、消息队列或新数据库集合。
 
 ### 4.2 代码边界
 

@@ -10,7 +10,7 @@ function realAiEnabled() {
   return process.env.APPLYMATE_REAL_AI_ENABLED === "true";
 }
 
-function safeResponse(event) {
+function safeResponse(event, credentialDiagnostic) {
   if (event && event.healthcheck === true) {
     return {
       ok: true,
@@ -18,6 +18,7 @@ function safeResponse(event) {
         runtime: RUNTIME,
         state: realAiEnabled() ? "experience_real_ai_live" : "experience_real_ai_paused",
         acceptsUserTraffic: realAiEnabled(),
+        ...(credentialDiagnostic ? { credentialDiagnostic } : {}),
       },
     };
   }
@@ -32,7 +33,15 @@ function safeResponse(event) {
 }
 
 exports.main = async (event, context) => {
-  if (event && event.healthcheck === true) return safeResponse(event);
+  if (event && event.healthcheck === true) {
+    const cloudbaseContext = realAiEnabled() ? CloudBase.getCloudbaseContext(context) : {};
+    return safeResponse(event, realAiEnabled() ? {
+      hasModelApiKey: typeof process.env.TOKENHUB_API_KEY === "string" && process.env.TOKENHUB_API_KEY.length > 0,
+      hasOcrSecretId: typeof cloudbaseContext.TENCENTCLOUD_SECRETID === "string" && cloudbaseContext.TENCENTCLOUD_SECRETID.length > 0,
+      hasOcrSecretKey: typeof cloudbaseContext.TENCENTCLOUD_SECRETKEY === "string" && cloudbaseContext.TENCENTCLOUD_SECRETKEY.length > 0,
+      hasOcrSessionToken: typeof cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN === "string" && cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN.length > 0,
+    } : undefined);
+  }
   if (!event || typeof event.jobId !== "string") {
     return safeResponse(event);
   }
