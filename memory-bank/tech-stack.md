@@ -107,7 +107,7 @@ CloudBase 普通云函数支持异步任务模式，适合把创建请求和重�
 
 三个函数均使用当前 CloudBase 支持且阶段 0 验证通过的 Node.js LTS 运行时。运行时版本写入部署配置，不在业务逻辑里推断。
 
-当前免费环境 `applymate-mvp-d0g005nnw103af4c3` 已交付文档型数据库，八个固定集合均为 `ADMINONLY`。腾讯官方云函数文档推荐 `@cloudbase/node-sdk`，但候选版本公开依赖仍包含 `axios@0.27.2`，故不进入本项目依赖。项目使用经 `npm audit --omit=dev` 验证为 0 漏洞的 `@cloudbase/js-sdk@3.7.1` Node 入口访问文档数据库和云存储；`api`、`worker` 与 `cleanup` 均已具备各自受限的真实 CloudBase 适配器。
+当前免费环境 `applymate-mvp-d0g005nnw103af4c3` 已交付文档型数据库，八个固定集合均为 `ADMINONLY`。腾讯官方云函数文档推荐 `@cloudbase/node-sdk`，但候选版本公开依赖仍包含 `axios@0.27.2`，故不进入本项目依赖。项目使用经 `npm audit --omit=dev` 验证为 0 漏洞的 `@cloudbase/js-sdk@3.7.1` Node 入口访问文档数据库和云存储；`api`、`worker` 与 `cleanup` 初始化时都显式传入受限 `CLOUDBASE_APIKEY`。结构化简历 profile 采用 JSON-at-rest 兼容层，API 与 worker 在业务边界解码，避免当前 SDK 对嵌套对象更新静默不落库。
 
 体验版默认使用 `cloudbase_experience`；显式 `demo` 只用于本地合成界面测试。`api` 负责可信身份、协议、邀请码、用户数据与任务创建，`worker` 负责 OCR、脱敏、真实模型、解析/生成/改写和临时文件清理，`cleanup` 保留严格受限的可靠性和删除清理入口。
 
@@ -217,7 +217,7 @@ OCR 或本地提取后的文本在进入 TokenHub 前遮盖手机号、邮箱、
 | JD 结构化与事实选择 | `hy3`，每任务最多一次 | 暂无；失败时释放额度并请用户重试 |
 | 开场白生成与改写 | 本地确定性渲染器 | 无外部模型备用；仅组装有效 `factId` 和 JD 字段 |
 
-准确 Base URL、Model ID、免费额度和后付费开关已由控制台与官方文档验证。0.11R 已锁定 720×1080、JPEG 质量 80 的 OCR 临时副本，并通过 30 组全量时延、准确率和零费用复验；0.12 调整后的 30 组评测已通过字段、合规、虚构和文本子管线耗时门槛，0.13 外发数据边界与 0.14 五类资源零费用审计也已通过。体验版现默认使用真实 CloudBase、腾讯 GeneralBasicOCR 和 TokenHub Hy3；`api` 与 `worker` 必须同时配置 `APPLYMATE_REAL_AI_ENABLED=true`，任一免费资源不足或付费兜底开启时失败关闭。业务层仍保留 `parseResume`、`generateGreeting`、`rewriteGreeting` 接口，开场白由服务端确定性渲染，不把生成权交给模型。
+准确 Base URL、Model ID、免费额度和后付费开关已由控制台与官方文档验证。0.11R 已锁定 720×1080、JPEG 质量 80 的 OCR 临时副本，并通过 30 组全量时延、准确率和零费用复验；0.12 调整后的 30 组评测已通过字段、合规、虚构和文本子管线耗时门槛，0.13 外发数据边界与 0.14 五类资源零费用审计也已通过。体验版现默认使用真实 CloudBase、腾讯 GeneralBasicOCR 和 TokenHub Hy3；`api` 与 `worker` 必须同时配置 `APPLYMATE_REAL_AI_ENABLED=true`，任一免费资源不足或付费兜底开启时失败关闭。OCR 使用独立 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY`、区域和可选 SessionToken，绝不复用 CloudBase 运行时身份。业务层仍保留 `parseResume`、`generateGreeting`、`rewriteGreeting` 接口，开场白由服务端确定性渲染，不把生成权交给模型。
 
 适配器负责超时、429/5xx 失败关闭、JSON 提取、Zod 校验，以及模型、耗时、Token、估算成本、Prompt 版本和内容哈希记录。生成结果还必须保存 Hy3 选择快照和本地渲染器版本，用于投递快照与页面公示；真实模式缺少必要元数据时拒绝保存。不得保存原始 Prompt 或用户正文。
 

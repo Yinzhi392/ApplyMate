@@ -10,14 +10,34 @@ function realAiEnabled() {
   return process.env.APPLYMATE_REAL_AI_ENABLED === "true";
 }
 
-function safeResponse(event, credentialDiagnostic) {
+function hasEnvironmentValue(name) {
+  return typeof process.env[name] === "string" && process.env[name].length > 0;
+}
+
+function dedicatedOcrCredentialsAvailable() {
+  return hasEnvironmentValue("APPLYMATE_OCR_SECRET_ID") &&
+    hasEnvironmentValue("APPLYMATE_OCR_SECRET_KEY");
+}
+
+function cloudBaseApiKey(context) {
+  const cloudbaseContext = CloudBase.getCloudbaseContext(context);
+  return cloudbaseContext.CLOUDBASE_APIKEY || process.env.CLOUDBASE_APIKEY;
+}
+
+function realAiReady(context) {
+  return realAiEnabled() && hasEnvironmentValue("TOKENHUB_API_KEY") &&
+    dedicatedOcrCredentialsAvailable() &&
+    typeof cloudBaseApiKey(context) === "string" && cloudBaseApiKey(context).length > 0;
+}
+
+function safeResponse(event, credentialDiagnostic, ready = false) {
   if (event && event.healthcheck === true) {
     return {
       ok: true,
       data: {
         runtime: RUNTIME,
-        state: realAiEnabled() ? "experience_real_ai_live" : "experience_real_ai_paused",
-        acceptsUserTraffic: realAiEnabled(),
+        state: ready ? "experience_real_ai_live" : "experience_real_ai_paused",
+        acceptsUserTraffic: ready,
         ...(credentialDiagnostic ? { credentialDiagnostic } : {}),
       },
     };
@@ -34,30 +54,35 @@ function safeResponse(event, credentialDiagnostic) {
 
 exports.main = async (event, context) => {
   if (event && event.healthcheck === true) {
-    const cloudbaseContext = realAiEnabled() ? CloudBase.getCloudbaseContext(context) : {};
+    const accessKey = cloudBaseApiKey(context);
     return safeResponse(event, realAiEnabled() ? {
-      hasModelApiKey: typeof process.env.TOKENHUB_API_KEY === "string" && process.env.TOKENHUB_API_KEY.length > 0,
-      hasOcrSecretId: typeof cloudbaseContext.TENCENTCLOUD_SECRETID === "string" && cloudbaseContext.TENCENTCLOUD_SECRETID.length > 0,
-      hasOcrSecretKey: typeof cloudbaseContext.TENCENTCLOUD_SECRETKEY === "string" && cloudbaseContext.TENCENTCLOUD_SECRETKEY.length > 0,
-      hasOcrSessionToken: typeof cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN === "string" && cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN.length > 0,
-    } : undefined);
+      hasModelApiKey: hasEnvironmentValue("TOKENHUB_API_KEY"),
+      hasOcrSecretId: hasEnvironmentValue("APPLYMATE_OCR_SECRET_ID"),
+      hasOcrSecretKey: hasEnvironmentValue("APPLYMATE_OCR_SECRET_KEY"),
+      hasOcrSessionToken: hasEnvironmentValue("APPLYMATE_OCR_SESSION_TOKEN"),
+      hasCloudBaseApiKey: typeof accessKey === "string" && accessKey.length > 0,
+      usesDedicatedOcrCredentials: dedicatedOcrCredentialsAvailable(),
+    } : undefined, realAiReady(context));
   }
   if (!event || typeof event.jobId !== "string") {
     return safeResponse(event);
   }
-  const app = CloudBase.init({ env: CloudBase.SYMBOL_DEFAULT_ENV });
+  const accessKey = cloudBaseApiKey(context);
+  const app = CloudBase.init({
+    env: CloudBase.SYMBOL_DEFAULT_ENV,
+    ...(typeof accessKey === "string" && accessKey.length > 0 ? { accessKey } : {}),
+  });
   if (/^job_probe_[a-f0-9]{24}$/u.test(event.jobId)) {
     return createReliabilityWorker({ database: app.database() })(event);
   }
-  if (!realAiEnabled()) return safeResponse(event);
-  const cloudbaseContext = CloudBase.getCloudbaseContext(context);
+  if (!realAiReady(context)) return safeResponse(event);
   return createExperienceWorker({
     app,
     database: app.database(),
     credentials: {
-      secretId: process.env.TENCENTCLOUD_SECRET_ID || cloudbaseContext.TENCENTCLOUD_SECRETID,
-      secretKey: process.env.TENCENTCLOUD_SECRET_KEY || cloudbaseContext.TENCENTCLOUD_SECRETKEY,
-      token: process.env.TENCENTCLOUD_SESSION_TOKEN || cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN,
+      secretId: process.env.APPLYMATE_OCR_SECRET_ID,
+      secretKey: process.env.APPLYMATE_OCR_SECRET_KEY,
+      token: process.env.APPLYMATE_OCR_SESSION_TOKEN,
     },
   })(event);
 };

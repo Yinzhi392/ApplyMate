@@ -38,6 +38,30 @@ describe("experience build real AI regression", () => {
     expect(worker).toContain("hasOcrSessionToken");
   });
 
+  it("requires dedicated OCR credentials instead of trusting CloudBase runtime credentials", () => {
+    const worker = read("cloudfunctions/worker/deploy/index.js");
+
+    expect(worker).toContain('hasEnvironmentValue("APPLYMATE_OCR_SECRET_ID")');
+    expect(worker).toContain('hasEnvironmentValue("APPLYMATE_OCR_SECRET_KEY")');
+    expect(worker).toContain("dedicatedOcrCredentialsAvailable()");
+    expect(worker).toContain("process.env.APPLYMATE_OCR_SECRET_ID");
+    expect(worker).toContain("process.env.APPLYMATE_OCR_SECRET_KEY");
+    expect(worker).not.toContain("cloudbaseContext.TENCENTCLOUD_SECRETID");
+    expect(worker).not.toContain("cloudbaseContext.TENCENTCLOUD_SECRETKEY");
+    expect(worker).not.toContain("cloudbaseContext.TENCENTCLOUD_SESSIONTOKEN");
+  });
+
+  it("passes the configured CloudBase API key to every server-side database SDK", () => {
+    const api = read("cloudfunctions/api/deploy/index.js");
+    const worker = read("cloudfunctions/worker/deploy/index.js");
+    const cleanup = read("cloudfunctions/cleanup/deploy/index.js");
+
+    expect(api).toContain("accessKey: cloudbaseContext.CLOUDBASE_APIKEY");
+    expect(worker).toContain("? { accessKey } : {}");
+    expect(worker).toContain("hasCloudBaseApiKey");
+    expect(cleanup).toContain("? { accessKey } : {}");
+  });
+
   it("dispatches real AI jobs through the SCF asynchronous event API", () => {
     const api = read("cloudfunctions/api/deploy/index.js");
     const invoker = read("cloudfunctions/api/deploy/scf-async-invoker.js");
@@ -56,5 +80,29 @@ describe("experience build real AI regression", () => {
     expect(api).toContain('kind: "greeting_rewrite"');
     expect(worker).toContain('job.kind === "greeting_rewrite"');
     expect(worker).toContain("rewritePrompt(application, job.input.mode)");
+  });
+
+  it("persists experience records with user-scoped queries instead of silent doc-id updates", () => {
+    const api = read("cloudfunctions/api/deploy/experience-api.js");
+    const worker = read("cloudfunctions/worker/deploy/experience-worker.js");
+
+    expect(worker).toContain('const resumeRecord = await findOne(database.collection("resumes"), {');
+    expect(worker).toContain('database.collection("resumes").where({ _id: resumeRecord._id })');
+    expect(worker).toContain("if (!resumeUpdated) throw new Error(\"DATABASE_WRITE_FAILED\")");
+    expect(api).not.toMatch(/(?:resumes|applications)\.doc\(record\._id\)/u);
+    expect(api).toContain('recordType: "resume", userId: user.userId, resumeId: payload.resumeId');
+    expect(api).toContain('recordType: "application", userId: user.userId, applicationId: payload.applicationId');
+  });
+
+  it("stores structured resume profiles as JSON and decodes them at business boundaries", () => {
+    const api = read("cloudfunctions/api/deploy/experience-api.js");
+    const liveApi = read("cloudfunctions/api/deploy/live-api.js");
+    const worker = read("cloudfunctions/worker/deploy/experience-worker.js");
+
+    expect(worker).toContain("const profileJson = JSON.stringify(profile)");
+    expect(worker).toContain("const resumeProfile = decodeStoredProfile(resume?.profile)");
+    expect(api).toContain("profile: JSON.stringify(profile)");
+    expect(api).toContain("profile: decodeStoredProfile(record.profile)");
+    expect(liveApi).toContain("result: decodeJobResult(job.result)");
   });
 });

@@ -9,8 +9,8 @@
 1. 在微信开发者工具打开 `/Users/mayinzhi/Desktop/投了吗`。
 2. 确认右上角显示当前正式注册的小程序 AppID，而不是旧测试号。
 3. 点击“编译”，确认模拟器正常打开，Console 没有应用错误。
-4. 确认 CloudBase 环境为 `applymate-mvp-d0g005nnw103af4c3`；2026-08-14 的 `api` 与 `worker` 修复版本已经部署，`cleanup` 保持现有部署。
-5. 在 `api` 与 `worker` 的环境变量中设置 `APPLYMATE_REAL_AI_ENABLED=true`。在 `worker` 设置 `TOKENHUB_API_KEY`、`TOKENHUB_MODEL=hy3`、`TOKENHUB_BASE_URL=https://tokenhub.tencentmaas.com/v1`。OCR 优先使用 CloudBase 运行时临时凭证；如运行时没有凭证，再由产品负责人于 `worker` 填入 `TENCENTCLOUD_SECRET_ID` 和 `TENCENTCLOUD_SECRET_KEY`。
+4. 确认 CloudBase 环境为 `applymate-mvp-d0g005nnw103af4c3`；2026-08-15 的 `api`、`worker` 与 `cleanup` 修复版本已经部署。
+5. 在 `api` 与 `worker` 的环境变量中设置 `APPLYMATE_REAL_AI_ENABLED=true`。在 `worker` 设置 `TOKENHUB_API_KEY`、`TOKENHUB_MODEL=hy3`、`TOKENHUB_BASE_URL=https://tokenhub.tencentmaas.com/v1`，以及 OCR 专用的 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY`、`APPLYMATE_OCR_REGION`。只有使用临时凭证时才设置 `APPLYMATE_OCR_SESSION_TOKEN`；长期密钥对没有 SessionToken 是正常状态。不得让 OCR 复用 CloudBase 运行时身份。
 6. 确认 OCR 后付费、TokenHub 按 Token 计费和 CloudBase 超额付费均关闭。不要把密钥写入代码、备注或截图。
 7. 分别调用 `api` 和 `worker` 的 `{ healthcheck: true }`，应返回 `state=experience_real_ai_live` 且 `acceptsUserTraffic=true`。
 
@@ -28,8 +28,8 @@ CloudBase CLI 会读取仓库根目录的 `cloudbaserc.json`，只把 `api`、`w
 
 部署结束后进入 CloudBase 控制台逐项核对：
 
-1. `api`：保留现有 `CLOUDBASE_APIKEY`、管理员等变量，新增或修改 `APPLYMATE_REAL_AI_ENABLED=true`。
-2. `worker`：保留现有 `CLOUDBASE_APIKEY` 和 `TOKENHUB_API_KEY`，设置 `APPLYMATE_REAL_AI_ENABLED=true`、`TOKENHUB_MODEL=hy3`、`TOKENHUB_BASE_URL=https://tokenhub.tencentmaas.com/v1`。
+1. `api`：保留现有 `CLOUDBASE_APIKEY`、管理员等变量，设置 `APPLYMATE_REAL_AI_ENABLED=true`。
+2. `worker`：保留现有 `CLOUDBASE_APIKEY` 和 `TOKENHUB_API_KEY`，设置 `APPLYMATE_REAL_AI_ENABLED=true`、`TOKENHUB_MODEL=hy3`、`TOKENHUB_BASE_URL=https://tokenhub.tencentmaas.com/v1`，并保留 OCR 专用的 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY` 与 `APPLYMATE_OCR_REGION`。
 3. `cleanup`：保留现有 CloudBase 数据库访问配置，不需要 TokenHub 或 OCR 密钥。
 4. 保存环境变量后重新部署或等待函数配置生效；不要删除原有变量，也不要截图密钥值。
 5. 在微信开发者工具 Console 执行下面两段健康检查：
@@ -39,12 +39,12 @@ wx.cloud.callFunction({ name: "api", data: { healthcheck: true } }).then(console
 wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(console.log)
 ```
 
-两者都必须返回 `experience_real_ai_live` 和 `acceptsUserTraffic: true`；worker 的 `credentialDiagnostic` 中四个布尔值也必须均为 `true`。否则不要上传微信体验版。
+两者都必须返回 `experience_real_ai_live` 和 `acceptsUserTraffic: true`。worker 的 `credentialDiagnostic` 必须确认 TokenHub Key、CloudBase API Key、OCR 专用 SecretId 与 SecretKey 均存在；长期 OCR 密钥对对应的 SessionToken 可以为 `false`。否则不要上传微信体验版。
 
 ## 上传为开发版本
 
 1. 点击微信开发者工具顶部右侧“上传”。如果按钮不可用，先用该小程序管理员或项目成员微信扫码登录。
-2. 版本号填写 `0.10.1`；若后台已有该版本号，依次使用 `0.10.2`、`0.10.3`，不要覆盖历史版本。
+2. 版本号填写 `0.10.2`；若后台已有该版本号，依次使用 `0.10.3`、`0.10.4`，不要覆盖历史版本。
 3. 项目备注填写：`体验版真实AI闭环；仅限开发者和体验成员；不提交审核；付费兜底关闭。`
 4. 检查上传弹窗中的 AppID 与小程序名称，确认后点击“上传”。
 5. 等待工具提示上传成功。此时只是“开发版本”，还不是体验版。
@@ -53,7 +53,7 @@ wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(cons
 
 1. 登录 [微信公众平台](https://mp.weixin.qq.com/)，进入当前小程序。
 2. 打开“管理/版本管理”或“开发管理/开发版本”。不同后台版本的菜单名称可能略有差异。
-3. 在“开发版本”找到刚上传的 `0.10.1`。
+3. 在“开发版本”找到刚上传的版本号。
 4. 点击该版本右侧“选为体验版”或“设为体验版”。
 5. 如需填写启动页面，使用首页路径 `pages/home/index`，不要附加真实身份测试参数。
 6. 确认后生成体验版二维码。
@@ -72,6 +72,7 @@ wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(cons
 
 1. 管理员或体验成员扫码打开。
 2. 确认登录、首页、记录、我的和协议页面可打开。
-3. 用一份自己有权处理的简历截图验证“上传 → OCR → 核对个人资料”，再提交一份 JD 验证真实开场白。
-4. 确认结果页显示真实模型披露和“AI生成内容，请核对真实性”。
-5. 在 CloudBase 查看临时文件已清理，再复核腾讯云账单仍为 0 元，OCR 后付费和 TokenHub 按 Token 计费仍关闭。
+3. 删除此前失败的简历记录，或直接重新上传一份新文件。旧任务已经进入终态，幂等机制不会自动重放它。
+4. 用一份自己有权处理的简历截图验证“上传 → OCR → 核对个人资料”，再提交一份 JD 验证真实开场白。
+5. 确认结果页显示真实模型披露和“AI生成内容，请核对真实性”。
+6. 在 CloudBase 查看临时文件已清理，再复核腾讯云账单仍为 0 元，OCR 后付费和 TokenHub 按 Token 计费仍关闭。

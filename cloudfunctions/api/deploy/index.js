@@ -46,6 +46,9 @@ exports.main = async (event, context) => {
   // credentials from application code.
   const app = CloudBase.init({
     env: CloudBase.SYMBOL_DEFAULT_ENV,
+    ...(hasValue(cloudbaseContext.CLOUDBASE_APIKEY)
+      ? { accessKey: cloudbaseContext.CLOUDBASE_APIKEY }
+      : {}),
   });
   const dispatchExperienceJob = async (jobId) => {
     if (!realAiEnabled()) {

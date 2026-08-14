@@ -29,6 +29,13 @@ async function updateDocument(target, update) {
 
 async function updateExactlyOne(target, update) {
   const result = await updateDocument(target, update);
+  if (result.updated !== 1) {
+    console.error("CloudBase update did not affect exactly one document.", {
+      responseKeys: Object.keys(result).sort(),
+      updated: result.updated,
+      matched: result.matched,
+    });
+  }
   return result.updated === 1;
 }
 

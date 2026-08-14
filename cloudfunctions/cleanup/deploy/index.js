@@ -4,7 +4,16 @@ const CloudBase = require("@cloudbase/js-sdk");
 const { createReliabilityCleanup } = require("./reliability-cleanup");
 const { createSyntheticAccountDeletion } = require("./synthetic-account-deletion");
 
-exports.main = async (event) => {
+function createCloudBaseApp(context) {
+  const cloudbaseContext = CloudBase.getCloudbaseContext(context);
+  const accessKey = cloudbaseContext.CLOUDBASE_APIKEY || process.env.CLOUDBASE_APIKEY;
+  return CloudBase.init({
+    env: CloudBase.SYMBOL_DEFAULT_ENV,
+    ...(typeof accessKey === "string" && accessKey.length > 0 ? { accessKey } : {}),
+  });
+}
+
+exports.main = async (event, context) => {
   if (event && event.healthcheck === true) {
     return {
       ok: true,
@@ -17,7 +26,7 @@ exports.main = async (event) => {
   }
   if (!event || event.reliabilityProbeCleanup !== true || Object.keys(event).length !== 1) {
     if (event && event.syntheticAccountDeletionCleanup === true) {
-      const app = CloudBase.init({ env: CloudBase.SYMBOL_DEFAULT_ENV });
+      const app = createCloudBaseApp(context);
       return createSyntheticAccountDeletion({ database: app.database() })(event);
     }
     return {
@@ -29,6 +38,6 @@ exports.main = async (event) => {
       },
     };
   }
-  const app = CloudBase.init({ env: CloudBase.SYMBOL_DEFAULT_ENV });
+  const app = createCloudBaseApp(context);
   return createReliabilityCleanup({ database: app.database() })(event);
 };

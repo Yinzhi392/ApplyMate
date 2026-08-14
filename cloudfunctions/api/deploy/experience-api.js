@@ -27,6 +27,17 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function decodeStoredProfile(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return clone(value);
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function copyText(body) {
   return `${body.trim()}\nAI生成内容，请核对真实性`;
 }
@@ -53,7 +64,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
 
     if (event.action === "user.updatePreferences") {
       if (typeof payload.text !== "string" || payload.text.length > 500) return invalid();
-      await updateDocument(database.collection("users").doc(user._id), {
+      await updateDocument(database.collection("users").where({
+        recordType: "user", userId: user.userId,
+      }), {
         preferenceText: payload.text.trim(), updatedAt: timestamp,
       });
       return { ok: true, data: { preferenceText: payload.text.trim() } };
@@ -88,7 +101,10 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
 
     if (event.action === "resume.list") {
       const records = await findMany(resumes, { recordType: "resume", userId: user.userId });
-      return { ok: true, data: { resumes: records.map(({ _id, recordType, userId, ...record }) => clone(record)) } };
+      return { ok: true, data: { resumes: records.map(({ _id, recordType, userId, ...record }) => ({
+        ...clone(record),
+        profile: decodeStoredProfile(record.profile),
+      })) } };
     }
 
     if (event.action === "resume.confirm") {
@@ -97,8 +113,10 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       if (record === null) return failure("NOT_FOUND", "Resume was not found.");
       const confirmed = await findMany(resumes, { recordType: "resume", userId: user.userId, status: "confirmed" });
       const profile = { ...clone(payload.profile), resumeId: payload.resumeId, confirmed: true };
-      await updateDocument(resumes.doc(record._id), {
-        profile, status: "confirmed", confirmedAt: timestamp,
+      await updateDocument(resumes.where({
+        recordType: "resume", userId: user.userId, resumeId: payload.resumeId,
+      }), {
+        profile: JSON.stringify(profile), status: "confirmed", confirmedAt: timestamp,
         isDefault: record.isDefault || confirmed.length === 0, updatedAt: timestamp,
       });
       return { ok: true, data: { resumeId: payload.resumeId, confirmed: true } };
@@ -111,7 +129,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
         return failure("NOT_FOUND", "Resume was not found.");
       }
       for (const record of records) {
-        await updateDocument(resumes.doc(record._id), { isDefault: record.resumeId === payload.resumeId, updatedAt: timestamp });
+        await updateDocument(resumes.where({
+          recordType: "resume", userId: user.userId, resumeId: record.resumeId,
+        }), { isDefault: record.resumeId === payload.resumeId, updatedAt: timestamp });
       }
       return { ok: true, data: { resumeId: payload.resumeId } };
     }
@@ -120,7 +140,7 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       if (typeof payload.resumeId !== "string") return invalid();
       const record = await findOne(resumes, { recordType: "resume", userId: user.userId, resumeId: payload.resumeId });
       if (record === null) return failure("NOT_FOUND", "Resume was not found.");
-      await resumes.doc(record._id).remove();
+      await resumes.where({ recordType: "resume", userId: user.userId, resumeId: payload.resumeId }).remove();
       return { ok: true, data: { deleted: true } };
     }
 
@@ -198,7 +218,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       if (typeof payload.greetingBody === "string") updates.greetingBody = payload.greetingBody.slice(0, 2000);
       if (typeof payload.memo === "string") updates.memo = payload.memo.slice(0, 500);
       if (payload.status === "applied" || payload.status === "not_applied") updates.status = payload.status;
-      await updateDocument(applications.doc(record._id), updates);
+      await updateDocument(applications.where({
+        recordType: "application", userId: user.userId, applicationId: payload.applicationId,
+      }), updates);
       return { ok: true, data: { manualEvaluation: { warnings: [] } } };
     }
 
@@ -206,7 +228,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       if (typeof payload.applicationId !== "string") return invalid();
       const record = await findOne(applications, { recordType: "application", userId: user.userId, applicationId: payload.applicationId });
       if (record === null) return failure("NOT_FOUND", "Application was not found.");
-      await applications.doc(record._id).remove();
+      await applications.where({
+        recordType: "application", userId: user.userId, applicationId: payload.applicationId,
+      }).remove();
       return { ok: true, data: { deleted: true } };
     }
 
@@ -215,7 +239,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       const record = await findOne(applications, { recordType: "application", userId: user.userId, applicationId: payload.applicationId });
       if (record === null) return failure("NOT_FOUND", "Application was not found.");
       const feedback = { rating: payload.rating, note: typeof payload.note === "string" ? payload.note.slice(0, 500) : "", updatedAt: timestamp };
-      await updateDocument(applications.doc(record._id), { feedback, updatedAt: timestamp });
+      await updateDocument(applications.where({
+        recordType: "application", userId: user.userId, applicationId: payload.applicationId,
+      }), { feedback, updatedAt: timestamp });
       return { ok: true, data: { feedback } };
     }
 

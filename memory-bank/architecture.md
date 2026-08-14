@@ -1,10 +1,20 @@
 # ApplyMate Architecture Memory
 
-**版本：** 阶段 10 真实 AI 体验版里程碑 v8.4
+**版本：** 阶段 10 真实 AI 体验版里程碑 v8.5
 
-**日期：** 2026-08-14
+**日期：** 2026-08-15
 
 **当前状态：** 阶段 9 已完成并以 `f369de7` 作为基线。阶段 10.1–10.8、10.10–10.15 已完成；10.9 由产品负责人明确风险豁免，不代表双端真机通过。产品负责人确认 CloudBase 与腾讯云账单 0 元、OCR 后付费关闭、TokenHub 按 Token 计费关闭，并批准仅用于开发者/体验成员测试。体验版默认使用真实 CloudBase、腾讯 OCR 与 TokenHub；普通账号删除、正式审核和公开发布保持关闭。体验版上传仍是独立人工平台操作。
+
+### 2026-08-15：真实 AI 数据边界与云端闭环修复
+
+- `api`、`worker` 与 `cleanup` 初始化 `@cloudbase/js-sdk` 时显式传入受限 `CLOUDBASE_APIKEY`，不再依赖 Node 环境下不完整的隐式身份发现。
+- OCR 只能读取 worker 的 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY`、可选 `APPLYMATE_OCR_SESSION_TOKEN` 与区域；它不得复用 CloudBase 运行时临时身份。长期密钥对没有 SessionToken 是合法配置。
+- CloudBase JS SDK 对嵌套结构化 profile 的更新在当前环境会出现无有效更新数且不持久化。数据库兼容层因此把 profile 以 JSON 字符串保存；API 的任务查询、简历列表和确认入口，以及 generation worker 在业务边界解码为对象。客户端契约与事实质量门不变。
+- TokenHub 适配器容忍常见包装对象和省略的空数组，严格归一为 ResumeProfile；首次无效 JSON 只允许一次纠错重试，第二次失败继续释放额度并返回安全错误。
+- 真实云端合成验证已覆盖“简历图片 → OCR → TokenHub → 待核对 → 确认简历 → JD 图片 → OCR → TokenHub → 开场白”。简历任务耗时 5,469 ms；岗位任务耗时 4,003 ms，正文 293 字、证据 3 条且模型披露完整。
+- 体验版使用真实 AI；“体验版”仅限制微信分发范围。旧终态失败任务受幂等保护不会自动重放，重新验证必须上传新文件。
+- 修复后的完整门禁通过 115 个测试文件、421 项测试和五模块构建；测试覆盖 OCR 独立身份、三函数显式数据库身份、profile JSON 编解码边界及 TokenHub 输出归一。
 
 ### 2026-08-14：真机解析超时修复
 

@@ -2,11 +2,20 @@
 
 ## 当前状态
 
-**日期：** 2026-08-14
+**日期：** 2026-08-15
 
 **阶段：** 阶段 10 真实 AI 体验版修订；10.9 真机测试由产品负责人豁免
 
 **结论：** C01–C30 已锁定为 `phase0-v1.0`。0.11R 用 72 次诊断和 30 次全量复验确定 `jpeg-720-q80`：字段 180/180、中位 1,429 ms、最大 1,940 ms、零超时。0.12–0.17、10.1–10.8、10.10–10.15 已完成；10.9 以产品负责人明确风险豁免关闭，不代表双端真机通过。产品负责人确认四项零费用状态，并进一步明确：开发者/体验成员必须使用真实 CloudBase、腾讯 OCR 和 TokenHub；只有本地 demo 才使用合成数据。普通账号删除、正式审核和公开发布保持关闭。
+
+## 体验版真实 AI 云端闭环修复（2026-08-15）
+
+- **故障根因：** OCR 错误复用了 CloudBase 运行时身份；TokenHub 密钥与输出形态存在漂移；CloudBase JS SDK 对嵌套 profile 的更新返回中未报告有效更新数，导致任务有结果但简历事实未落库。
+- **凭证边界：** worker 改用 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY` 和可选 `APPLYMATE_OCR_SESSION_TOKEN`；TokenHub 继续只使用独立 API Key。`api`、`worker`、`cleanup` 初始化 CloudBase JS SDK 时显式传入受限 `CLOUDBASE_APIKEY`。
+- **持久化兼容：** 结构化简历 profile 在数据库中保存为 JSON 字符串，在 `job.get`、`resume.list`、`resume.confirm` 和生成 worker 边界统一解码，客户端仍收到原有对象契约。该兼容层绕开复杂对象更新静默失败，不改变 API 字段。
+- **模型兼容：** TokenHub 响应允许常见 JSON 包装与缺失数组，首次无效输出只进行一次纠错重试；仍保留超时、事实质量门和失败关闭。
+- **云端证据：** 使用完全合成内容完成真实腾讯 OCR 与 TokenHub 闭环。简历任务约 5,469 ms 后进入 `awaiting_user_confirmation`；随后岗位任务约 4,003 ms 成功，生成 293 个可见字符、3 条逐项证据并包含 AI 披露。未使用真实用户数据。
+- **发布边界：** 体验版明确使用真实 AI，只限制微信分发成员；普通账号删除、付费兜底、正式审核和公开发布继续关闭。旧失败任务不会自动重放，验证时应重新上传新文件。
 
 ## 体验版真实 AI 纠正（2026-08-13）
 
@@ -16,9 +25,10 @@
 - **开关：** `api` 与 `worker` 仅在 `APPLYMATE_REAL_AI_ENABLED=true` 时接受真实体验流量；关闭或资源不足即失败关闭，不开启付费兜底。
 - **发布边界：** 只上传为微信体验版并限制开发者/体验成员；不提交审核、不公开发布、不开放普通账号删除。
 - **验证：** `npm run check` 通过 112 个测试文件、408 项测试和五模块构建；新增回归测试锁定真实体验默认模式、真实云存储文件 ID、上传失败处理、worker 开关、敏感信息遮盖和 250–350 字两段正文。
-- **云端状态（2026-08-14 更新）：** 真机首次上传失败的直接根因是 `api` 同步等待 `worker` 完成 OCR 与模型请求，外层云函数在返回 `jobId` 前超时。现已改用腾讯 SCF `Invoke` 的 `InvocationType=Event` 异步派发；`api` 只等待任务被接受，页面再通过 `job.get` 轮询。`api` 与 `worker` 已重新部署，两个 healthcheck 均返回 `experience_real_ai_live / acceptsUserTraffic=true`；worker 还确认 TokenHub Key、OCR 临时 SecretId、SecretKey 和 SessionToken 均存在。真实简历与 JD 内容冒烟仍由产品负责人从体验端执行。
+- **云端状态（2026-08-15 更新）：** 真机首次上传失败先暴露了同步派发超时，后续云端诊断又确认 OCR 身份、TokenHub 配置和 profile 持久化三个独立问题。现已使用 SCF Event 异步派发、OCR 专用长期密钥对和 JSON-at-rest profile 兼容层；`api`、`worker` 与 `cleanup` 已部署，healthcheck 均正常。OCR SessionToken 为可选项，长期密钥对不应要求它存在。
 - **完整体验能力：** 云端体验 API 现同时覆盖简历解析、岗位生成和 `generation.rewrite`；改写继续通过真实 TokenHub，并保存回同一投递记录。模型/OCR失败会向任务写入不泄露内部信息的中文可操作错误。
 - **针对性验证：** 异步 SCF 签名、8 秒派发截止、组合登录页契约、“我的”管理员入口对齐、真实 AI 三动作和安全错误映射共 32 项测试通过。最终 `npm run check` 通过格式、样本隔离、敏感扫描、严格类型、114 个测试文件共 413 项测试和五模块构建。
+- **最终门禁（2026-08-15）：** 修复后 `npm run check` 再次通过格式、样本隔离、敏感扫描、严格类型、115 个测试文件共 421 项测试和五模块构建。
 
 ## 阶段 10.15 文档与 Git 里程碑（已完成）
 

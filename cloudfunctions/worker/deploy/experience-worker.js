@@ -2,7 +2,7 @@
 
 const { createHash, createHmac } = require("node:crypto");
 const mammoth = require("mammoth");
-const { findOne, updateDocument } = require("./cloudbase-document-store");
+const { findOne, updateExactlyOne } = require("./cloudbase-document-store");
 const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
 
 const OCR_HOST = "ocr.tencentcloudapi.com";
@@ -14,6 +14,7 @@ function failure(code, message, retryable = false) {
 
 const PUBLIC_PROCESSING_ERRORS = Object.freeze({
   APPLICATION_NOT_FOUND: ["找不到需要改写的投递记录，请返回记录页重试。", false],
+  DATABASE_WRITE_FAILED: ["处理结果保存失败，请稍后重试。", true],
   DOCUMENT_EMPTY: ["没有读取到文档内容，请检查文件后重试。", false],
   GREETING_LENGTH_INVALID: ["生成内容未通过长度检查，请重新生成。", true],
   INSUFFICIENT_FACTS: ["已确认的简历事实不足，暂时无法生成可靠内容。", false],
@@ -68,7 +69,30 @@ function maskProtectedText(value) {
 }
 
 function parseJson(value) {
-  return JSON.parse(String(value ?? "").trim().replace(/^```(?:json)?\s*/iu, "").replace(/\s*```$/u, ""));
+  const cleaned = String(value ?? "").trim().replace(/^```(?:json)?\s*/iu, "").replace(/\s*```$/u, "");
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start < 0 || end <= start) throw new Error("MODEL_INVALID_OUTPUT");
+    try {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    } catch {
+      throw new Error("MODEL_INVALID_OUTPUT");
+    }
+  }
+}
+
+function decodeStoredProfile(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function tc3Headers({ secretId, secretKey, token, body, timestamp }) {
@@ -83,7 +107,7 @@ function tc3Headers({ secretId, secretKey, token, body, timestamp }) {
     "Content-Type": "application/json; charset=utf-8",
     Host: OCR_HOST,
     "X-TC-Action": "GeneralBasicOCR",
-    "X-TC-Region": process.env.TENCENTCLOUD_REGION || "ap-shanghai",
+    "X-TC-Region": process.env.APPLYMATE_OCR_REGION || "ap-shanghai",
     "X-TC-Timestamp": String(timestamp),
     "X-TC-Version": "2018-11-19",
     ...(token ? { "X-TC-Token": token } : {}),
@@ -131,6 +155,8 @@ async function callModel(prompt) {
           { role: "user", content: prompt },
         ],
         temperature: 0.1,
+        max_tokens: 1_800,
+        stream: false,
         response_format: { type: "json_object" },
       }),
       signal: controller.signal,
@@ -177,27 +203,52 @@ const SECTION_TYPES = {
 
 function normalizeResumeModel(value, resumeId) {
   const sections = Object.keys(SECTION_TYPES);
-  if (!value || typeof value !== "object" || sections.some((key) => !Array.isArray(value[key]))) throw new Error("MODEL_INVALID_OUTPUT");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MODEL_INVALID_OUTPUT");
+  const nested = [value.resume, value.profile, value.data].find((candidate) =>
+    candidate && typeof candidate === "object" && !Array.isArray(candidate) &&
+    sections.some((key) => Array.isArray(candidate[key])),
+  );
+  const source = nested || value;
   const profile = { resumeId, confirmed: false, preferences: [] };
-  if (typeof value.name === "string" && value.name.trim()) profile.name = value.name.trim().slice(0, 200);
+  if (typeof source.name === "string" && source.name.trim()) profile.name = source.name.trim().slice(0, 200);
   for (const key of sections) {
-    profile[key] = value[key].slice(0, 100).map((entry) => {
-      const text = String(entry?.text ?? "").trim().slice(0, 2000);
-      if (!text) throw new Error("MODEL_INVALID_OUTPUT");
+    const entries = Array.isArray(source[key]) ? source[key] : [];
+    profile[key] = entries.slice(0, 100).flatMap((entry) => {
+      const item = typeof entry === "string" ? { text: entry, name: entry } : entry;
+      if (!item || typeof item !== "object") return [];
+      const fallbackText = [item.school, item.major, item.degree, item.organization, item.role, item.name]
+        .filter((part) => typeof part === "string" && part.trim())
+        .join("，");
+      const text = String(item.text ?? item.description ?? item.content ?? fallbackText).trim().slice(0, 2000);
+      if (!text) return [];
       const sourceType = SECTION_TYPES[key];
       const base = { factId: factId(sourceType, text), factHash: sha256(text), sourceType, text };
-      if (key === "education") return { ...base, school: String(entry.school || "未识别学校").slice(0, 200), ...(entry.major ? { major: String(entry.major).slice(0, 200) } : {}), ...(entry.degree ? { degree: String(entry.degree).slice(0, 200) } : {}) };
-      if (key === "experiences") return { ...base, organization: String(entry.organization || "未识别组织").slice(0, 200), role: String(entry.role || "相关经历").slice(0, 200) };
-      if (key === "projects") return { ...base, name: String(entry.name || "项目经历").slice(0, 200) };
-      if (["skills", "languages", "certificates", "achievements"].includes(key)) return { ...base, name: String(entry.name || text).slice(0, 200) };
-      return base;
+      if (key === "education") return [{ ...base, school: String(item.school || "未识别学校").slice(0, 200), ...(item.major ? { major: String(item.major).slice(0, 200) } : {}), ...(item.degree ? { degree: String(item.degree).slice(0, 200) } : {}) }];
+      if (key === "experiences") return [{ ...base, organization: String(item.organization || "未识别组织").slice(0, 200), role: String(item.role || "相关经历").slice(0, 200) }];
+      if (key === "projects") return [{ ...base, name: String(item.name || "项目经历").slice(0, 200) }];
+      if (["skills", "languages", "certificates", "achievements"].includes(key)) return [{ ...base, name: String(item.name || text).slice(0, 200) }];
+      return [base];
     });
   }
+  if (sections.every((key) => profile[key].length === 0)) throw new Error("MODEL_INVALID_OUTPUT");
   return profile;
 }
 
 function resumePrompt(text) {
   return `将以下已脱敏简历拆成可核对事实，不得补写。严格返回 {"name":"","education":[{"school":"","major":"","degree":"","text":""}],"experiences":[{"organization":"","role":"","text":""}],"projects":[{"name":"","text":""}],"skills":[{"name":"","text":""}],"languages":[{"name":"","text":""}],"certificates":[{"name":"","text":""}],"achievements":[{"name":"","text":""}],"otherFacts":[{"text":""}]} 。缺失分类用空数组。\n简历：${maskProtectedText(text).slice(0, 30_000)}`;
+}
+
+function resumeCorrectionPrompt(text) {
+  return `${resumePrompt(text)}\n纠错要求：顶层必须是 JSON 对象；上述八个分类键必须全部出现且值必须为数组；每个数组项必须包含非空 text；无法识别的分类必须返回 []，不得省略键、不得输出解释文字。`;
+}
+
+async function parseResumeWithCorrection(rawText, resumeId) {
+  try {
+    return normalizeResumeModel(await callModel(resumePrompt(rawText)), resumeId);
+  } catch (error) {
+    if (String(error?.message) !== "MODEL_INVALID_OUTPUT") throw error;
+    return normalizeResumeModel(await callModel(resumeCorrectionPrompt(rawText)), resumeId);
+  }
 }
 
 function allFacts(profile) {
@@ -294,11 +345,14 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
         if (!application) throw new Error("APPLICATION_NOT_FOUND");
         const greetingBody = normalizeRewriteModel(await callModel(rewritePrompt(application, job.input.mode)));
         await jobs.transitionJob(job.jobId, "generating", "validating", now());
-        await updateDocument(database.collection("applications").doc(application._id), {
+        const applicationUpdated = await updateExactlyOne(database.collection("applications").where({
+          recordType: "application", applicationId: application.applicationId, userId: job.userId,
+        }), {
           greetingBody,
           generationDisclosure: disclosure(),
           updatedAt: now().toISOString(),
         });
+        if (!applicationUpdated) throw new Error("DATABASE_WRITE_FAILED");
         await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), {
           result: { applicationId: application.applicationId },
         });
@@ -309,15 +363,29 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
       const rawText = await readInputText(app, job.input, credentials);
       if (firstStatus === "ocr") await jobs.transitionJob(job.jobId, "ocr", "parsing", now());
       if (job.kind === "resume_parse") {
-        const profile = normalizeResumeModel(await callModel(resumePrompt(rawText)), job.resumeId);
-        const result = { profile, reviewFactIds: [] };
-        await updateDocument(database.collection("resumes").doc(job.resumeId), { profile, status: "awaiting_confirmation", updatedAt: now().toISOString() });
+        const profile = await parseResumeWithCorrection(rawText, job.resumeId);
+        const profileJson = JSON.stringify(profile);
+        const result = { profile: profileJson, reviewFactIds: [] };
+        const resumeRecord = await findOne(database.collection("resumes"), {
+          recordType: "resume", resumeId: job.resumeId, userId: job.userId,
+        });
+        if (!resumeRecord) throw new Error("RESUME_NOT_FOUND");
+        const resumeUpdated = await updateExactlyOne(
+          database.collection("resumes").where({ _id: resumeRecord._id }),
+          JSON.parse(JSON.stringify({
+            profile: profileJson,
+            status: "awaiting_confirmation",
+            updatedAt: now().toISOString(),
+          })),
+        );
+        if (!resumeUpdated) throw new Error("DATABASE_WRITE_FAILED");
         await jobs.transitionJob(job.jobId, "parsing", "awaiting_user_confirmation", now(), { result });
         return { ok: true, data: { jobId: job.jobId, status: "awaiting_user_confirmation" } };
       }
       const resume = await findOne(database.collection("resumes"), { recordType: "resume", resumeId: job.resumeId, userId: job.userId, status: "confirmed" });
-      if (!resume?.profile) throw new Error("RESUME_NOT_FOUND");
-      const facts = allFacts(resume.profile);
+      const resumeProfile = decodeStoredProfile(resume?.profile);
+      if (!resumeProfile?.confirmed) throw new Error("RESUME_NOT_FOUND");
+      const facts = allFacts(resumeProfile);
       const selection = await callModel(jdPrompt(rawText, facts));
       const validFacts = new Map(facts.map((fact) => [fact.factId, fact]));
       const selected = Array.isArray(selection.selectedFactIds) ? selection.selectedFactIds.map((id) => validFacts.get(id)).filter(Boolean).slice(0, 4) : [];
@@ -353,4 +421,11 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
   };
 }
 
-module.exports = { createExperienceWorker, maskProtectedText, publicProcessingError, renderGreeting };
+module.exports = {
+  createExperienceWorker,
+  maskProtectedText,
+  normalizeResumeModel,
+  parseJson,
+  publicProcessingError,
+  renderGreeting,
+};

@@ -90,6 +90,19 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function decodeJobResult(value) {
+  const result = clone(value);
+  if (typeof result?.profile !== "string") return result;
+  try {
+    const profile = JSON.parse(result.profile);
+    return profile && typeof profile === "object" && !Array.isArray(profile)
+      ? { ...result, profile }
+      : result;
+  } catch {
+    return result;
+  }
+}
+
 function createUser(identityHash, now) {
   return {
     _id: `user_${identityHash.slice(0, 24)}`,
@@ -286,7 +299,7 @@ function createLiveApiHandler({
           statusLabel: JOB_STATUS_LABELS[job.status],
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
-          ...(job.result === undefined ? {} : { result: clone(job.result) }),
+          ...(job.result === undefined ? {} : { result: decodeJobResult(job.result) }),
           ...(job.error === undefined ? {} : { error: clone(job.error) }),
         },
       };
