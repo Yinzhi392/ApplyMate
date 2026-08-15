@@ -1,6 +1,8 @@
 # CloudBase 管理员初始化与邀请码测试
 
-**状态：** `api` 受限版本已于 2026-08-13 部署。正式 AppID `wx1883d1aeb40ede10` 已完成腾讯云账号关联与既有环境转换；产品负责人从微信开发者工具实际调用 healthcheck，返回 `ok: true`、`invite_live_limited` 且 `acceptsUserTraffic: false`。可达性前置门槛已通过，临时哈希仍为空，尚未执行管理员初始化。
+> **历史记录：** 本文记录 2026-08-13 管理员初始化前的受限部署，文中的 `invite_live_limited / acceptsUserTraffic=false` 不再代表当前体验版运行状态。当前体验版默认使用真实 CloudBase、腾讯 OCR 与 TokenHub，应以 `experience-version-upload-guide.md` 和 `test-release-report.md` 为准。
+
+**当时状态：** `api` 受限版本已于 2026-08-13 部署。正式 AppID `wx1883d1aeb40ede10` 已完成腾讯云账号关联与既有环境转换；产品负责人从微信开发者工具实际调用 healthcheck，返回 `ok: true`、`invite_live_limited` 且 `acceptsUserTraffic: false`。可达性前置门槛已通过，临时哈希仍为空，尚未执行管理员初始化。
 
 ## 安全边界
 

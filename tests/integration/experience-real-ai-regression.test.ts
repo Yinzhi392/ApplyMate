@@ -105,4 +105,15 @@ describe("experience build real AI regression", () => {
     expect(api).toContain("profile: decodeStoredProfile(record.profile)");
     expect(liveApi).toContain("result: decodeJobResult(job.result)");
   });
+
+  it("documents the experience build as real AI and labels the old bootstrap state as history", () => {
+    const guide = read("docs/phase-10/experience-version-upload-guide.md");
+    const bootstrap = read("docs/phase-10/cloudbase-admin-bootstrap.md");
+
+    expect(guide).toContain("体验成员使用真实 CloudBase、腾讯 OCR 和 TokenHub AI");
+    expect(guide).toContain("state=experience_real_ai_live");
+    expect(guide).toContain("acceptsUserTraffic=true");
+    expect(bootstrap).toContain("> **历史记录：**");
+    expect(bootstrap).toContain("不再代表当前体验版运行状态");
+  });
 });

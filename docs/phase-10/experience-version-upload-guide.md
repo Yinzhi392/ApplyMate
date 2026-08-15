@@ -76,3 +76,13 @@ wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(cons
 4. 用一份自己有权处理的简历截图验证“上传 → OCR → 核对个人资料”，再提交一份 JD 验证真实开场白。
 5. 确认结果页显示真实模型披露和“AI生成内容，请核对真实性”。
 6. 在 CloudBase 查看临时文件已清理，再复核腾讯云账单仍为 0 元，OCR 后付费和 TokenHub 按 Token 计费仍关闭。
+
+## 上传后无法解析简历时
+
+体验版不需要正式审核也能使用真实 AI。若上传简历后没有进入 OCR/AI 解析，按以下顺序检查，不要切回 demo：
+
+1. 确认登录页显示“体验版·真实 AI”。如果曾用过本地演示启动参数，在开发者工具 Console 执行 `wx.removeStorageSync("applymate:runtime-mode")`，删除编译模式里的 `applymateRuntime=demo`，再重新编译。
+2. 重新执行 `api` 和 `worker` 健康检查；两者都必须为 `experience_real_ai_live / acceptsUserTraffic=true`。任一为 paused 都先修复对应函数环境变量，不要重复上传用户文件。
+3. 删除此前失败的任务或简历记录并重新选择文件。失败任务是幂等终态，部署修复后不会自动重放。
+4. 在 CloudBase 函数日志中只核对稳定错误码与任务状态，不复制 OCR 原文、模型请求、OpenID、Secret 或 API Key。
+5. 若新任务仍失败，记录 `jobId`、页面显示的安全错误码和发生时间；不要发送简历原图或云端凭证。
