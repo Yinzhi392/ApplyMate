@@ -255,9 +255,141 @@ function allFacts(profile) {
   return ["education", "experiences", "projects", "skills", "languages", "certificates", "achievements", "preferences", "otherFacts"].flatMap((key) => profile[key] || []);
 }
 
+function matchTokens(value) {
+  const normalized = String(value ?? "").toLowerCase();
+  const tokens = new Set(normalized.match(/[a-z0-9+#.]{2,}/gu) || []);
+  for (const chunk of normalized.match(/[\p{Script=Han}]{2,}/gu) || []) {
+    for (let index = 0; index < chunk.length - 1; index += 1) {
+      tokens.add(chunk.slice(index, index + 2));
+    }
+  }
+  return tokens;
+}
+
+function similarityScore(left, right) {
+  const leftTokens = matchTokens(left);
+  const rightTokens = matchTokens(right);
+  let score = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) score += token.length >= 3 ? 4 : 2;
+  }
+  return score;
+}
+
+const ROLE_STRATEGIES = Object.freeze({
+  seo_growth: Object.freeze({
+    direct: "已有直接 SEO 证据时，按事实说明实际完成的关键词研究、自然排名或搜索数据监测工作；不得把相邻能力扩展为未提供的 SEO 能力。",
+    partial: "没有直接 SEO 证据时进入部分匹配；必须明确披露缺少直接 SEO 经验；只说明网站实操、数据分析和实验迭代如何迁移，不得改写成关键词研究、自然排名或 Technical SEO 经验。",
+  }),
+});
+
+function isRoleRoutingMetaInstruction(value) {
+  const text = String(value ?? "").trim();
+  return /(?:系统提示|系统指令|提示词)\s*[:：]/iu.test(text) ||
+    /岗位(?:分类|类型)\s*(?:[:：]|是|为)/iu.test(text) ||
+    /(?:忽略|无视|绕过|覆盖)(?:之前|以上|系统|所有)?[^。！？\n]{0,24}(?:规则|指令|要求)/iu.test(text) ||
+    /(?:你\s*)?(?:必须|请|需要|务必)?\s*以\s*[^。！？\n]{0,24}(?:岗位|职位)\s*(?:生成|输出|回答|处理|理解|分类|归类)/iu.test(text) ||
+    /(?:请\s*)?(?:把|将)\s*(?:当前|本|该|这个)?\s*(?:岗位|职位)\s*(?:识别为|分类为|归类为|视为|当作|当成|改成|改为|标记为|设定为|定义为)/iu.test(text) ||
+    /(?:请\s*)?按\s*[^。！？\n]{0,24}(?:岗位|职位)\s*(?:处理|识别|分类|归类|生成|理解)/iu.test(text) ||
+    /(?:please\s+)?(?:classify|treat|label)\s+(?:this\s+)?(?:role|job|position)\s+(?:as\s+)?/iu.test(text);
+}
+
+function sanitizeRoleClassificationText(value) {
+  return String(value ?? "")
+    .split(/[。！？!?\n]+/u)
+    .filter((sentence) => !isRoleRoutingMetaInstruction(sentence))
+    .join("。")
+    .replace(/(?:忽略|无视|绕过|覆盖)(?:之前|以上|系统|所有)?[^。！？\n]{0,24}(?:规则|指令|要求)[^。！？\n]*/giu, " ")
+    .replace(/(?:请\s*)?(?:把|将)\s*(?:当前|本|该|这个)?\s*(?:岗位|职位)\s*(?:识别为|分类为|归类为|视为|当作|当成|改成|改为|标记为|设定为|定义为)[^。！？\n]*/giu, " ")
+    .replace(/(?:请\s*)?按\s*[^。！？\n]{0,24}(?:岗位|职位)\s*(?:处理|识别|分类|归类|生成|理解)[^。！？\n]*/giu, " ")
+    .replace(/(?:please\s+)?(?:classify|treat|label)\s+(?:this\s+)?(?:role|job|position)\s+(?:as\s+)?[^.!?\n]*/giu, " ");
+}
+
+function classifyRoleFamily(value) {
+  const text = sanitizeRoleClassificationText(value).toLowerCase();
+  const hasAi = /(?:\bai\b|大语言模型|大模型|llm|agent|智能体|模型评测|生成式)/iu.test(text);
+  const hasFinance = /(?:投研|投资|金融|财务|估值|dcf|研报|行业研究|证券|基金)/iu.test(text);
+  if (/(?:模型评测|模型评估|回复质量|错误归因|失败归因|评测集|badcase|数据标注|人机对齐|(?:llm|大模型|模型|agent|智能体|对话|回复|输出|效果|case|badcase|prompt)[^。；\n]{0,16}(?:评测|评估|测试|归因|a\/b test)|(?:评测|评估|测试|归因|a\/b test)[^。；\n]{0,16}(?:llm|大模型|模型|agent|智能体|对话|回复|输出|效果|case|badcase|prompt))/iu.test(text)) {
+    return "ai_evaluation_product";
+  }
+  if (/(?:融资执行|募资执行|融资材料|募资材料|路演材料|投资者关系|尽调材料|融资尽调|募资路演)/iu.test(text)) {
+    return "fundraising_execution";
+  }
+  if (/(?:搜索引擎优化|关键词研究|自然搜索(?:排名|流量|优化)?|自然排名|search console|technical seo|seo\s*(?:经理|优化|增长|策略|运营))/iu.test(text)) {
+    return "seo_growth";
+  }
+  if (hasAi && hasFinance) return "ai_finance_research";
+  if (hasFinance) return "investment_research";
+  if (hasAi && /(?:企业服务|商业化|业务方案|解决方案|售前|客户)/iu.test(text)) {
+    return "ai_business_product";
+  }
+  if (hasAi && /(?:产品|需求|原型|用户|迭代|功能)/iu.test(text)) return "ai_product_builder";
+  if (/(?:产品|需求|原型|用户研究|版本迭代)/iu.test(text)) return "general_product";
+  return "general";
+}
+
+function hasDirectSeoEvidence(facts) {
+  const directWork = /(?:搜索引擎优化|关键词研究|自然(?:搜索)?(?:排名|流量)|search console|technical seo|seo\s*(?:项目|策略|优化|运营|增长))/iu;
+  const analyticsTool = /(?:google analytics|\bga4?\b)/iu;
+  const seoContext = /(?:搜索|关键词|自然流量|自然排名|\bseo\b)/iu;
+  const directAction = /(?:负责|完成|开展|执行|制定|优化|提升|监测|分析|使用|运营)/iu;
+  const explicitNegation = /(?:没有|未|不曾|并未|从未|尚未|无(?:相关|任何|直接)?|缺少|不具备|不熟悉)/iu;
+  return facts
+    .flatMap((fact) => String(fact?.text ?? "").split(/(?:[。！？；;，,\n]+|但是|不过|然而|但)/u))
+    .some((clause) => {
+      return !explicitNegation.test(clause) && directAction.test(clause) &&
+        (directWork.test(clause) || (analyticsTool.test(clause) && seoContext.test(clause)));
+    });
+}
+
+function resolveRoleStrategy(roleFamily, facts) {
+  const strategy = ROLE_STRATEGIES[roleFamily];
+  if (roleFamily !== "seo_growth") return strategy;
+  return hasDirectSeoEvidence(facts) ? strategy.direct : strategy.partial;
+}
+
+function roleEvidenceBonus(fact, roleFamily) {
+  const text = String(fact?.text ?? "");
+  const rules = {
+    ai_evaluation_product: /(?:评测|评估|模型|失败归因|错误归因|用户意图|事实准确|prompt|a\/b test)/iu,
+    ai_finance_research: /(?:金融|投研|估值|财务|研报|行业研究|模型|agent)/iu,
+    investment_research: /(?:投研|投资|财务|估值|dcf|wacc|capm|beta|pe|行业研究|公司分析|投资报告)/iu,
+    seo_growth: /(?:网站|web|页面|部署|数据|指标|实验|a\/b|英文资料)/iu,
+  };
+  if (roleFamily === "seo_growth" && /(?:网站|web|页面|部署)/iu.test(text)) return 24;
+  return rules[roleFamily]?.test(text) ? 18 : 0;
+}
+
+function rankFactsForText(facts, text, roleFamily = classifyRoleFamily(text)) {
+  const sourcePriority = {
+    experience: 5,
+    skill: 5,
+    project: 4,
+    achievement: 3,
+    preference: 3,
+    education: 1,
+  };
+
+  return facts
+    .map((fact, index) => {
+      return {
+        fact,
+        index,
+        score: similarityScore(fact?.text, text) +
+          (sourcePriority[fact?.sourceType] || 0) + roleEvidenceBonus(fact, roleFamily),
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ fact }) => fact);
+}
+
 function jdPrompt(text, facts) {
-  const safeFacts = facts.map(({ factId: id, sourceType, text: factText }) => ({ factId: id, sourceType, text: factText }));
-  return `提取 JD 并选择 2至4 个最匹配简历 factId。不得臆测。严格返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"selectedFactIds":[],"omittedRequirements":[],"warnings":[]} 。\nJD：${maskProtectedText(text).slice(0, 24_000)}\n可引用事实：${JSON.stringify(safeFacts).slice(0, 24_000)}`;
+  const roleFamily = classifyRoleFamily(text);
+  const safeFacts = rankFactsForText(facts, text, roleFamily).map(
+    ({ factId: id, sourceType, text: factText }) => ({ factId: id, sourceType, text: factText }),
+  );
+  const routeGuidance = resolveRoleStrategy(roleFamily, facts);
+  return `${routeGuidance ? `岗位路线规则：${routeGuidance}\n` : ""}提取 JD 并选择 2至4 个最匹配简历 factId。不得臆测。严格返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"selectedFactIds":[],"omittedRequirements":[],"warnings":[]} 。\nJD：${maskProtectedText(text).slice(0, 24_000)}\n可引用事实：${JSON.stringify(safeFacts).slice(0, 24_000)}`;
 }
 
 function rewritePrompt(application, mode) {
@@ -422,10 +554,14 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
 }
 
 module.exports = {
+  classifyRoleFamily,
   createExperienceWorker,
+  jdPrompt,
   maskProtectedText,
   normalizeResumeModel,
   parseJson,
   publicProcessingError,
+  rankFactsForText,
   renderGreeting,
+  similarityScore,
 };
