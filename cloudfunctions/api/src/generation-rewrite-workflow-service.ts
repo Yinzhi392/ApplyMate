@@ -8,6 +8,7 @@ import type { ApplicationService } from "./application-service.js";
 import { DomainError } from "./domain-error.js";
 import type {
   GenerationRewriteInput,
+  RewriteMatchMode,
   RewriteRecord,
 } from "./generation-rewrite-domain.js";
 import type { RewriteRepository } from "./generation-rewrite-repository.js";
@@ -34,6 +35,13 @@ function normalizedInstruction(input: GenerationRewriteInput): string | undefine
     throw new DomainError("INVALID_REQUEST", "Rewrite instruction is invalid.");
   }
   return instruction;
+}
+
+function applicationMatchMode(application: object): RewriteMatchMode {
+  const value = Reflect.get(application, "matchMode") as unknown;
+  return value === "strong" || value === "partial" || value === "low"
+    ? value
+    : "low";
 }
 
 export class GenerationRewriteWorkflowService {
@@ -70,6 +78,7 @@ export class GenerationRewriteWorkflowService {
       jdSnapshot: structuredClone(application.jdSnapshot),
       omittedRequirements: [...application.omittedRequirements],
       warnings: [...application.warnings],
+      matchMode: applicationMatchMode(application),
       status: "processing",
       createdAt: timestamp,
       updatedAt: timestamp,

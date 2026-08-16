@@ -52,13 +52,14 @@ export class GreetingGenerationPipeline {
     signal?: AbortSignal,
   ): Promise<GreetingGenerationOutput> {
     const modelContext = {
-      promptVersion: "greeting-v1",
+      promptVersion: "greeting-evidence-planned-v8",
       mode: request.mode,
       outputRules: {
         language: "simplified_chinese",
-        visibleCharacters: "250-350",
-        paragraphs: "2-3",
-        evidence: "every_verifiable_claim_requires_source_id",
+        visibleCharacterRange: "350-450",
+        paragraphRange: "3-4",
+        oneModelCall: true,
+        localFallback: false,
       },
       companyDisplayName: request.companyDisplayName,
       jobTitle: request.jobTitle,
@@ -84,7 +85,7 @@ export class GreetingGenerationPipeline {
       draft,
       generationDisclosure: {
         ...model,
-        promptVersion: "greeting-v1",
+        promptVersion: "greeting-evidence-planned-v8",
       },
     }));
   }

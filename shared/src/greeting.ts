@@ -46,6 +46,7 @@ export const GREETING_QUALITY_ERRORS = [
   "SENSITIVE_INFORMATION_PRESENT",
   "PROHIBITED_INSTRUCTION_PRESENT",
   "MODEL_SELF_REFERENCE_PRESENT",
+  "MECHANICAL_TEMPLATE_PRESENT",
   "COMPANY_REFERENCE_MISSING",
   "JOB_TITLE_MISSING",
   "INVALID_UNICODE",
@@ -90,6 +91,46 @@ function containsModelSelfReference(value: string): boolean {
     /我是(?:一个)?(?:AI|人工智能|语言模型)/iu,
     /as an? (?:ai|language model)/iu,
   ].some((pattern) => pattern.test(value));
+}
+
+function isNegatedMechanicalTerm(clause: string, termIndex: number): boolean {
+  const prefix = clause.slice(Math.max(0, termIndex - 32), termIndex);
+  return /(?:不会|并非|不是|避免|禁止|拒绝|无需|无须)(?:把|将)?[^,，]{0,24}(?:弱化为|称为|写成|表述为)?$/u.test(prefix);
+}
+
+function containsSelfDowngradingAnalysisPractice(clause: string): boolean {
+  const term = "分析练习";
+  let termIndex = clause.indexOf(term);
+  while (termIndex >= 0) {
+    const suffix = clause.slice(termIndex + term.length);
+    if (!suffix.startsWith("题") && !isNegatedMechanicalTerm(clause, termIndex)) {
+      return true;
+    }
+    termIndex = clause.indexOf(term, termIndex + term.length);
+  }
+  return false;
+}
+
+export function containsMechanicalGreetingPhrase(value: string): boolean {
+  const normalized = value.normalize("NFKC").replace(/\s+/gu, "");
+  const patterns = [
+    /看到岗位主要围绕[^。！？!?;；]{0,40}展开/iu,
+    /这些要求与我的经历和能力比较契合/iu,
+    /这段积累能支持我/iu,
+    /看到岗位(?:主要|重点)[^。！？!?;；]{0,30}(?:负责|要求|强调)/iu,
+    /希望(?:能|可以|进一步)?贴近真实工作/iu,
+    /希望用[^。！？!?;；]{0,20}(?:练习|尝试)[^。！？!?;；]{0,20}贴近真实工作/iu,
+    /这些练习/iu,
+    /愿意[^。！？!?;；]{0,12}踏实学习/iu,
+  ];
+  return normalized
+    .split(/[。！？!?;；]+/u)
+    .filter(Boolean)
+    .some(
+      (clause) =>
+        patterns.some((pattern) => pattern.test(clause)) ||
+        containsSelfDowngradingAnalysisPractice(clause),
+    );
 }
 
 export function validateAiGreeting(
@@ -146,6 +187,9 @@ export function validateAiGreeting(
   }
   if (containsModelSelfReference(body)) {
     errors.add("MODEL_SELF_REFERENCE_PRESENT");
+  }
+  if (containsMechanicalGreetingPhrase(body)) {
+    errors.add("MECHANICAL_TEMPLATE_PRESENT");
   }
   if (!hasValidUnicode(body)) {
     errors.add("INVALID_UNICODE");

@@ -815,25 +815,374 @@ JD：${maskProtectedText(text).slice(0, 6_000)}
 可引用事实：${JSON.stringify(safeFacts)}`;
 }
 
-function rewritePrompt(application, mode) {
-  const facts = Array.isArray(application.factSnapshot) ? application.factSnapshot : [];
-  const instruction = {
-    rephrase: "保持信息完整，换一种更自然专业的表达",
-    shorten: "删去重复表达，但正文仍须达到 250 个可见字符",
-    add_detail: "只依据给定事实增加具体细节",
-  }[mode] || "保持原意重新表达";
-  return `改写以下中文求职开场白。${instruction}。只能使用已给出的简历事实和 JD，不得新增公司、学校、经历、技能、数字或日期。正文必须为简体中文、2至3个非空段落、250至350个可见字符。严格返回 {"body":""}。\n当前正文：${maskProtectedText(application.greetingBody).slice(0, 4_000)}\n简历事实：${JSON.stringify(facts).slice(0, 20_000)}\nJD：${JSON.stringify(application.jdSnapshot || {}).slice(0, 12_000)}`;
+const REWRITE_WORDING_STRENGTH = Object.freeze({
+  strong: "direct",
+  partial: "transferable",
+  low: "foundation",
+});
+
+function isNegatedMechanicalTerm(clause, termIndex) {
+  const prefix = clause.slice(Math.max(0, termIndex - 32), termIndex);
+  return /(?:不会|并非|不是|避免|禁止|拒绝|无需|无须)(?:把|将)?[^,，]{0,24}(?:弱化为|称为|写成|表述为)?$/u.test(prefix);
 }
 
-function normalizeRewriteModel(value) {
-  const body = typeof value?.body === "string" ? value.body.trim() : "";
-  if (visibleLength(body) < 250 || visibleLength(body) > 350) throw new Error("GREETING_LENGTH_INVALID");
-  const paragraphs = body.split(/\n+/u).map((item) => item.trim()).filter(Boolean);
-  if (paragraphs.length < 2 || paragraphs.length > 3) throw new Error("MODEL_INVALID_OUTPUT");
-  if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) || /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body)) {
+function containsSelfDowngradingAnalysisPractice(clause) {
+  const term = "分析练习";
+  let termIndex = clause.indexOf(term);
+  while (termIndex >= 0) {
+    const suffix = clause.slice(termIndex + term.length);
+    if (!suffix.startsWith("题") && !isNegatedMechanicalTerm(clause, termIndex)) {
+      return true;
+    }
+    termIndex = clause.indexOf(term, termIndex + term.length);
+  }
+  return false;
+}
+
+function containsMechanicalGreetingPhrase(value) {
+  const normalized = String(value ?? "").normalize("NFKC").replace(/\s+/gu, "");
+  const patterns = [
+    /看到岗位主要围绕[^。！？!?;；]{0,40}展开/iu,
+    /这些要求与我的经历和能力比较契合/iu,
+    /这段积累能支持我/iu,
+    /看到岗位(?:主要|重点)[^。！？!?;；]{0,30}(?:负责|要求|强调)/iu,
+    /希望(?:能|可以|进一步)?贴近真实工作/iu,
+    /希望用[^。！？!?;；]{0,20}(?:练习|尝试)[^。！？!?;；]{0,20}贴近真实工作/iu,
+    /这些练习/iu,
+    /愿意[^。！？!?;；]{0,12}踏实学习/iu,
+  ];
+  return normalized.split(/[。！？!?;；]+/u).filter(Boolean).some((clause) =>
+    patterns.some((pattern) => pattern.test(clause)) ||
+    containsSelfDowngradingAnalysisPractice(clause)
+  );
+}
+
+function resolveRewriteMatchMode(application) {
+  return ["strong", "partial", "low"].includes(application?.matchMode)
+    ? application.matchMode
+    : "low";
+}
+
+function compactRewriteMatchPlan(selection) {
+  const matchMode = resolveRewriteMatchMode(selection);
+  const factIds = (value) => Array.isArray(value)
+    ? value.filter((item) => typeof item === "string" && item.trim())
+    : [];
+  const transferableEvidence = Array.isArray(selection?.transferableEvidence)
+    ? selection.transferableEvidence.flatMap((entry) => {
+        if (!entry || typeof entry.factId !== "string" || !entry.factId.trim()) return [];
+        const wordingStrength = entry.wordingStrength === "foundation"
+          ? "foundation"
+          : "transferable";
+        return [{
+          factId: entry.factId,
+          capability: typeof entry.capability === "string" ? entry.capability.trim() : "",
+          wordingStrength,
+        }];
+      })
+    : [];
+  return {
+    matchMode,
+    directFactIds: factIds(selection?.directFactIds),
+    transferableEvidence,
+    supportingFactIds: factIds(selection?.supportingFactIds),
+    gaps: Array.isArray(selection?.gaps)
+      ? selection.gaps.filter((item) => typeof item === "string" && item.trim())
+      : [],
+  };
+}
+
+function persistGreetingMatchMode(application, selection) {
+  const selected = compactRewriteMatchPlan(selection);
+  const availableFactIds = new Set(
+    (Array.isArray(application?.factSnapshot) ? application.factSnapshot : [])
+      .map((fact) => fact?.factId)
+      .filter((factId) => typeof factId === "string" && factId),
+  );
+  const citedFactIds = new Set(
+    (Array.isArray(application?.evidence) ? application.evidence : [])
+      .flatMap((claim) => Array.isArray(claim?.sources) ? claim.sources : [])
+      .flatMap((source) => source?.type === "fact" ? [source.factId] : []),
+  );
+  const keepFact = (factId) =>
+    availableFactIds.has(factId) && citedFactIds.has(factId);
+  const matchPlan = {
+    ...selected,
+    directFactIds: selected.directFactIds.filter(keepFact),
+    transferableEvidence: selected.transferableEvidence.filter(({ factId }) =>
+      keepFact(factId)
+    ),
+    supportingFactIds: selected.supportingFactIds.filter(keepFact),
+  };
+  return {
+    ...application,
+    matchMode: matchPlan.matchMode,
+    matchPlan,
+  };
+}
+
+function evidenceSourceKey(source) {
+  if (source?.type === "fact" && typeof source.factId === "string") {
+    return `fact:${source.factId}`;
+  }
+  if (source?.type === "jd" && typeof source.fieldId === "string") {
+    return `jd:${source.fieldId}`;
+  }
+  return "";
+}
+
+function currentRewriteEvidenceKeys(application) {
+  return new Set(
+    (Array.isArray(application?.evidence) ? application.evidence : [])
+      .flatMap((claim) => Array.isArray(claim?.sources) ? claim.sources : [])
+      .map(evidenceSourceKey)
+      .filter(Boolean),
+  );
+}
+
+function assertRawRewriteMatchPlan(plan) {
+  if (!plan || typeof plan !== "object" ||
+      !["strong", "partial", "low"].includes(plan.matchMode)) {
     throw new Error("MODEL_INVALID_OUTPUT");
   }
-  return body;
+  const stringArrays = [
+    plan.directFactIds,
+    plan.supportingFactIds,
+    plan.gaps,
+  ];
+  if (stringArrays.some((items) =>
+    !Array.isArray(items) ||
+    items.some((item) => typeof item !== "string" || !item.trim())
+  )) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  const validFactId = (factId) => Array.from(factId.trim()).length <= 128;
+  if (plan.directFactIds.length > 4 ||
+      plan.supportingFactIds.length > 4 ||
+      plan.gaps.length > 5 ||
+      plan.directFactIds.some((factId) => !validFactId(factId)) ||
+      plan.supportingFactIds.some((factId) => !validFactId(factId)) ||
+      plan.gaps.some((gap) => Array.from(gap.trim()).length > 160)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (!Array.isArray(plan.transferableEvidence) ||
+      plan.transferableEvidence.length > 4 ||
+      plan.transferableEvidence.some((entry) =>
+        !entry || typeof entry !== "object" ||
+        typeof entry.factId !== "string" || !entry.factId.trim() ||
+        !validFactId(entry.factId) ||
+        typeof entry.capability !== "string" || !entry.capability.trim() ||
+        Array.from(entry.capability.trim()).length > 120 ||
+        !["transferable", "foundation"].includes(entry.wordingStrength)
+      )) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  const transferableFactIds = plan.transferableEvidence.map(({ factId }) => factId);
+  const allFactIds = [
+    ...plan.directFactIds,
+    ...transferableFactIds,
+    ...plan.supportingFactIds,
+  ];
+  if (new Set(allFactIds).size !== allFactIds.length) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (plan.matchMode === "strong" && plan.directFactIds.length === 0) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (plan.matchMode === "partial" &&
+      (plan.transferableEvidence.length === 0 || plan.gaps.length === 0)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (plan.matchMode === "low" &&
+      (plan.directFactIds.length > 0 ||
+        plan.transferableEvidence.length > 0 ||
+        plan.supportingFactIds.length === 0 ||
+        plan.gaps.length === 0)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+}
+
+function resolveRewriteMatchPlan(application) {
+  const facts = Array.isArray(application?.factSnapshot)
+    ? application.factSnapshot.filter((fact) =>
+        fact && typeof fact.factId === "string" && typeof fact.text === "string"
+      )
+    : [];
+  const factIds = new Set(facts.map((fact) => fact.factId));
+  const evidenceKeys = currentRewriteEvidenceKeys(application);
+  const evidenceFactIds = new Set(
+    Array.from(evidenceKeys)
+      .filter((key) => key.startsWith("fact:"))
+      .map((key) => key.slice("fact:".length)),
+  );
+  const stored = application?.matchPlan;
+  const mode = resolveRewriteMatchMode(application);
+  const hasStoredPlan = application != null &&
+    Object.prototype.hasOwnProperty.call(application, "matchPlan");
+  if (hasStoredPlan) {
+    assertRawRewriteMatchPlan(stored);
+    const plan = compactRewriteMatchPlan(stored);
+    const selectedIds = collectGreetingFactIds(plan);
+    if (
+      plan.matchMode === mode &&
+      selectedIds.length > 0 &&
+      selectedIds.every((factId) =>
+        factIds.has(factId) && evidenceFactIds.has(factId)
+      )
+    ) {
+      return plan;
+    }
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  const legacyIds = facts
+    .map((fact) => fact.factId)
+    .filter((factId) => evidenceFactIds.has(factId));
+  if (legacyIds.length === 0) throw new Error("MODEL_INVALID_OUTPUT");
+  const gaps = Array.isArray(application?.omittedRequirements)
+    ? application.omittedRequirements.filter((item) =>
+        typeof item === "string" && item.trim()
+      )
+    : [];
+  return {
+    matchMode: "low",
+    directFactIds: [],
+    transferableEvidence: [],
+    supportingFactIds: legacyIds,
+    gaps: gaps.length > 0 ? gaps : ["没有可验证的直接岗位经验"],
+  };
+}
+
+function rewritePrompt(application, mode) {
+  const facts = Array.isArray(application.factSnapshot) ? application.factSnapshot : [];
+  const matchPlan = resolveRewriteMatchPlan(application);
+  const matchMode = matchPlan.matchMode;
+  const wordingStrength = REWRITE_WORDING_STRENGTH[matchMode];
+  const instruction = {
+    rephrase: "保持信息完整，换一种更自然专业的表达",
+    shorten: "删去重复表达，但仍须完整保留有证据的岗位匹配信息",
+    add_detail: "只依据给定事实增加具体细节",
+  }[mode] || "保持原意重新表达";
+  return `改写以下中文求职开场白。${instruction}。正文必须为简体中文、3至4个非空段落、350至450个可见字符；自然保留“您好”的问候语义，但不固定独立首句或固定结尾；保持原 matchMode、事实层级和岗位主线，不得把可迁移能力改成直接经验；不得新增公司、学校、经历、技能、证书、数字、日期或结果。当前 matchMode：${matchMode}；必须保持 ${wordingStrength} 措辞强度，禁止升级为更强的经验表述。partial 必须保留 matchPlan 中至少一项真实缺口，并至少引用一项 transferableEvidence 中的简历或偏好 factId；不得只引用 JD 或 supportingFactIds。每段必须返回逐项证据 sources，且只能使用“当前证据来源”中已有的 factId 或 fieldId，不得扩大、替换或伪造来源。不得使用自我贬低或机械套话。严格返回 {"matchMode":"${matchMode}","paragraphs":["","",""] ,"claims":[{"claimId":"claim_match_1","text":"必须等于对应段落全文","sources":[{"type":"fact","factId":""},{"type":"jd","fieldId":""}]}]}。\n当前正文：${maskProtectedText(application.greetingBody).slice(0, 4_000)}\n当前 matchPlan：${JSON.stringify(matchPlan).slice(0, 8_000)}\n当前证据来源：${JSON.stringify(application.evidence || []).slice(0, 10_000)}\n简历事实：${JSON.stringify(facts).slice(0, 16_000)}\nJD：${JSON.stringify(application.jdSnapshot || {}).slice(0, 10_000)}`;
+}
+
+function normalizeRewriteModel(value, application) {
+  const paragraphs = Array.isArray(value?.paragraphs)
+    ? value.paragraphs
+        .map((item) => typeof item === "string" ? item.trim() : "")
+        .filter(Boolean)
+    : [];
+  const body = paragraphs.join("\n");
+  if (visibleLength(body) < 350 || visibleLength(body) > 450) {
+    throw new Error("GREETING_LENGTH_INVALID");
+  }
+  if (paragraphs.length < 3 || paragraphs.length > 4) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (!/^您好(?:[，,!！。]|$)/u.test(paragraphs[0])) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  if (
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) ||
+    /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body) ||
+    containsMechanicalGreetingPhrase(body)
+  ) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+
+  const plan = resolveRewriteMatchPlan(application);
+  if (value?.matchMode !== plan.matchMode) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  const claims = Array.isArray(value?.claims) ? value.claims : [];
+  if (claims.length !== paragraphs.length) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+
+  const facts = Array.isArray(application?.factSnapshot)
+    ? application.factSnapshot.filter((fact) =>
+        fact && typeof fact.factId === "string" &&
+        typeof fact.sourceType === "string" && typeof fact.text === "string"
+      )
+    : [];
+  const factIds = new Set(facts.map((fact) => fact.factId));
+  const jd = application?.jdSnapshot && typeof application.jdSnapshot === "object"
+    ? application.jdSnapshot
+    : {};
+  const jdFieldIds = new Set([
+    jd.jobTitle?.fieldId,
+    jd.companyName?.fieldId,
+    ...REQUIREMENT_KEYS.flatMap((key) =>
+      Array.isArray(jd[key]) ? jd[key].map((entry) => entry?.fieldId) : []
+    ),
+  ].filter((fieldId) => typeof fieldId === "string" && fieldId));
+  const allowedKeys = currentRewriteEvidenceKeys(application);
+  const normalizedClaims = claims.map((claim, paragraphIndex) => {
+    if (
+      !claim || typeof claim !== "object" ||
+      claim.claimId !== `claim_match_${paragraphIndex + 1}` ||
+      claim.text !== paragraphs[paragraphIndex] ||
+      !Array.isArray(claim.sources) || claim.sources.length === 0
+    ) {
+      throw new Error("MODEL_INVALID_OUTPUT");
+    }
+    const seen = new Set();
+    const sources = claim.sources.map((source) => {
+      const key = evidenceSourceKey(source);
+      const validReference = source?.type === "fact"
+        ? factIds.has(source.factId)
+        : source?.type === "jd" && jdFieldIds.has(source.fieldId);
+      if (!key || !validReference || !allowedKeys.has(key) || seen.has(key)) {
+        throw new Error("MODEL_INVALID_OUTPUT");
+      }
+      seen.add(key);
+      return source.type === "fact"
+        ? { type: "fact", factId: source.factId }
+        : { type: "jd", fieldId: source.fieldId };
+    });
+    return { claimId: claim.claimId, text: claim.text, sources };
+  });
+
+  let trusted;
+  try {
+    const matches = buildFactMatches(plan, jd, facts);
+    trusted = modelGreetingPackage(
+      { ...plan, paragraphs },
+      jd,
+      matches,
+      facts,
+    );
+  } catch {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+  const sourceKeys = (sources) => sources
+    .map(evidenceSourceKey)
+    .filter(Boolean)
+    .sort();
+  for (let index = 0; index < trusted.evidence.length; index += 1) {
+    const declared = normalizedClaims[index];
+    const verified = trusted.evidence[index];
+    if (
+      !declared || !verified ||
+      JSON.stringify(sourceKeys(declared.sources)) !==
+        JSON.stringify(sourceKeys(verified.sources))
+    ) {
+      throw new Error("MODEL_INVALID_OUTPUT");
+    }
+  }
+
+  const citedFactIds = new Set(
+    trusted.evidence.flatMap(({ sources }) =>
+      sources.flatMap((source) => source.type === "fact" ? [source.factId] : []),
+    ),
+  );
+  const factSnapshot = facts
+    .filter((fact) => citedFactIds.has(fact.factId))
+    .map(({ factId, sourceType, text }) => ({ factId, sourceType, text }));
+  return {
+    body: trusted.body,
+    evidence: trusted.evidence,
+    factSnapshot,
+  };
 }
 
 function buildJdSnapshot(value) {
@@ -906,7 +1255,8 @@ function modelGreetingPackage(plan, jd, matches, facts) {
     /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) ||
     /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body) ||
     /\[MASKED_(?:PHONE|EMAIL|ID|ADDRESS)\]/u.test(body) ||
-    /作为(?:一个)?AI|根据(?:你|您)提供的简历|```|^\s*#|本人具备|贵公司是行业领先者|希望贴近真实工作|愿意踏实学习|分析练习|这些练习|看到岗位主要围绕|这些要求与我的经历和能力比较契合|这段积累能支持我/mu.test(body)
+    /作为(?:一个)?AI|根据(?:你|您)提供的简历|```|^\s*#|本人具备|贵公司是行业领先者/mu.test(body) ||
+    containsMechanicalGreetingPhrase(body)
   ) {
     throw modelValidationFailure("greeting_forbidden_content", {
       visibleLength: outputVisibleLength,
@@ -1069,6 +1419,32 @@ function modelGreetingPackage(plan, jd, matches, facts) {
     };
   });
 
+  if (plan.matchMode === "partial") {
+    const hasStoredGapDisclosure = paragraphs.some((paragraph) =>
+      claimClauses(paragraph).some((clause) =>
+        isGapDisclosureClause(clause, plan.gaps)
+      )
+    );
+    const transferableFactIds = new Set(
+      (Array.isArray(plan.transferableEvidence) ? plan.transferableEvidence : [])
+        .map((entry) => entry?.factId)
+        .filter((id) => typeof id === "string" && id),
+    );
+    const hasTransferableFactCitation = evidence.some(({ sources }) =>
+      sources.some((source) =>
+        source.type === "fact" && transferableFactIds.has(source.factId)
+      )
+    );
+    if (!hasStoredGapDisclosure || !hasTransferableFactCitation) {
+      throw modelValidationFailure("greeting_partial_match_integrity", {
+        visibleLength: outputVisibleLength,
+        paragraphCount: paragraphs.length,
+        hasStoredGapDisclosure,
+        hasTransferableFactCitation,
+      });
+    }
+  }
+
   return { body, evidence };
 }
 
@@ -1094,6 +1470,119 @@ function renderGreeting(jd, selectedFacts) {
   const body = `${first}\n${second}`;
   if (visibleLength(body) < 250 || visibleLength(body) > 350) throw new Error("GREETING_LENGTH_INVALID");
   return body;
+}
+
+function rewriteApplicationSnapshot(application) {
+  return JSON.parse(JSON.stringify({
+    greetingBody: application.greetingBody,
+    evidence: application.evidence,
+    factSnapshot: application.factSnapshot,
+    generationDisclosure: application.generationDisclosure,
+    updatedAt: application.updatedAt,
+    rewriteRevision: typeof application.rewriteRevision === "string"
+      ? application.rewriteRevision
+      : null,
+  }));
+}
+
+function rewriteApplicationMatchesSnapshot(application, snapshot) {
+  return JSON.stringify(rewriteApplicationSnapshot(application)) === JSON.stringify(snapshot);
+}
+
+async function readRewriteApplication(collection, application) {
+  return findOne(collection, {
+    recordType: "application",
+    applicationId: application.applicationId,
+    userId: application.userId,
+  });
+}
+
+function rewriteApplicationSnapshotQuery(snapshot) {
+  return {
+    greetingBody: snapshot.greetingBody,
+    evidence: snapshot.evidence,
+    factSnapshot: snapshot.factSnapshot,
+    generationDisclosure: snapshot.generationDisclosure,
+    updatedAt: snapshot.updatedAt,
+    rewriteRevision: snapshot.rewriteRevision,
+  };
+}
+
+async function restoreRewriteApplication(
+  collection,
+  application,
+  rewrittenSnapshot,
+  previousSnapshot,
+) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const current = await readRewriteApplication(collection, application);
+      if (!current) continue;
+      if (rewriteApplicationMatchesSnapshot(current, previousSnapshot)) {
+        return "restored";
+      }
+      if (!rewriteApplicationMatchesSnapshot(current, rewrittenSnapshot)) {
+        return "diverged";
+      }
+      const restored = await updateExactlyOne(collection.where({
+        recordType: "application",
+        applicationId: application.applicationId,
+        userId: application.userId,
+        ...rewriteApplicationSnapshotQuery(rewrittenSnapshot),
+      }), previousSnapshot);
+      if (!restored) continue;
+      const verified = await readRewriteApplication(collection, application);
+      if (verified && rewriteApplicationMatchesSnapshot(verified, previousSnapshot)) {
+        return "restored";
+      }
+      if (verified && !rewriteApplicationMatchesSnapshot(verified, rewrittenSnapshot)) {
+        return "diverged";
+      }
+    } catch {
+      // A post-commit database error is verified by the next read. Other
+      // transient failures are retried before the job is reconciled forward.
+    }
+  }
+  try {
+    const current = await readRewriteApplication(collection, application);
+    if (current && rewriteApplicationMatchesSnapshot(current, previousSnapshot)) {
+      return "restored";
+    }
+    if (current && !rewriteApplicationMatchesSnapshot(current, rewrittenSnapshot)) {
+      return "diverged";
+    }
+  } catch {
+    // Leave the record unresolved and reconcile the job without overwriting it.
+  }
+  return "unresolved";
+}
+
+async function ensureRewriteJobSucceeded(jobs, jobId, applicationId, now) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const current = await jobs.getJobById(jobId);
+      if (current?.status === "succeeded") return true;
+      if (current?.status !== "validating") return false;
+      const completed = await jobs.transitionJob(jobId, "validating", "succeeded", now(), {
+        result: { applicationId },
+      });
+      if (completed?.status === "succeeded") return true;
+    } catch {
+      // A transition can commit before its response fails. Re-read on the
+      // next iteration instead of rolling the application back blindly.
+    }
+  }
+  try {
+    return (await jobs.getJobById(jobId))?.status === "succeeded";
+  } catch {
+    return false;
+  }
+}
+
+function rewriteReconciliationPending() {
+  const error = new Error("DATABASE_RECONCILIATION_PENDING");
+  error.rewriteReconciliationPending = true;
+  return error;
 }
 
 function disclosure() {
@@ -1128,19 +1617,64 @@ function createExperienceWorker({
           userId: job.userId,
         });
         if (!application) throw new Error("APPLICATION_NOT_FOUND");
-        const greetingBody = normalizeRewriteModel(await modelCall(rewritePrompt(application, job.input.mode)));
+        const rewritten = normalizeRewriteModel(await modelCall(
+          rewritePrompt(application, job.input.mode),
+          { maxTokens: 1_800, timeoutMs: 16_000, temperature: 0.25 },
+        ), application);
         await jobs.transitionJob(job.jobId, "generating", "validating", now());
+        const previousApplication = rewriteApplicationSnapshot(application);
+        const rewriteUpdatedAt = now().toISOString();
+        const rewriteDisclosure = disclosure();
+        const rewriteRevision = `rewrite_${sha256(JSON.stringify({
+          jobId: job.jobId,
+          greetingBody: rewritten.body,
+          evidence: rewritten.evidence,
+          factSnapshot: rewritten.factSnapshot,
+          generationDisclosure: rewriteDisclosure,
+          updatedAt: rewriteUpdatedAt,
+        })).slice(0, 24)}`;
+        const rewrittenApplication = {
+          greetingBody: rewritten.body,
+          evidence: rewritten.evidence,
+          factSnapshot: rewritten.factSnapshot,
+          generationDisclosure: rewriteDisclosure,
+          updatedAt: rewriteUpdatedAt,
+          rewriteRevision,
+        };
         const applicationUpdated = await updateExactlyOne(database.collection("applications").where({
           recordType: "application", applicationId: application.applicationId, userId: job.userId,
-        }), {
-          greetingBody,
-          generationDisclosure: disclosure(),
-          updatedAt: now().toISOString(),
-        });
+        }), rewrittenApplication);
         if (!applicationUpdated) throw new Error("DATABASE_WRITE_FAILED");
-        await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), {
-          result: { applicationId: application.applicationId },
-        });
+        let completionError = null;
+        let completed = null;
+        try {
+          completed = await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), {
+            result: { applicationId: application.applicationId },
+          });
+        } catch (error) {
+          completionError = error;
+        }
+        if (!completed) {
+          const currentJob = await jobs.getJobById(job.jobId).catch(() => null);
+          if (currentJob?.status !== "succeeded") {
+            const restoreState = await restoreRewriteApplication(
+              database.collection("applications"),
+              application,
+              rewriteApplicationSnapshot(rewrittenApplication),
+              previousApplication,
+            );
+            if (restoreState === "restored") {
+              throw completionError || new Error("DATABASE_WRITE_FAILED");
+            }
+            const reconciled = await ensureRewriteJobSucceeded(
+              jobs,
+              job.jobId,
+              application.applicationId,
+              now,
+            );
+            if (!reconciled) throw rewriteReconciliationPending();
+          }
+        }
         return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId: application.applicationId } };
       }
       const firstStatus = fileIds.length > 0 && job.input.inputType === "images" ? "ocr" : "parsing";
@@ -1204,7 +1738,7 @@ function createExperienceWorker({
         .map(({ factId: id, sourceType, text }) => ({ factId: id, sourceType, text }));
       await jobs.transitionJob(job.jobId, "generating", "validating", now());
       const applicationId = `application_${job.jobId.slice(-24)}`;
-      const application = {
+      const application = persistGreetingMatchMode({
         _id: applicationId, recordType: "application", applicationId, userId: job.userId,
         resumeId: job.resumeId, jobId: job.jobId, status: "not_applied", memo: "", greetingBody,
         warnings: [], omittedRequirements: [],
@@ -1212,14 +1746,14 @@ function createExperienceWorker({
         jdSnapshot, evidence, manualWarnings: [], generationDisclosure: disclosure(),
         processingMetrics: { modelDurationMs, renderMode },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
-      };
+      }, selection);
       await database.collection("applications").add(application);
       await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), { result: { applicationId } });
       return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId } };
     } catch (error) {
       const publicError = publicProcessingError(error);
       const current = await jobs.getJobById(job.jobId);
-      if (current && !TERMINAL.has(current.status)) {
+      if (current && !TERMINAL.has(current.status) && !error?.rewriteReconciliationPending) {
         await jobs.transitionJob(job.jobId, current.status, "failed", now(), { error: publicError });
       }
       return failure(publicError.code, publicError.message, publicError.retryable);
@@ -1233,14 +1767,18 @@ module.exports = {
   buildFactMatches,
   buildJdSnapshot,
   classifyRoleFamily,
+  containsMechanicalGreetingPhrase,
   createExperienceWorker,
   jdPrompt,
   maskProtectedText,
   modelGreetingPackage,
   normalizeResumeModel,
+  normalizeRewriteModel,
   parseJson,
+  persistGreetingMatchMode,
   publicProcessingError,
   rankFactsForText,
   renderGreeting,
+  rewritePrompt,
   similarityScore,
 };

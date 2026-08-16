@@ -44,6 +44,7 @@ export type GenerationRewriteInput = z.infer<
 >;
 export type RewriteMode = (typeof REWRITE_MODES)[number];
 export type RewriteRecordStatus = "processing" | "succeeded" | "failed";
+export type RewriteMatchMode = "strong" | "partial" | "low";
 
 export interface RewriteRecord {
   jobId: string;
@@ -58,6 +59,7 @@ export interface RewriteRecord {
   jdSnapshot: JobDescription;
   omittedRequirements: string[];
   warnings: string[];
+  matchMode?: RewriteMatchMode;
   status: RewriteRecordStatus;
   createdAt: string;
   updatedAt: string;

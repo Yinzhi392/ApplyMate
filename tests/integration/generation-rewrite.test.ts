@@ -28,18 +28,23 @@ import { GenerationProcessingError } from "../../cloudfunctions/worker/src/index
 const START = new Date("2026-08-06T03:00:00.000Z");
 const FINISH = new Date("2026-08-06T03:01:00.000Z");
 const FACT_ID = "fact_1234567890abcdef12345678";
+type RewriteMatchMode = "strong" | "partial" | "low";
 const VERSIONS = {
   userAgreementVersion: "user-2026-08",
   privacyPolicyVersion: "privacy-2026-08",
 };
 
 function fillBody(first: string): string {
-  let second =
-    "我重视事实准确与沟通效率，愿意从基础工作做起，主动同步进展、认真吸收反馈，并把每次复盘转化为更稳定的交付。期待有机会进一步交流，也愿意承担细致的资料整理、需求跟进与团队协作工作。";
-  while (countVisibleCharacters(`${first}\n${second}`) < 250) {
-    second += "我会保持可靠响应，并认真完成每项工作。";
+  const second =
+    "在具体执行中，我会先确认任务目标和信息口径，再完成资料整理、数据分析与结果复核，并用结构化方式同步关键发现。这个过程让我习惯把模糊需求转化为可验证的任务，及时暴露风险并依据反馈调整方案。";
+  const third =
+    "我重视事实准确与沟通效率，会主动同步进展、认真吸收反馈，并把每次复盘转化为更稳定的交付。";
+  let fourth =
+    "如果团队希望进一步了解我的项目方法和协作方式，我愿意结合具体任务继续沟通。";
+  while (countVisibleCharacters(`${first}\n${second}\n${third}\n${fourth}`) < 360) {
+    fourth += "我会保持可靠响应，并认真完成每项工作。";
   }
-  return `${first}\n${second}`;
+  return `${first}\n${second}\n${third}\n${fourth}`;
 }
 
 function sourceBody(marker = "用户最新编辑版本"): string {
@@ -49,7 +54,7 @@ function sourceBody(marker = "用户最新编辑版本"): string {
 function validDraft(marker = "改写后的版本"): GreetingDraft {
   const claim = "我掌握SQL，适合产品实习生";
   return {
-    body: fillBody(`您好，看到贵司的产品实习生岗位。${claim}，${marker}。`),
+    body: fillBody(`您好，我想应聘贵司的产品实习生岗位。${claim}，${marker}。`),
     claims: [
       {
         claimId: "claim_rewrite_sql",
@@ -65,7 +70,10 @@ function validDraft(marker = "改写后的版本"): GreetingDraft {
   };
 }
 
-function application(userId: string): ApplicationRecord {
+function application(
+  userId: string,
+  matchMode: RewriteMatchMode | undefined = "partial",
+): ApplicationRecord & { matchMode?: RewriteMatchMode } {
   return {
     applicationId: "application_rewrite_01",
     jobId: "job_initial_rewrite_01",
@@ -101,6 +109,7 @@ function application(userId: string): ApplicationRecord {
     },
     omittedRequirements: [],
     warnings: ["COMPANY_NAME_MISSING"],
+    ...(matchMode === undefined ? {} : { matchMode }),
     createdAt: START.toISOString(),
     updatedAt: START.toISOString(),
   };
@@ -167,6 +176,60 @@ describe("generation.rewrite", () => {
       sourceBody: latest,
       sourceApplicationUpdatedAt: FINISH.toISOString(),
       rewriteMode: "rephrase",
+      matchMode: "partial",
+    });
+  });
+
+  it("copies strong and partial modes through the real job producer and fails legacy records closed", async () => {
+    const applications = new InMemoryApplicationRepository();
+    const strong = application("user_rewrite_modes", "strong");
+    const partial = {
+      ...application("user_rewrite_modes", "partial"),
+      applicationId: "application_rewrite_partial",
+      jobId: "job_initial_rewrite_partial",
+    };
+    const legacy: ApplicationRecord & { matchMode?: RewriteMatchMode } = {
+      ...application("user_rewrite_modes", "partial"),
+      applicationId: "application_rewrite_legacy",
+      jobId: "job_initial_rewrite_legacy",
+    };
+    Reflect.deleteProperty(legacy, "matchMode");
+    await applications.create(strong);
+    await applications.create(partial);
+    await applications.create(legacy);
+    const jobIds = ["job_rewrite_strong", "job_rewrite_partial", "job_rewrite_legacy"];
+    const rewrites = new InMemoryRewriteRepository();
+    const workflow = new GenerationRewriteWorkflowService({
+      applications: new ApplicationService(applications),
+      jobs: new JobService(new InMemoryJobRepository(), () => jobIds.shift()!),
+      rewrites,
+      dispatcher: { dispatch: () => undefined },
+    });
+
+    await workflow.createJob(
+      "user_rewrite_modes",
+      { applicationId: strong.applicationId, mode: "rephrase" },
+      START,
+    );
+    await workflow.createJob(
+      "user_rewrite_modes",
+      { applicationId: partial.applicationId, mode: "rephrase" },
+      START,
+    );
+    await workflow.createJob(
+      "user_rewrite_modes",
+      { applicationId: legacy.applicationId, mode: "rephrase" },
+      START,
+    );
+
+    await expect(rewrites.getByJobId("job_rewrite_strong")).resolves.toMatchObject({
+      matchMode: "strong",
+    });
+    await expect(rewrites.getByJobId("job_rewrite_partial")).resolves.toMatchObject({
+      matchMode: "partial",
+    });
+    await expect(rewrites.getByJobId("job_rewrite_legacy")).resolves.toMatchObject({
+      matchMode: "low",
     });
   });
 
@@ -233,6 +296,11 @@ describe("generation.rewrite", () => {
       manualWarnings: [],
       updatedAt: FINISH.toISOString(),
     });
+    expect(countVisibleCharacters(valid.body)).toBeGreaterThanOrEqual(350);
+    expect(countVisibleCharacters(valid.body)).toBeLessThanOrEqual(450);
+    expect(valid.body.split(/\n+/u).filter(Boolean)).toHaveLength(4);
+    expect(valid.body).toMatch(/^您好(?:[，,!！。]|$)/u);
+    expect(valid.body).not.toMatch(/期待得到您的回复[！!。]?$/u);
   });
 
   it("does not let a custom instruction bypass the quality gate or consume failed quota", async () => {

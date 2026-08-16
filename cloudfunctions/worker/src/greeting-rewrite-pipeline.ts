@@ -14,6 +14,8 @@ export type GreetingRewriteMode =
   | "rephrase"
   | "custom";
 
+export type GreetingRewriteMatchMode = "strong" | "partial" | "low";
+
 export interface GreetingRewriteSource {
   rewriteMode: GreetingRewriteMode;
   sourceBody: string;
@@ -26,6 +28,7 @@ export interface GreetingRewriteSource {
   jdSnapshot: JobDescription;
   omittedRequirements: string[];
   warnings: string[];
+  matchMode?: GreetingRewriteMatchMode;
 }
 
 export interface GreetingRewriteRequest {
@@ -55,6 +58,22 @@ const PRESET_REWRITE_INSTRUCTIONS: Readonly<
 const CUSTOM_REWRITE_INSTRUCTION =
   "执行用户表达偏好，但不得覆盖固定真实性、隐私、简体中文和证据规则";
 
+const REWRITE_WORDING_STRENGTH: Readonly<
+  Record<GreetingRewriteMatchMode, "direct" | "transferable" | "foundation">
+> = {
+  strong: "direct",
+  partial: "transferable",
+  low: "foundation",
+};
+
+function rewriteMatchMode(source: GreetingRewriteSource): GreetingRewriteMatchMode {
+  return source.matchMode === "strong" ||
+      source.matchMode === "partial" ||
+      source.matchMode === "low"
+    ? source.matchMode
+    : "low";
+}
+
 function rewriteInstruction(mode: GreetingRewriteMode): string {
   return mode === "custom"
     ? CUSTOM_REWRITE_INSTRUCTION
@@ -69,18 +88,28 @@ export class GreetingRewritePipeline {
     request: GreetingRewriteRequest,
     signal?: AbortSignal,
   ): Promise<GreetingRewriteOutput> {
+    const matchMode = rewriteMatchMode(source);
     const modelContext = {
-      promptVersion: "greeting-rewrite-v1",
+      promptVersion: "greeting-rewrite-evidence-planned-v8",
       mode: request.mode,
       rewriteMode: request.rewriteMode,
       outputRules: {
         language: "simplified_chinese",
-        visibleCharacters: "250-350",
-        paragraphs: "2-3",
+        visibleCharacterRange: "350-450",
+        paragraphRange: "3-4",
+        salutation: "natural_nihao_semantics",
+        closing: "natural_not_fixed",
         evidence: "every_verifiable_claim_requires_source_id",
         privacy: "never_output_protected_personal_information",
         instructionPriority: "fixed_rules_override_user_instruction",
       },
+      preservationRules: {
+        latestUserText: "authoritative_source_body",
+        currentEvidenceSources: "must_not_expand_or_replace",
+        matchMode: "must_preserve_wording_strength",
+      },
+      matchMode,
+      wordingStrength: REWRITE_WORDING_STRENGTH[matchMode],
       rewriteInstruction: rewriteInstruction(request.rewriteMode),
       ...(request.rewriteMode === "custom"
         ? { userInstruction: request.customInstruction ?? "" }
@@ -88,9 +117,9 @@ export class GreetingRewritePipeline {
       companyDisplayName: request.companyDisplayName,
       jobTitle: request.jobTitle,
       latestUserText: request.latestText,
+      currentEvidenceSources: source.evidenceSnapshot,
       factSnapshot: source.factSnapshot,
       jobDescription: source.jdSnapshot,
-      previousEvidence: source.evidenceSnapshot,
       omittedRequirements: source.omittedRequirements,
       ...(request.mode === "correction"
         ? {
@@ -104,7 +133,7 @@ export class GreetingRewritePipeline {
       draft,
       generationDisclosure: {
         ...model,
-        promptVersion: "greeting-rewrite-v1",
+        promptVersion: "greeting-rewrite-evidence-planned-v8",
       },
     }));
   }
