@@ -82,6 +82,19 @@ describe("experience build real AI regression", () => {
     expect(worker).toContain("rewritePrompt(application, job.input.mode)");
   });
 
+  it("keeps greeting generation on a single-call compact evidence plan", () => {
+    const worker = read("cloudfunctions/worker/deploy/experience-worker.js");
+
+    expect(worker).toContain('"matchMode"');
+    expect(worker).toContain('"directFactIds"');
+    expect(worker).toContain('"transferableEvidence"');
+    expect(worker).toContain('"paragraphs"');
+    expect(worker).not.toContain('"selectedFactIds"');
+    expect(worker).toContain("experience-evidence-planned-v8");
+    expect(worker).toContain("maxTokens: 1_300");
+    expect(worker).toContain("timeoutMs: 10_000");
+  });
+
   it("persists experience records with user-scoped queries instead of silent doc-id updates", () => {
     const api = read("cloudfunctions/api/deploy/experience-api.js");
     const worker = read("cloudfunctions/worker/deploy/experience-worker.js");

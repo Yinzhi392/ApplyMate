@@ -33,6 +33,19 @@ const {
   ): string;
 };
 
+const facts: Fact[] = [
+  {
+    factId: "fact_project",
+    sourceType: "project",
+    text: "在校园智能助手项目中访谈用户、拆分需求，使用Figma完成原型并组织可用性测试",
+  },
+  {
+    factId: "fact_evaluation",
+    sourceType: "experience",
+    text: "在实习中参与模型回复质量评估，从用户意图、事实准确性和表达完整度判断结果",
+  },
+];
+
 describe("experience worker privacy and deterministic output", () => {
   it("masks protected contact details before TokenHub", () => {
     const masked = maskProtectedText(
@@ -155,6 +168,61 @@ describe("experience worker privacy and deterministic output", () => {
     expect(rankFactsForText(adaptableFacts, "负责用户访谈与需求原型")[0]?.factId).toBe(
       "fact_interview",
     );
+  });
+
+  it("requests a compact evidence plan and adaptive three-to-four paragraph body", () => {
+    const prompt = jdPrompt("示例科技招聘 AI 产品实习生", facts);
+    const partialSeoPrompt = jdPrompt(
+      syntheticGreetingCalibrationCases.seo.jd,
+      syntheticGreetingCalibrationCases.seo.facts,
+    );
+    const directSeoPrompt = jdPrompt(syntheticGreetingCalibrationCases.seo.jd, [
+      {
+        factId: "fact_direct_seo",
+        sourceType: "experience",
+        text: "负责关键词研究、自然排名优化，并使用 Google Search Console 监测搜索表现",
+      },
+    ]);
+
+    expect(prompt).toContain('"matchMode":"strong"');
+    expect(prompt).toContain('"directFactIds"');
+    expect(prompt).toContain('"transferableEvidence"');
+    expect(prompt).toContain('"supportingFactIds"');
+    expect(prompt).toContain('"gaps"');
+    expect(prompt).toContain("350至450个可见字符");
+    expect(prompt).toContain("3至4个非空段落");
+    expect(prompt).toContain("核心功能 > 行业背景 > 加分标签");
+    expect(prompt).not.toContain("第一段必须以“您好！”开始");
+    expect(prompt).not.toContain("第三段必须以“期待得到您的回复！”结尾");
+    expect(prompt).not.toContain('"selectedFactIds"');
+    expect(partialSeoPrompt).toContain("没有直接 SEO 证据时进入部分匹配");
+    expect(directSeoPrompt).toContain("已有直接 SEO 证据");
+    for (const resolvedPrompt of [prompt, partialSeoPrompt, directSeoPrompt]) {
+      expect(resolvedPrompt).not.toContain("[object Object]");
+      expect(resolvedPrompt).not.toContain("路线规则：undefined");
+    }
+  });
+
+  it("masks protected details from JD and confirmed facts in the model prompt", () => {
+    const prompt = jdPrompt(
+      "示例科技招聘产品实习生，联系邮箱 jd@example.com，电话 13900139000",
+      [
+        {
+          factId: "fact_contact",
+          sourceType: "preference",
+          text: "可远程实习，邮箱 apply@example.com，手机 13800138000",
+        },
+      ],
+    );
+
+    expect(prompt).not.toContain("apply@example.com");
+    expect(prompt).not.toContain("13800138000");
+    expect(prompt).not.toContain("jd@example.com");
+    expect(prompt).not.toContain("13900139000");
+    expect(prompt).toContain("[MASKED_EMAIL]");
+    expect(prompt).toContain("[MASKED_PHONE]");
+    expect(prompt).toContain('"factId":"fact_contact"');
+    expect(prompt).toContain('"sourceType":"preference"');
   });
 
   it("renders a 250 to 350 character two-paragraph greeting from facts", () => {
