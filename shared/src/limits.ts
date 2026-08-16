@@ -8,10 +8,10 @@ export const MAX_PREFERENCE_VISIBLE_CHARACTERS = 500;
 export const MAX_FEEDBACK_VISIBLE_CHARACTERS = 500;
 export const MAX_RESUME_COUNT = 3;
 export const MAX_FACT_TEXT_VISIBLE_CHARACTERS = 2_000;
-export const MIN_GREETING_VISIBLE_CHARACTERS = 250;
-export const MAX_GREETING_VISIBLE_CHARACTERS = 350;
-export const MIN_GREETING_PARAGRAPHS = 2;
-export const MAX_GREETING_PARAGRAPHS = 3;
+export const MIN_GREETING_VISIBLE_CHARACTERS = 350;
+export const MAX_GREETING_VISIBLE_CHARACTERS = 450;
+export const MIN_GREETING_PARAGRAPHS = 3;
+export const MAX_GREETING_PARAGRAPHS = 4;
 
 export function isWithinInclusiveLimit(value: number, maximum: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= maximum;
