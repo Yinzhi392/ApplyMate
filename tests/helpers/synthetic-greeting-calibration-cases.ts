@@ -30,7 +30,7 @@ export const syntheticGreetingCalibrationCases = {
     modelOutput: {
       jobTitle: "战略投资实习生",
       companyName: "澄明资本",
-      responsibilities: ["开展行业研究和公司基本面分析", "完成估值建模并输出投资报告"],
+      responsibilities: ["负责行业研究和公司基本面分析", "估值建模和投资报告"],
       hardSkills: ["使用 DCF 与 WACC 进行估值分析"],
       experienceEducation: ["金融相关专业在读"],
       locationWorkMode: [],
@@ -46,7 +46,7 @@ export const syntheticGreetingCalibrationCases = {
       supportingFactIds: ["fact_school", "fact_availability"],
       gaps: [],
       paragraphs: fitGoldParagraphs([
-        "您好，我是南方理工大学金融科技专业在读学生，专业排名前百分之五，希望应聘澄明资本的战略投资实习生。",
+        "您好，我是南方理工大学金融科技专业在读学生，专业排名前百分之五，希望加入澄明资本并应聘战略投资实习生。",
         "我独立完成过星河食品的完整投资研究，从行业格局、公司基本面和财务预测出发，进一步搭建DCF估值框架、测算WACC并完成敏感性分析，最终输出投资报告。",
         "我也完成过海外上市公司的CAPM、Beta、PE与风险收益分析，能够用另一组方法验证公司判断，不会把单一模型结论直接当作最终答案。",
         "我每周可稳定投入三天，并可连续实习四个月，希望有机会进一步沟通岗位中的研究任务和交付要求。",
@@ -117,14 +117,14 @@ export const syntheticGreetingCalibrationCases = {
     modelOutput: {
       jobTitle: "SEO经理",
       companyName: "远航网络",
-      responsibilities: ["制定并执行搜索引擎优化策略", "监测搜索表现并持续迭代"],
+      responsibilities: ["独立进行关键词研究", "自然排名优化和搜索数据监测"],
       hardSkills: ["独立进行关键词研究", "熟悉自然排名优化"],
       experienceEducation: [],
       locationWorkMode: [],
       availabilityDuration: [],
       coreFunctions: [
-        { requirementType: "responsibilities", requirementIndex: 0, summary: "搜索引擎优化策略" },
-        { requirementType: "responsibilities", requirementIndex: 1, summary: "搜索数据监测与迭代" },
+        { requirementType: "responsibilities", requirementIndex: 0, summary: "关键词研究" },
+        { requirementType: "responsibilities", requirementIndex: 1, summary: "自然排名优化和搜索数据监测" },
       ],
       domainContext: ["搜索引擎"],
       matchMode: "partial",
