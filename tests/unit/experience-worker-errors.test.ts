@@ -27,4 +27,25 @@ describe("experience worker public errors", () => {
       retryable: true,
     });
   });
+
+  it.each([
+    "match_plan_schema",
+    "cross_jd_domain_term",
+    "evidence_strength_mismatch",
+  ])("does not expose the %s validation gate or source content", (validationGate) => {
+    const error = Object.assign(new Error("MODEL_INVALID_OUTPUT"), {
+      validationGate,
+      sourceContent: "private resume and JD content",
+    });
+
+    const result = publicProcessingError(error);
+
+    expect(result).toEqual({
+      code: "MODEL_INVALID_OUTPUT",
+      message: "AI 返回内容未通过真实性或格式检查，请重新提交。",
+      retryable: true,
+    });
+    expect(JSON.stringify(result)).not.toContain(validationGate);
+    expect(JSON.stringify(result)).not.toContain("private resume and JD content");
+  });
 });

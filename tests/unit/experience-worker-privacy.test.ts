@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JobDescription } from "../../shared/src/index.js";
 import { syntheticGreetingCalibrationCases } from "../helpers/synthetic-greeting-calibration-cases.js";
 
 type Fact = {
@@ -9,18 +10,33 @@ type Fact = {
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
+  buildFactMatches,
+  buildJdSnapshot,
   classifyRoleFamily,
   jdPrompt,
   maskProtectedText,
+  modelGreetingPackage,
   rankFactsForText,
   renderGreeting,
   similarityScore,
 } = require(
   "../../cloudfunctions/worker/deploy/experience-worker.js",
 ) as {
+  buildFactMatches(
+    selection: unknown,
+    jd: JobDescription,
+    facts: Fact[],
+  ): Array<{ fact: Fact; requirement: { fieldId: string; text: string } }>;
+  buildJdSnapshot(input: unknown): JobDescription;
   classifyRoleFamily(value: string): string;
   jdPrompt(text: string, facts: readonly Fact[]): string;
   maskProtectedText(value: string): string;
+  modelGreetingPackage(
+    plan: Record<string, unknown> & { paragraphs: string[] },
+    jd: JobDescription,
+    matches: Array<{ fact: Fact; requirement: { fieldId: string; text: string } }>,
+    facts: Fact[],
+  ): { body: string; evidence: Array<{ text: string; sources: unknown[] }> };
   rankFactsForText(facts: readonly Fact[], text: string): readonly Fact[];
   similarityScore(left: string, right: string): number;
   renderGreeting(
@@ -31,6 +47,16 @@ const {
     },
     facts: Array<{ text: string }>,
   ): string;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { normalizeGreetingPlan } = require(
+  "../../cloudfunctions/worker/deploy/greeting-calibration.js",
+) as {
+  normalizeGreetingPlan(
+    input: unknown,
+    context: { facts: Fact[]; jd: JobDescription; rawJdText: string },
+  ): Record<string, unknown> & { paragraphs: string[] };
 };
 
 const facts: Fact[] = [
@@ -45,6 +71,20 @@ const facts: Fact[] = [
     text: "在实习中参与模型回复质量评估，从用户意图、事实准确性和表达完整度判断结果",
   },
 ];
+
+function preparedCase(
+  calibrationCase: (typeof syntheticGreetingCalibrationCases)[keyof typeof syntheticGreetingCalibrationCases],
+  modelOutput: unknown = calibrationCase.modelOutput,
+) {
+  const jdSnapshot = buildJdSnapshot(modelOutput);
+  const plan = normalizeGreetingPlan(modelOutput, {
+    facts: [...calibrationCase.facts],
+    jd: jdSnapshot,
+    rawJdText: calibrationCase.jd,
+  });
+  const matches = buildFactMatches(plan, jdSnapshot, [...calibrationCase.facts]);
+  return { jdSnapshot, matches, plan };
+}
 
 describe("experience worker privacy and deterministic output", () => {
   it("masks protected contact details before TokenHub", () => {
@@ -242,5 +282,734 @@ describe("experience worker privacy and deterministic output", () => {
     expect(count).toBeGreaterThanOrEqual(250);
     expect(count).toBeLessThanOrEqual(350);
     expect(body.split("\n")).toHaveLength(2);
+  });
+
+  it("keeps a natural salutation and adaptive closing without rewriting them", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
+    const result = modelGreetingPackage(
+      plan,
+      jdSnapshot,
+      matches,
+      [...calibrationCase.facts],
+    );
+
+    expect(result.body).toBe(plan.paragraphs.join("\n"));
+    expect(result.body).toMatch(/^您好，我是/u);
+    expect(result.body).not.toMatch(/期待得到您的回复！$/u);
+    expect(result.body.split("\n")).toHaveLength(4);
+    expect(result.evidence).toHaveLength(4);
+  });
+
+  it("accepts all locked calibration greetings through the production quality gate", () => {
+    for (const [caseName, calibrationCase] of Object.entries(
+      syntheticGreetingCalibrationCases,
+    )) {
+      const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
+
+      try {
+        modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]);
+      } catch (error) {
+        const failure = error as Error & {
+          validationGate?: string;
+          validationMetrics?: Record<string, unknown>;
+        };
+        throw new Error(
+          `${caseName}:${failure.validationGate}:${JSON.stringify(failure.validationMetrics)}`,
+          { cause: error },
+        );
+      }
+    }
+  });
+
+  it("never reintroduces a resume fact omitted by the match plan", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const { matches } = preparedCase(calibrationCase);
+
+    expect(matches.map(({ fact }) => fact.factId)).toEqual([
+      "fact_investment",
+      "fact_equity",
+      "fact_school",
+      "fact_availability",
+    ]);
+    expect(matches.some(({ fact }) => fact.factId === "fact_ai")).toBe(false);
+  });
+
+  it("rejects a fabricated recruiting and social-growth paragraph despite generic overlap", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const inventedParagraph = [
+      "我负责校园招聘增长项目，策划社交媒体内容并拍摄短视频，通过社群运营提升活动转化。",
+      "我还根据不同平台的数据表现调整内容节奏，持续复盘传播活动的用户反馈与转化效率。",
+      "这项工作让我积累了品牌传播与内容运营经验。",
+    ].join("");
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? inventedParagraph : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]);
+      throw new Error("Expected fabricated claims to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_evidence_alignment",
+      });
+    }
+  });
+
+  it.each([
+    "能够独立负责校园招聘增长项目和社交媒体投放",
+    "我会使用Tableau搭建自动化招聘看板",
+  ])("rejects unsupported capability wording: %s", (unsupportedClaim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? `${paragraph}，${unsupportedClaim}。` : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]);
+      throw new Error("Expected unsupported capability wording to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_evidence_alignment",
+      });
+    }
+  });
+
+  it.each([
+    {
+      caseName: "investment",
+      claim: "希望加入澄明资本并应聘战略投资实习生并主导校园招聘增长项目",
+    },
+    {
+      caseName: "investment",
+      claim: "我会保持对经验边界的准确说明并主导校园招聘增长项目",
+    },
+    {
+      caseName: "investment",
+      claim: "该岗位主要负责行业研究并由我主导校园招聘增长项目",
+    },
+    {
+      caseName: "investment",
+      claim: "希望有机会进一步沟通并介绍我拥有校园招聘增长背景",
+    },
+    {
+      caseName: "financialAiAgent",
+      claim: "我掌握机器学习模型并能够完成信用风险判断",
+    },
+  ] as const)("rejects an unsupported suffix hidden behind a valid prefix: $claim", ({
+    caseName,
+    claim,
+  }) => {
+    const calibrationCase = syntheticGreetingCalibrationCases[caseName];
+    const supportedFiller = caseName === "investment"
+      ? "我会把财务预测、敏感性分析和投资判断整理成完整投资报告。"
+      : "我会把质量复核、模型评测、失败归因和A/B Test结果整理成结构化记录。";
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
+        paragraph.includes(supportedFiller)
+          ? paragraph.replace(supportedFiller, `${claim}。`)
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]);
+      throw new Error("Expected the unsupported suffix to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_evidence_alignment",
+      });
+    }
+  });
+
+  it.each([
+    "虽然我没有完整负责过SEO项目却主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目和关键词研究却拥有校园招聘增长背景",
+    "虽然我没有完整负责过SEO项目仍负责校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目还主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目也拥有校园招聘增长背景",
+  ])("does not let a gap disclosure exempt a later positive predicate: %s", (claim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 0
+          ? paragraph.replace(
+              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
+              claim,
+            )
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it.each([
+    "虽然我没有完整负责过SEO项目和关键词研究，却曾主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目和关键词研究，倒是我主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目和关键词研究，不过此前我主导校园招聘增长项目",
+  ])("does not let a modified contrast hide a positive predicate: %s", (claim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 0
+          ? paragraph.replace(
+              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
+              `${claim}。我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历`,
+            )
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it.each([
+    "虽然我没有完整负责过SEO项目和关键词研究，但其实有丰富的校园招聘经验",
+    "虽然我没有完整负责过SEO项目和关键词研究，但特别是我拥有丰富的校园招聘经验",
+    "虽然我没有完整负责过SEO项目和关键词研究，可是我主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目和关键词研究，可实际上我拥有校园招聘增长经验",
+    "虽然我没有完整负责过SEO项目和关键词研究，所以我主导校园招聘增长项目",
+    "虽然我没有完整负责过SEO项目和关键词研究，只是我拥有校园招聘增长经验",
+  ])("does not let a gap disclosure absorb arbitrary positive content: %s", (claim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 0
+          ? paragraph.replace(
+              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
+              `${claim}。我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历`,
+            )
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it.each([
+    "不会把我主导的校园招聘经验表述成SEO经验",
+    "不会把这段经历表述成Technical SEO经验所以学习能力很强",
+    "不会把这段经历表述成Technical SEO经验所以沟通能力很强",
+    "不会把这段经历表述成Technical SEO经验从而表现出色",
+    "不会把这段经历表述成Technical SEO经验只是责任心很强",
+    "不会把这段经历表述成Technical SEO经验由此具备战略思维",
+    "不会把这段经历表述成Technical SEO经验所以可快速上手",
+    "不会把这段经历表述成Technical SEO经验从而胜任相关工作",
+    "不会把这段经历表述成SE经验",
+    "不会把这段经历表述成EO经验",
+    "不会把这段经历表述成词研经验",
+    "不会把这段经历表述成SEO X经验",
+    "不会把这段经历表述成SEO Q能力",
+    "不会把这段经历表述成SEO Z技能",
+    "不会把这段经历表述成SEO Ｘ经验",
+    "不会把这段经历表述成SEO Ω能力",
+    "不会把这段经历表述成SEO Я技能",
+    "不会把这段经历表述成SEO ٥经验",
+  ])("requires both sides of a representation boundary to be evidenced: %s", (claim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1
+          ? `我独立完成过Web产品的页面搭建、测试、修复和部署。${claim}。`
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it.each([
+    "若团队接受仍需要继续补足SEO专项方法兼具校园招聘经验的候选人",
+    "若贵司接受需要继续学习SEO专项方法、我主导校园招聘的候选人",
+    "若团队接受需要继续补足SEO专项方法从而拥有丰富管理经验的候选人",
+    "若团队接受需要继续补足SE经验的候选人",
+    "若团队接受需要继续补足EO经验的候选人",
+    "若团队接受需要继续补足词研经验的候选人",
+    "若团队接受需要继续补足SEO X经验的候选人",
+    "若团队接受需要继续补足SEO Q能力的候选人",
+    "若团队接受需要继续补足SEO Z技能的候选人",
+    "若团队接受需要继续补足SEO Ｘ经验的候选人",
+    "若团队接受需要继续补足SEO Ω能力的候选人",
+    "若团队接受需要继续补足SEO Я技能的候选人",
+    "若团队接受需要继续补足SEO ٥经验的候选人",
+  ])("requires a conditional gap target to be fully derived: %s", (claim) => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 3
+          ? paragraph.replace(
+              "若团队接受需要继续补足SEO专项方法的候选人",
+              claim,
+            )
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("accepts complete gap terms that are present in the locked plan or JD", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) => paragraph
+        .replace("Technical SEO经验", "关键词研究经验")
+        .replace("SEO专项方法", "关键词研究")),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).not.toThrow();
+  });
+
+  it("does not treat one controlled technical term as full proposition support", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 2 ? `${paragraph}，我使用SQL搭建校园招聘自动化系统。` : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("validates numeric claims against facts supporting the same atomic clause", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const facts = calibrationCase.facts.map((fact) =>
+      fact.factId === "fact_availability"
+        ? { ...fact, text: "每周可稳定投入3天，可连续实习4个月" }
+        : fact.factId === "fact_investment"
+          ? { ...fact, text: `${fact.text}，搭建DCF估值框架` }
+          : fact,
+    );
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? `${paragraph}，我搭建4个DCF估值框架。` : paragraph,
+      ),
+    };
+    const jdSnapshot = buildJdSnapshot(modelOutput);
+    const plan = normalizeGreetingPlan(modelOutput, {
+      facts: [...facts],
+      jd: jdSnapshot,
+      rawJdText: calibrationCase.jd,
+    });
+    const matches = buildFactMatches(plan, jdSnapshot, [...facts]);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...facts]);
+      throw new Error("Expected clause-local numeric validation to reject the draft.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_numeric_source",
+      });
+    }
+  });
+
+  it("binds numeric values to their adjacent availability relation", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const facts = calibrationCase.facts.map((fact) =>
+      fact.factId === "fact_availability"
+        ? { ...fact, text: "每周可稳定投入3天，可连续实习4个月" }
+        : fact,
+    );
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
+        paragraph.replace(
+          "我每周可稳定投入三天，并可连续实习四个月",
+          "我每周可稳定投入4天，并可连续实习3个月",
+        ),
+      ),
+    };
+    const jdSnapshot = buildJdSnapshot(modelOutput);
+    const plan = normalizeGreetingPlan(modelOutput, {
+      facts: [...facts],
+      jd: jdSnapshot,
+      rawJdText: calibrationCase.jd,
+    });
+    const matches = buildFactMatches(plan, jdSnapshot, [...facts]);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...facts]);
+      throw new Error("Expected swapped availability values to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_numeric_source",
+      });
+    }
+  });
+
+  it("normalizes only known numeric measurement units", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.financialAiAgent;
+    const facts = calibrationCase.facts.map((fact) =>
+      fact.factId === "fact_eval"
+        ? { ...fact, text: `${fact.text}，参与5000条真实AI对话数据，始于2020年度` }
+        : fact,
+    );
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1
+          ? `${paragraph}，我参与5000条对话Case，这项工作始于2020年。`
+          : paragraph,
+      ),
+    };
+    const jdSnapshot = buildJdSnapshot(modelOutput);
+    const plan = normalizeGreetingPlan(modelOutput, {
+      facts: [...facts],
+      jd: jdSnapshot,
+      rawJdText: calibrationCase.jd,
+    });
+    const matches = buildFactMatches(plan, jdSnapshot, [...facts]);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...facts]),
+    ).not.toThrow();
+  });
+
+  it("attaches only facts that materially support the atomic claims", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.financialAiAgent;
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
+    const result = modelGreetingPackage(
+      plan,
+      jdSnapshot,
+      matches,
+      [...calibrationCase.facts],
+    );
+    const factIds = result.evidence[1]?.sources.flatMap((source) => {
+      const typedSource = source as { type?: string; factId?: string };
+      return typedSource.type === "fact" && typedSource.factId ? [typedSource.factId] : [];
+    });
+
+    expect(factIds).toEqual(["fact_eval"]);
+  });
+
+  it("does not treat adjacent company-name bigrams as independent evidence", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 2
+          ? "我还负责星河食品校园招聘和社交媒体增长。"
+          : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("accepts sourced action and capability spans as independent evidence", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
+    const result = modelGreetingPackage(
+      plan,
+      jdSnapshot,
+      matches,
+      [...calibrationCase.facts],
+    );
+    const thirdParagraphFactIds = result.evidence[2]?.sources.flatMap((source) => {
+      const typedSource = source as { type?: string; factId?: string };
+      return typedSource.type === "fact" && typedSource.factId ? [typedSource.factId] : [];
+    });
+
+    expect(thirdParagraphFactIds).toEqual(["fact_data", "fact_iteration"]);
+  });
+
+  it("does not let an SEO requirement prove candidate keyword-research experience", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? `${paragraph}，我独立进行关键词研究。` : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    try {
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]);
+      throw new Error("Expected a JD-only candidate claim to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_evidence_alignment",
+      });
+    }
+  });
+
+  it("does not let a JD availability number replace a confirmed preference fact", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const factsWithoutAvailability = calibrationCase.facts.filter(
+      ({ factId }) => factId !== "fact_availability",
+    );
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      supportingFactIds: ["fact_school"],
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 3
+          ? paragraph.replace("我每周可稳定投入三天，并可连续实习四个月", "我每周到岗3天")
+          : paragraph,
+      ),
+    };
+    const jdSnapshot = buildJdSnapshot(modelOutput);
+    const plan = normalizeGreetingPlan(modelOutput, {
+      facts: [...factsWithoutAvailability],
+      jd: jdSnapshot,
+      rawJdText: calibrationCase.jd,
+    });
+    const matches = buildFactMatches(plan, jdSnapshot, [...factsWithoutAvailability]);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...factsWithoutAvailability]),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("preserves factual availability when a selected preference supplies it", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const sourcedFacts = calibrationCase.facts.map((fact) =>
+      fact.factId === "fact_availability"
+        ? { ...fact, text: fact.text.replace("三天", "3天") }
+        : fact,
+    );
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
+        paragraph.replace("三天", "3天"),
+      ),
+    };
+    const jdSnapshot = buildJdSnapshot(modelOutput);
+    const plan = normalizeGreetingPlan(modelOutput, {
+      facts: [...sourcedFacts],
+      jd: jdSnapshot,
+      rawJdText: calibrationCase.jd,
+    });
+    const matches = buildFactMatches(plan, jdSnapshot, [...sourcedFacts]);
+
+    expect(() =>
+      modelGreetingPackage(
+        plan,
+        jdSnapshot,
+        matches,
+        [...sourcedFacts],
+      ),
+    ).not.toThrow();
+  });
+
+  it("attaches every distinct fact used by a multi-fact paragraph", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.financialAiAgent;
+    const multiFactParagraph = [
+      "我参与过五千余条合成对话Case的质量复核、模型评测、失败归因和Prompt A/B Test，",
+      "也独立完成过生成式AI消费分析产品的需求拆解、Prompt设计、测试和部署。",
+    ].join("");
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? multiFactParagraph : paragraph,
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    const result = modelGreetingPackage(
+      plan,
+      jdSnapshot,
+      matches,
+      [...calibrationCase.facts],
+    );
+    const factIds = result.evidence[1]?.sources.flatMap((source) => {
+      const factId = (source as { type?: string; factId?: string }).factId;
+      return source && (source as { type?: string }).type === "fact" && factId ? [factId] : [];
+    });
+
+    expect(factIds).toEqual(["fact_eval", "fact_product"]);
+  });
+
+  it("compares canonical numeric tokens instead of accepting numeric substrings", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const numericFacts = calibrationCase.facts.map((fact) =>
+      fact.factId === "fact_investment"
+        ? {
+            ...fact,
+            text: `${fact.text}，复核2020年与5,000条数据，记录80%和3.5两个结果`,
+          }
+        : fact,
+    );
+    const { jdSnapshot, plan } = preparedCase(calibrationCase);
+    const exactParagraphs = plan.paragraphs.map((paragraph, index) =>
+      index === 1
+        ? `${paragraph}项目还复核2020年与5000条数据，记录80%和3.5两个结果。`
+        : paragraph,
+    );
+    const exactPlan = { ...plan, paragraphs: exactParagraphs };
+    const matches = buildFactMatches(exactPlan, jdSnapshot, [...numericFacts]);
+
+    expect(() =>
+      modelGreetingPackage(exactPlan, jdSnapshot, matches, [...numericFacts]),
+    ).not.toThrow();
+    for (const [source, replacement] of [["2020", "20"], ["5000", "50"]] as const) {
+      const changedPlan = {
+        ...exactPlan,
+        paragraphs: exactParagraphs.map((paragraph) => paragraph.replace(source, replacement)),
+      };
+      expect(() =>
+        modelGreetingPackage(changedPlan, jdSnapshot, matches, [...numericFacts]),
+      ).toThrow("MODEL_INVALID_OUTPUT");
+    }
+    for (const [source, replacement] of [["80%", "80"], ["3.5", "35"]] as const) {
+      const changedPlan = {
+        ...exactPlan,
+        paragraphs: exactParagraphs.map((paragraph) => paragraph.replace(source, replacement)),
+      };
+      expect(() =>
+        modelGreetingPackage(changedPlan, jdSnapshot, matches, [...numericFacts]),
+      ).toThrow("MODEL_INVALID_OUTPUT");
+    }
+  });
+
+  it("requires known targets and permits fallbacks only when target fields are absent", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.investment;
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
+    const missingKnownCompany = {
+      ...plan,
+      paragraphs: plan.paragraphs.map((paragraph) => paragraph.replace("澄明资本", "贵司")),
+    };
+
+    expect(() =>
+      modelGreetingPackage(
+        missingKnownCompany,
+        jdSnapshot,
+        matches,
+        [...calibrationCase.facts],
+      ),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+
+    const missingKnownRole = {
+      ...plan,
+      paragraphs: plan.paragraphs.map((paragraph) =>
+        paragraph.replace("战略投资实习生", "该岗位"),
+      ),
+    };
+    expect(() =>
+      modelGreetingPackage(
+        missingKnownRole,
+        jdSnapshot,
+        matches,
+        [...calibrationCase.facts],
+      ),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+
+    const fallbackJd: JobDescription = {
+      responsibilities: jdSnapshot.responsibilities,
+      hardSkills: jdSnapshot.hardSkills,
+      experienceEducation: jdSnapshot.experienceEducation,
+      locationWorkMode: jdSnapshot.locationWorkMode,
+      availabilityDuration: jdSnapshot.availabilityDuration,
+    };
+    const fallbackPlan = {
+      ...plan,
+      paragraphs: plan.paragraphs.map((paragraph) =>
+        paragraph.replace("澄明资本", "贵司").replace("战略投资实习生", "该岗位"),
+      ),
+    };
+    const fallbackMatches = buildFactMatches(
+      fallbackPlan,
+      fallbackJd,
+      [...calibrationCase.facts],
+    );
+
+    expect(() =>
+      modelGreetingPackage(
+        fallbackPlan,
+        fallbackJd,
+        fallbackMatches,
+        [...calibrationCase.facts],
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects an SEO direct-experience claim supported only by transferable facts", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.seo;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
+        paragraph.replace(
+          "我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
+          "我已经独立负责过完整SEO策略",
+        ),
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(
+        plan,
+        jdSnapshot,
+        matches,
+        [...calibrationCase.facts],
+      ),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("rejects an AI Agent greeting polluted by investment-research duties", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.financialAiAgent;
+    const modelOutput = {
+      ...calibrationCase.modelOutput,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
+        paragraph.replace("模型评测", "投研知识库与研报提取"),
+      ),
+    };
+    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
+
+    expect(() =>
+      modelGreetingPackage(
+        plan,
+        jdSnapshot,
+        matches,
+        [...calibrationCase.facts],
+      ),
+    ).toThrow("MODEL_INVALID_OUTPUT");
   });
 });

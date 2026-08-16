@@ -4,6 +4,15 @@ const { createHash, createHmac } = require("node:crypto");
 const mammoth = require("mammoth");
 const { findOne, updateExactlyOne } = require("./cloudbase-document-store");
 const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
+const {
+  assertDomainTermsSupported,
+  assertNamedTermsSupported,
+  assertParagraphWording,
+  blockedTermsFromGaps,
+  collectGreetingFactIds,
+  evidenceTierForFact,
+  normalizeGreetingPlan,
+} = require("./greeting-calibration.js");
 
 const OCR_HOST = "ocr.tencentcloudapi.com";
 const TERMINAL = new Set(["succeeded", "failed"]);
@@ -31,6 +40,13 @@ const PUBLIC_PROCESSING_ERRORS = Object.freeze({
 });
 
 function publicProcessingError(error) {
+  if (error?.message === "MODEL_INVALID_OUTPUT") {
+    return {
+      code: "MODEL_INVALID_OUTPUT",
+      message: "AI 返回内容未通过真实性或格式检查，请重新提交。",
+      retryable: true,
+    };
+  }
   const internalCode = String(error?.message || "PROCESSING_FAILED");
   const known = Object.prototype.hasOwnProperty.call(PUBLIC_PROCESSING_ERRORS, internalCode);
   const code = known ? internalCode : "PROCESSING_FAILED";
@@ -58,6 +74,13 @@ function fieldId(kind, text) {
 
 function visibleLength(value) {
   return Array.from(String(value).replace(/\s/gu, "")).length;
+}
+
+function modelValidationFailure(validationGate, validationMetrics = {}) {
+  const error = new Error("MODEL_INVALID_OUTPUT");
+  error.validationGate = validationGate;
+  error.validationMetrics = Object.freeze({ ...validationMetrics });
+  return error;
 }
 
 function maskProtectedText(value) {
@@ -274,6 +297,343 @@ function matchTokens(value) {
   return tokens;
 }
 
+const GENERIC_EVIDENCE_PHRASES = [
+  "工作", "岗位", "项目", "产品", "能力", "经验", "希望", "进一步", "进行", "完成",
+  "负责", "相关", "能够", "可以", "团队", "公司", "真实", "实际", "使用", "参与",
+  "通过", "结果", "分析", "数据", "问题", "方法", "要求", "流程", "支持", "了解",
+  "持续", "当前", "加入", "应聘", "实习", "业务", "任务", "沟通", "以及", "同时",
+];
+
+const GENERIC_EVIDENCE_TOKENS = new Set(
+  GENERIC_EVIDENCE_PHRASES.flatMap((phrase) => Array.from(matchTokens(phrase))),
+);
+
+function canonicalEvidenceText(value) {
+  return String(value ?? "")
+    .replace(/\bweb\b/giu, "网站")
+    .replace(/(?:落地|上线)/gu, "部署");
+}
+
+function evidenceTokens(value) {
+  const tokens = matchTokens(canonicalEvidenceText(value));
+  return new Set(Array.from(tokens).filter((token) => !GENERIC_EVIDENCE_TOKENS.has(token)));
+}
+
+function sharedHanEvidenceSpans(claim, sourceTokens) {
+  const spans = [];
+  for (const chunk of canonicalEvidenceText(claim).toLowerCase().match(/[\p{Script=Han}]{2,}/gu) || []) {
+    let current = [];
+    const flush = () => {
+      if (current.length > 0) spans.push(current.join(""));
+      current = [];
+    };
+    for (let index = 0; index < chunk.length - 1; index += 1) {
+      const token = chunk.slice(index, index + 2);
+      if (GENERIC_EVIDENCE_TOKENS.has(token) || !sourceTokens.has(token)) {
+        flush();
+        continue;
+      }
+      if (current.length === 0) current.push(token);
+      else current.push(token.slice(-1));
+    }
+    flush();
+  }
+  return Array.from(new Set(spans));
+}
+
+const EVIDENCE_ASSERTION_MARKERS = [
+  "独立完成", "完成", "参与", "使用", "负责", "主导", "搭建", "测试", "修复",
+  "部署", "分析", "复核", "评测", "归因", "设计", "推进", "验证", "定位",
+  "检索", "阅读", "在读", "投入", "实习", "排名", "输出", "测算", "调整", "整理",
+];
+
+const CONTROLLED_TECHNICAL_TERMS = new Set([
+  "sql", "dcf", "wacc", "capm", "beta", "figma", "prompt", "seo", "powerbi",
+]);
+
+function hasSharedAssertionMarker(claim, source) {
+  const normalizedClaim = canonicalEvidenceText(claim).toLowerCase();
+  const normalizedSource = canonicalEvidenceText(source).toLowerCase();
+  return EVIDENCE_ASSERTION_MARKERS.some((marker) =>
+    normalizedClaim.includes(marker.toLowerCase()) && normalizedSource.includes(marker.toLowerCase()),
+  );
+}
+
+function evidenceOverlapProfile(claim, source) {
+  const claimTokens = evidenceTokens(claim);
+  const sourceTokens = evidenceTokens(source);
+  const shared = Array.from(claimTokens).filter((token) => sourceTokens.has(token));
+  const sharedLatin = shared.filter((token) => /^[a-z0-9+#.]{2,}$/u.test(token));
+  const sharedHanSpans = sharedHanEvidenceSpans(claim, sourceTokens);
+  const independentConcepts = sharedHanSpans.length + new Set(sharedLatin).size;
+  const coverage = claimTokens.size === 0 ? 0 : shared.length / claimTokens.size;
+  return { claimTokens, shared, sharedLatin, sharedHanSpans, independentConcepts, coverage };
+}
+
+function hasMeaningfulEvidenceOverlap(claim, source) {
+  const profile = evidenceOverlapProfile(claim, source);
+  const { sharedLatin, sharedHanSpans, independentConcepts, coverage } = profile;
+  if (
+    (independentConcepts >= 2 && coverage >= 0.4) ||
+    (independentConcepts >= 3 && coverage >= 0.3)
+  ) return true;
+
+  const hasControlledTechnicalTerm = sharedLatin.some((token) =>
+    CONTROLLED_TECHNICAL_TERMS.has(token.replace(/[.]/gu, "")),
+  );
+  if (
+    hasControlledTechnicalTerm &&
+    sharedHanSpans.length >= 1 &&
+    coverage >= 0.4 &&
+    hasSharedAssertionMarker(claim, source)
+  ) return true;
+
+  const longestSharedSpan = sharedHanSpans.reduce(
+    (longest, span) => Math.max(longest, Array.from(span).length),
+    0,
+  );
+  return coverage >= 0.65 && longestSharedSpan >= 4 && hasSharedAssertionMarker(claim, source);
+}
+
+function evidenceContributors(claim, entries, textOf) {
+  const candidates = entries.filter((entry) => {
+    const profile = evidenceOverlapProfile(claim, textOf(entry));
+    return profile.independentConcepts > 0;
+  });
+  const individuallyMaterial = candidates.filter((entry) =>
+    hasMeaningfulEvidenceOverlap(claim, textOf(entry)),
+  );
+  if (individuallyMaterial.length > 0) return individuallyMaterial;
+
+  const findSupportingCombination = (size, start = 0, selected = []) => {
+    if (selected.length === size) {
+      const combinedSource = selected.map(textOf).join("\n");
+      return hasMeaningfulEvidenceOverlap(claim, combinedSource) ? selected : undefined;
+    }
+    for (let index = start; index <= candidates.length - (size - selected.length); index += 1) {
+      const found = findSupportingCombination(size, index + 1, [...selected, candidates[index]]);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  for (let size = 2; size <= candidates.length; size += 1) {
+    const found = findSupportingCombination(size);
+    if (found) return found;
+  }
+  return [];
+}
+
+const ATOMIC_CLAUSE_START = "(?:由我|我的|我|本人|该岗位|此岗位|这个岗位|贵司|希望|想|期待|愿意|申请|应聘|加入|主导|负责|开展|完成|参与|掌握|熟悉|使用|搭建|分析|推进|提升|介绍|拥有|具备|能够|可以|会|可|不会|不能|没有|未曾|尚未|从未|需要|继续|独立|再|通过|根据|输出|形成|整理|复核|验证|理解|阅读|检索|支持|连续|投入|到岗)";
+const ASSERTION_MODIFIER = "(?:曾经?|此前|目前|过去|已经|实际上?|其实|确实|一直)";
+const ADVERSATIVE_CONTINUATION = "(?:但是|不过|然而|但|却|倒是|反而)";
+const ADDITIVE_CONTINUATION = "(?:仍|还|也|又|甚至)";
+
+function hasCompleteAssertionPrefix(prefix) {
+  if (/(?:没有|未曾|尚未|从未|缺少|不足|有限|不具备|并非|不是|不会把|不能把|不把|需要继续)/u.test(prefix)) {
+    return true;
+  }
+  if (!hasCandidateReference(prefix)) return false;
+  return EVIDENCE_ASSERTION_MARKERS.some((marker) => prefix.includes(marker)) ||
+    /(?:拥有|具备|掌握|熟悉|能够|可以|会|申请|应聘|加入)/u.test(prefix);
+}
+
+function claimClauses(paragraph) {
+  const predicateBoundary = new RegExp(
+    `(?:，|,|并且|而且|同时|以及|并|且)(?=${ATOMIC_CLAUSE_START})`,
+    "gu",
+  );
+  const adversativeBoundary = new RegExp(`(?:，|,)?${ADVERSATIVE_CONTINUATION}`, "gu");
+  const continuationBoundary = new RegExp(
+    `${ADDITIVE_CONTINUATION}(?:${ASSERTION_MODIFIER})*(?=${ATOMIC_CLAUSE_START})`,
+    "gu",
+  );
+  const afterPredicateBoundaries = String(paragraph).replace(predicateBoundary, "。");
+  const afterAdversativeBoundaries = afterPredicateBoundaries.replace(
+    adversativeBoundary,
+    (marker, offset, whole) => {
+      const currentPrefix = whole.slice(whole.lastIndexOf("。", offset - 1) + 1, offset);
+      return hasCompleteAssertionPrefix(currentPrefix) ? "。" : marker;
+    },
+  );
+  const afterContinuationBoundaries = afterAdversativeBoundaries.replace(
+    continuationBoundary,
+    (marker, offset, whole) => {
+      const currentPrefix = whole.slice(whole.lastIndexOf("。", offset - 1) + 1, offset);
+      return hasCompleteAssertionPrefix(currentPrefix) ? "。" : marker;
+    },
+  );
+  return afterContinuationBoundaries
+    .split(/[。！？!?；;：:]+/u)
+    .map((clause) => clause
+      .replace(/^(?:此外|另外|除此之外)[，,]?/u, "")
+      .replace(/[，,]+$/u, "")
+      .trim())
+    .filter((clause) => clause && !/^(?:我|本人)$/u.test(clause));
+}
+
+function isSalutationClause(clause) {
+  return /^(?:您好|你好)$/u.test(clause);
+}
+
+function hasCandidateReference(clause) {
+  return /(?:由我|我的|本人|我)/u.test(clause);
+}
+
+function escapedPattern(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function isExactTargetApplicationIntent(clause, roleTarget, companyTarget) {
+  const normalizedClause = normalizedTarget(clause);
+  const role = normalizedTarget(roleTarget || "该岗位");
+  const company = normalizedTarget(companyTarget || "贵司");
+  const rolePattern = escapedPattern(role);
+  const companyPattern = escapedPattern(company);
+  const targetPattern = [
+    `${companyPattern}(?:的)?${rolePattern}`,
+    companyPattern,
+    rolePattern,
+  ].filter(Boolean).join("|");
+  return new RegExp(
+    `^(?:我)?(?:希望|想|期待|愿意)?(?:申请|应聘|加入)(?:${targetPattern})$`,
+    "u",
+  ).test(normalizedClause);
+}
+
+function isPureCommunicationClosing(clause) {
+  if (hasCandidateReference(clause)) return false;
+  const communicationObject = "(?:(?:岗位|团队|贵司|工作|业务|产品|模型|研究|交付|Case|Agent)[\\p{Letter}\\p{Number}+#.、/的中和与\\s]{0,48}(?:岗位|职责|要求|安排|团队|贵司|任务|方向|重点|流程|方式|标准|期待|内容|细节|情况))?";
+  return /^(?:谢谢(?:您)?|感谢(?:您|贵司)?|期待(?:得到|收到)?(?:您|贵司)?(?:的)?回复)$/u.test(clause) ||
+    new RegExp(
+      `^(?:希望|期待|愿意)(?:有机会)?(?:进一步)?(?:与(?:您|贵司|团队))?(?:沟通|交流|了解)${communicationObject}$`,
+      "iu",
+    ).test(clause);
+}
+
+const GENERIC_GAP_LATIN_TOKENS = new Set(["technical"]);
+const GENERIC_GAP_HAN_PHRASES = [
+  "完整负责过", "需要继续", "负责过", "虽然", "尽管", "即使", "本人", "我的",
+  "目前", "此前", "过去", "直接", "确实", "没有", "未曾", "尚未", "从未", "缺少",
+  "不足", "有限", "不具备", "并非", "不是", "专项", "相关", "项目", "方法", "能力",
+  "经验", "实践", "基础", "知识", "技能", "我", "和", "与", "及",
+].sort((left, right) => right.length - left.length);
+
+function gapTargetTokens(value) {
+  const normalized = String(value).normalize("NFKC").toLowerCase();
+  const hasUnsupportedLetterOrNumber = Array.from(normalized).some((character) =>
+    /[\p{Letter}\p{Number}]/u.test(character) &&
+    !/[a-z0-9\p{Script=Han}]/u.test(character),
+  );
+  const latin = new Set(
+    (normalized.match(/[a-z0-9+#.]+/gu) || [])
+      .filter((token) => !GENERIC_GAP_LATIN_TOKENS.has(token)),
+  );
+  let hanText = normalized.replace(/[a-z0-9+#.]+/gu, " ");
+  for (const phrase of GENERIC_GAP_HAN_PHRASES) {
+    hanText = hanText.replace(new RegExp(escapedPattern(phrase), "gu"), " ");
+  }
+  const han = new Set(hanText.match(/[\p{Script=Han}]+/gu) || []);
+  return { han, hasUnsupportedLetterOrNumber, latin };
+}
+
+function isFullyDerivedGapTarget(target, sources) {
+  const targetText = String(target).normalize("NFKC").trim();
+  const compactTarget = targetText.replace(/\s+/gu, "");
+  if (!compactTarget || !/^[\p{Letter}\p{Number}+#.]{2,32}$/u.test(compactTarget)) {
+    return false;
+  }
+  const targetTokens = gapTargetTokens(targetText);
+  if (targetTokens.hasUnsupportedLetterOrNumber) return false;
+  if (targetTokens.latin.size === 0 && targetTokens.han.size === 0) return false;
+  const sourceTokens = sources.reduce((combined, source) => {
+    const tokens = gapTargetTokens(source);
+    for (const token of tokens.latin) combined.latin.add(token);
+    for (const token of tokens.han) combined.han.add(token);
+    return combined;
+  }, { han: new Set(), latin: new Set() });
+  return Array.from(targetTokens.latin).every((token) => sourceTokens.latin.has(token)) &&
+    Array.from(targetTokens.han).every((token) => sourceTokens.han.has(token));
+}
+
+function isGapDisclosureClause(clause, gaps) {
+  if (!Array.isArray(gaps) || gaps.length === 0) return false;
+  const normalizedClause = String(clause).replace(/\s+/gu, "").trim();
+  const pureNegativeStart = /^(?:(?:虽然|尽管|即使)?(?:我|本人|我的)?(?:目前|此前|过去|直接)?(?:确实)?(?:没有|未曾|尚未|从未|缺少|不足|有限|不会把|不能把|不把|不具备|并非|不是|需要继续)|若(?:团队|贵司)接受(?:仍)?需要继续)/u.test(normalizedClause);
+  if (!pureNegativeStart) return false;
+  if (!/(?:没有|未曾|尚未|从未|缺少|不足|有限|补足|缺口|不会把|不能把|不把|不具备|并非|不是|需要继续)/u.test(clause)) {
+    return false;
+  }
+  const canonicalGapStatement = (value) => String(value)
+    .replace(/[\s，,。！？!?；;：:]/gu, "")
+    .replace(/^(?:虽然|尽管|即使)/u, "")
+    .replace(/^(?:我|本人|我的)/u, "")
+    .replace(/^(?:目前|此前|过去|直接|确实)+/u, "");
+  const canonicalClause = canonicalGapStatement(normalizedClause);
+  if (gaps.some((gap) => canonicalClause === canonicalGapStatement(gap))) return true;
+  const conditionalPrefixes = [
+    "若团队接受仍需要继续补足",
+    "若团队接受需要继续补足",
+    "若贵司接受仍需要继续补足",
+    "若贵司接受需要继续补足",
+    "若团队接受仍需要继续学习",
+    "若团队接受需要继续学习",
+    "若贵司接受仍需要继续学习",
+    "若贵司接受需要继续学习",
+    "若团队接受仍需要继续积累",
+    "若团队接受需要继续积累",
+    "若贵司接受仍需要继续积累",
+    "若贵司接受需要继续积累",
+  ];
+  const prefix = conditionalPrefixes.find((candidate) => canonicalClause.startsWith(candidate));
+  if (!prefix || !canonicalClause.endsWith("的候选人")) return false;
+  const target = canonicalClause.slice(prefix.length, -"的候选人".length);
+  return isFullyDerivedGapTarget(target, gaps);
+}
+
+function representationParts(clause) {
+  const text = String(clause).trim();
+  const prefix = ["不会把", "不能把", "不把"].find((candidate) => text.startsWith(candidate));
+  if (!prefix) return undefined;
+  const body = text.slice(prefix.length);
+  const boundaryIndex = body.indexOf("表述成");
+  if (boundaryIndex <= 0 || boundaryIndex !== body.lastIndexOf("表述成")) return undefined;
+  const subject = body.slice(0, boundaryIndex).trim();
+  const target = body.slice(boundaryIndex + "表述成".length).trim();
+  if (!subject || !target) return undefined;
+  return { subject, target };
+}
+
+function representationTargetSupported(target, gaps, requirements) {
+  const sources = [...gaps, ...requirements.map(({ text }) => text)];
+  return isFullyDerivedGapTarget(target, sources);
+}
+
+function isJobDescriptionClause(clause, clauseRequirements) {
+  return !hasCandidateReference(clause) && clauseRequirements.length > 0 &&
+    /^(?:(?:该|此|这个)?岗位|贵司(?:的)?(?:这个)?岗位)(?:主要|重点|需要|要求|负责|关注|涉及)/u.test(clause);
+}
+
+function canonicalNumericToken(token) {
+  const value = String(token).replace(/,/gu, "");
+  const percent = value.endsWith("%");
+  const raw = percent ? value.slice(0, -1) : value;
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return value;
+  return `${numeric}${percent ? "%" : ""}`;
+}
+
+function numericTokens(value) {
+  const text = String(value);
+  const numericPattern = /(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?/gu;
+  return Array.from(text.matchAll(numericPattern), (match) => {
+    const rawUnit = text
+      .slice((match.index ?? 0) + match[0].length)
+      .match(/^\s*(年度|年|个月|月|周|天|小时|分钟|秒|条|次|份|项|人|名|家|页|篇|字|词|所|场|轮|组|万元|亿元|元)/u)?.[1] || "";
+    const unit = rawUnit === "年度" ? "年" : rawUnit;
+    return `${canonicalNumericToken(match[0])}|${unit}`;
+  });
+}
+
 function similarityScore(left, right) {
   const leftTokens = matchTokens(left);
   const rightTokens = matchTokens(right);
@@ -282,6 +642,23 @@ function similarityScore(left, right) {
     if (rightTokens.has(token)) score += token.length >= 3 ? 4 : 2;
   }
   return score;
+}
+
+function normalizedTarget(value) {
+  return String(value ?? "")
+    .replace(/[（(【\[].*$/u, "")
+    .replace(/(?:有限责任公司|股份有限公司|有限公司)$/u, "")
+    .replace(/招聘/gu, "")
+    .replace(/[^\p{Letter}\p{Number}+#.]/gu, "")
+    .toLowerCase();
+}
+
+function mentionsTarget(body, target, fallback) {
+  if (!target) return body.includes(fallback);
+  if (body.includes(target)) return true;
+  const normalizedBody = normalizedTarget(body);
+  const normalized = normalizedTarget(target);
+  return normalized.length >= 2 && normalizedBody.includes(normalized);
 }
 
 const ROLE_STRATEGIES = Object.freeze({
@@ -369,6 +746,29 @@ function roleEvidenceBonus(fact, roleFamily) {
   return rules[roleFamily]?.test(text) ? 18 : 0;
 }
 
+const REQUIREMENT_KEYS = [
+  "hardSkills", "responsibilities", "experienceEducation",
+  "locationWorkMode", "availabilityDuration",
+];
+
+function requirementEntries(jd) {
+  return REQUIREMENT_KEYS.flatMap((requirementType) =>
+    (jd[requirementType] || []).map((requirement, requirementIndex) => ({
+      ...requirement,
+      requirementIndex,
+      requirementType,
+    })),
+  );
+}
+
+function sourceCompatibility(sourceType, requirementType) {
+  if (requirementType === "hardSkills" && ["skill", "project", "experience"].includes(sourceType)) return 12;
+  if (requirementType === "responsibilities" && ["experience", "project", "achievement"].includes(sourceType)) return 10;
+  if (requirementType === "experienceEducation" && ["experience", "education", "project"].includes(sourceType)) return 9;
+  if (["locationWorkMode", "availabilityDuration"].includes(requirementType) && sourceType === "preference") return 12;
+  return ["experience", "project", "skill", "achievement"].includes(sourceType) ? 3 : 0;
+}
+
 function rankFactsForText(facts, text, roleFamily = classifyRoleFamily(text)) {
   const sourcePriority = {
     experience: 5,
@@ -448,6 +848,230 @@ function buildJdSnapshot(value) {
   };
 }
 
+function buildFactMatches(selection, jd, facts) {
+  const factMap = new Map(facts.map((fact) => [fact.factId, fact]));
+  const requirements = requirementEntries(jd);
+  const selectedIds = collectGreetingFactIds(selection);
+  if (selectedIds.length === 0 || requirements.length === 0) {
+    throw new Error("INSUFFICIENT_FACTS");
+  }
+
+  const selectedFacts = selectedIds.map((factId) => factMap.get(factId));
+  if (selectedFacts.some((fact) => !fact)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
+  }
+
+  return selectedFacts.map((fact) => {
+    const requirement = requirements
+      .map((candidate, requirementIndex) => ({
+        candidate,
+        requirementIndex,
+        score:
+          similarityScore(fact.text, candidate.text) +
+          sourceCompatibility(fact.sourceType, candidate.requirementType),
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          left.requirementIndex - right.requirementIndex,
+      )[0]?.candidate;
+    if (!requirement) throw new Error("INSUFFICIENT_FACTS");
+    return { fact, requirement };
+  });
+}
+
+function modelGreetingPackage(plan, jd, matches, facts) {
+  const paragraphs = plan.paragraphs.map((item) => item.trim()).filter(Boolean);
+  const body = paragraphs.join("\n");
+  const outputVisibleLength = visibleLength(body);
+  if (outputVisibleLength < 350 || outputVisibleLength > 450) {
+    throw modelValidationFailure("greeting_length", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (paragraphs.length < 3 || paragraphs.length > 4) {
+    throw modelValidationFailure("greeting_paragraph_count", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (!/^您好(?:[，,!！。]|$)/u.test(paragraphs[0])) {
+    throw modelValidationFailure("greeting_salutation", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) ||
+    /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body) ||
+    /\[MASKED_(?:PHONE|EMAIL|ID|ADDRESS)\]/u.test(body) ||
+    /作为(?:一个)?AI|根据(?:你|您)提供的简历|```|^\s*#|本人具备|贵公司是行业领先者|希望贴近真实工作|愿意踏实学习|分析练习|这些练习|看到岗位主要围绕|这些要求与我的经历和能力比较契合|这段积累能支持我/mu.test(body)
+  ) {
+    throw modelValidationFailure("greeting_forbidden_content", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+
+  const roleTarget = jd.jobTitle?.text;
+  const companyTarget = jd.companyName?.text;
+  const role = roleTarget || "该岗位";
+  const company = companyTarget || "贵司";
+  if (
+    !mentionsTarget(body, roleTarget, "该岗位") ||
+    !mentionsTarget(body, companyTarget, "贵司")
+  ) {
+    throw modelValidationFailure("greeting_target_mention", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+
+  const selectedFacts = new Map(
+    facts
+      .filter(({ factId: id }) => collectGreetingFactIds(plan).includes(id))
+      .map((fact) => [fact.factId, fact]),
+  );
+  assertDomainTermsSupported(body, {
+    jdText: JSON.stringify(jd),
+    factTexts: Array.from(selectedFacts.values(), ({ text }) => text),
+  });
+  assertNamedTermsSupported(body, {
+    companyName: company,
+    factTexts: Array.from(selectedFacts.values(), ({ text }) => text),
+  });
+  const blockedTerms = blockedTermsFromGaps(plan.gaps);
+
+  const requirements = requirementEntries(jd);
+  const targetNumericTokens = new Set(numericTokens([role, company].join("\n")));
+  const jdNumericTokens = new Set(numericTokens([
+    role,
+    company,
+    ...requirements.map(({ text }) => text),
+  ].join("\n")));
+  const gapNumericTokens = new Set(numericTokens(plan.gaps.join("\n")));
+  const evidence = paragraphs.map((paragraph, paragraphIndex) => {
+    const factMatches = new Map();
+    const jdMatches = new Map();
+    for (const clause of claimClauses(paragraph)) {
+      const clauseFacts = evidenceContributors(
+        clause,
+        matches,
+        ({ fact }) => fact.text,
+      );
+      const clauseRequirements = evidenceContributors(
+        clause,
+        requirements,
+        (requirement) => requirement.text,
+      );
+      for (const match of clauseFacts) factMatches.set(match.fact.factId, match);
+      for (const requirement of clauseRequirements) {
+        jdMatches.set(requirement.fieldId, requirement);
+      }
+      const representation = representationParts(clause);
+      const anaphoricRepresentation = representation && /^(?:这段|上述|前述|这些|该)经历$/u.test(representation.subject);
+      const representationFacts = representation
+        ? anaphoricRepresentation
+          ? Array.from(factMatches.values())
+          : evidenceContributors(representation.subject, matches, ({ fact }) => fact.text)
+        : [];
+      const isSupportedRepresentation = Boolean(
+        representation &&
+        representationFacts.length > 0 &&
+        representationTargetSupported(representation.target, plan.gaps, requirements),
+      );
+      if (isSupportedRepresentation) {
+        for (const match of representationFacts) factMatches.set(match.fact.factId, match);
+      }
+      const isSalutation = isSalutationClause(clause);
+      const isApplicationIntent = isExactTargetApplicationIntent(
+        clause,
+        roleTarget,
+        companyTarget,
+      );
+      const isClosing = isPureCommunicationClosing(clause);
+      const isGapDisclosure = isGapDisclosureClause(clause, plan.gaps);
+      const isJobDescription = isJobDescriptionClause(clause, clauseRequirements);
+      const isRhetorical = isSalutation || isApplicationIntent || isClosing;
+      if (clauseFacts.length === 0 && !isRhetorical && !isGapDisclosure && !isJobDescription && !isSupportedRepresentation) {
+        throw modelValidationFailure("greeting_evidence_alignment", {
+          visibleLength: outputVisibleLength,
+          paragraphCount: paragraphs.length,
+          paragraphIndex,
+        });
+      }
+
+      const numbers = numericTokens(clause);
+      const numericFactMatches = clauseFacts.length > 0 ? clauseFacts : representationFacts;
+      const clauseFactNumericTokens = new Set(numericTokens([
+        role,
+        company,
+        ...numericFactMatches.map(({ fact }) => fact.text),
+      ].join("\n")));
+      const allowedNumbers = isJobDescription
+        ? jdNumericTokens
+        : isApplicationIntent || isSalutation || isClosing
+          ? targetNumericTokens
+          : isGapDisclosure
+            ? new Set([...targetNumericTokens, ...gapNumericTokens])
+            : clauseFactNumericTokens;
+      if (numbers.some((number) => !allowedNumbers.has(number))) {
+        throw modelValidationFailure("greeting_numeric_source", {
+          visibleLength: outputVisibleLength,
+          paragraphCount: paragraphs.length,
+          paragraphIndex,
+          unsupportedNumericCount: numbers.filter((number) => !allowedNumbers.has(number)).length,
+        });
+      }
+    }
+
+    if (factMatches.size === 0) {
+      throw modelValidationFailure("greeting_evidence_alignment", {
+        visibleLength: outputVisibleLength,
+        paragraphCount: paragraphs.length,
+        paragraphIndex,
+      });
+    }
+
+    const sources = [];
+    const sourceKeys = new Set();
+    const appendSource = (source) => {
+      const key = source.type === "fact"
+        ? `fact:${source.factId}`
+        : `jd:${source.fieldId}`;
+      if (sourceKeys.has(key)) return;
+      sourceKeys.add(key);
+      sources.push(source);
+    };
+    if (paragraphIndex === 0 && jd.jobTitle) {
+      appendSource({ type: "jd", fieldId: jd.jobTitle.fieldId });
+    }
+    if (paragraphIndex === 0 && jd.companyName) {
+      appendSource({ type: "jd", fieldId: jd.companyName.fieldId });
+    }
+    for (const match of matches) {
+      if (!factMatches.has(match.fact.factId)) continue;
+      const tier = evidenceTierForFact(plan, match.fact.factId);
+      assertParagraphWording(paragraph, tier, blockedTerms);
+      appendSource({ type: "fact", factId: match.fact.factId });
+      appendSource({ type: "jd", fieldId: match.requirement.fieldId });
+    }
+    for (const requirement of requirements) {
+      if (jdMatches.has(requirement.fieldId)) {
+        appendSource({ type: "jd", fieldId: requirement.fieldId });
+      }
+    }
+    return {
+      claimId: `claim_match_${paragraphIndex + 1}`,
+      text: paragraph,
+      sources,
+    };
+  });
+
+  return { body, evidence };
+}
+
 function renderGreeting(jd, selectedFacts) {
   const role = jd.jobTitle?.text || "该岗位";
   const company = jd.companyName?.text || "贵司";
@@ -480,7 +1104,13 @@ function disclosure() {
   };
 }
 
-function createExperienceWorker({ app, database, credentials, now = () => new Date() }) {
+function createExperienceWorker({
+  app,
+  database,
+  credentials,
+  now = () => new Date(),
+  modelCall = callModel,
+}) {
   return async (event) => {
     if (!event || typeof event.jobId !== "string" || !/^job_(?:resume|generation)_[a-f0-9]{24}$/u.test(event.jobId)) return failure("INVALID_REQUEST", "Invalid job.");
     const jobs = new CloudBaseJobRepository(database.collection("ai_jobs"));
@@ -498,7 +1128,7 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
           userId: job.userId,
         });
         if (!application) throw new Error("APPLICATION_NOT_FOUND");
-        const greetingBody = normalizeRewriteModel(await callModel(rewritePrompt(application, job.input.mode)));
+        const greetingBody = normalizeRewriteModel(await modelCall(rewritePrompt(application, job.input.mode)));
         await jobs.transitionJob(job.jobId, "generating", "validating", now());
         const applicationUpdated = await updateExactlyOne(database.collection("applications").where({
           recordType: "application", applicationId: application.applicationId, userId: job.userId,
@@ -541,26 +1171,46 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
       const resumeProfile = decodeStoredProfile(resume?.profile);
       if (!resumeProfile?.confirmed) throw new Error("RESUME_NOT_FOUND");
       const facts = allFacts(resumeProfile);
-      const selection = await callModel(jdPrompt(rawText, facts), {
+      const modelStartedAt = Date.now();
+      const rawSelection = await modelCall(jdPrompt(rawText, facts), {
         maxTokens: 1_300,
         timeoutMs: 10_000,
+        temperature: 0.1,
       });
-      const validFacts = new Map(facts.map((fact) => [fact.factId, fact]));
-      const selected = Array.isArray(selection.selectedFactIds) ? selection.selectedFactIds.map((id) => validFacts.get(id)).filter(Boolean).slice(0, 4) : [];
-      if (selected.length === 0) selected.push(...facts.slice(0, 3));
-      const jdSnapshot = buildJdSnapshot(selection);
+      const modelDurationMs = Date.now() - modelStartedAt;
+      const jdSnapshot = buildJdSnapshot(rawSelection);
+      const selection = normalizeGreetingPlan(rawSelection, {
+        facts,
+        jd: jdSnapshot,
+        rawJdText: rawText,
+      });
+      const matches = buildFactMatches(selection, jdSnapshot, facts);
       await jobs.transitionJob(job.jobId, "parsing", "generating", now());
-      const greetingBody = renderGreeting(jdSnapshot, selected);
+      const greetingPackage = modelGreetingPackage(selection, jdSnapshot, matches, facts);
+      const renderMode = "model_evidence_planned";
+      const { body: greetingBody, evidence } = greetingPackage;
+      const referencedFactIds = new Set(
+        evidence.flatMap(({ sources }) =>
+          sources.flatMap((source) => source.type === "fact" ? [source.factId] : []),
+        ),
+      );
+      const factMap = new Map(facts.map((fact) => [fact.factId, fact]));
+      const factSnapshot = collectGreetingFactIds(selection)
+        .filter((factId, index, orderedIds) =>
+          referencedFactIds.has(factId) && orderedIds.indexOf(factId) === index,
+        )
+        .map((factId) => factMap.get(factId))
+        .filter(Boolean)
+        .map(({ factId: id, sourceType, text }) => ({ factId: id, sourceType, text }));
       await jobs.transitionJob(job.jobId, "generating", "validating", now());
       const applicationId = `application_${job.jobId.slice(-24)}`;
-      const evidence = selected.map((fact, index) => ({ claimId: `claim_${index + 1}`, text: fact.text, sources: [{ type: "fact", factId: fact.factId }] }));
       const application = {
         _id: applicationId, recordType: "application", applicationId, userId: job.userId,
         resumeId: job.resumeId, jobId: job.jobId, status: "not_applied", memo: "", greetingBody,
-        warnings: Array.isArray(selection.warnings) ? selection.warnings.slice(0, 20) : [],
-        omittedRequirements: Array.isArray(selection.omittedRequirements) ? selection.omittedRequirements.slice(0, 20) : [],
-        factSnapshot: facts.map(({ factId: id, sourceType, text }) => ({ factId: id, sourceType, text })),
+        warnings: [], omittedRequirements: [],
+        factSnapshot,
         jdSnapshot, evidence, manualWarnings: [], generationDisclosure: disclosure(),
+        processingMetrics: { modelDurationMs, renderMode },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
       };
       await database.collection("applications").add(application);
@@ -580,10 +1230,13 @@ function createExperienceWorker({ app, database, credentials, now = () => new Da
 }
 
 module.exports = {
+  buildFactMatches,
+  buildJdSnapshot,
   classifyRoleFamily,
   createExperienceWorker,
   jdPrompt,
   maskProtectedText,
+  modelGreetingPackage,
   normalizeResumeModel,
   parseJson,
   publicProcessingError,
