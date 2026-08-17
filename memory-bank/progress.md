@@ -13,7 +13,7 @@
 - **匹配计划：** `GreetingMatchPlan` 固定 `strong / partial / low` 三种模式和 `direct / transferable / background` 三种证据层级，岗位理解顺序为“核心职能 > 行业语境 > 加分标签”。本地硬失败覆盖岗位误判、跨 JD 串台、虚构事实和把可迁移能力写成直接经验。
 - **生产契约：** Prompt 版本升级为 `experience-evidence-planned-v8`，同一次模型响应返回结构化 JD、紧凑证据计划和正文；正文为 350–450 个可见字符、3–4 段，自然包含“您好”并自适应收尾。失败不重试，也不使用本地正文兜底；新处理模式为 `model_evidence_planned`。
 - **实现证据：** Tasks 1–8 已完成，覆盖共享 Schema、无依赖 CommonJS 生产校准器、一次调用 Prompt、生成/改写对齐、三条合成金标准和七份文档同步。三条路线为战略投资 `strong`、金融 AI Agent 产品经理 `strong` 和 SEO 经理 `partial`，均只使用合成数据。
-- **本地收尾：** 旧规则扫描同时覆盖固定 v7 Prompt、250–350、一次纠错、主备和 demo/live 口径。剩余匹配仅为明确标记的历史/已取代记录、简历专属备用解析、负向兼容测试或显式离线 demo，没有当前 v8 正向规则回退。完整 `npm run check` 通过 121 个测试文件、605 项测试和五模块构建。
+- **本地收尾：** 旧规则扫描同时覆盖固定 v7 Prompt、250–350、一次纠错、主备和 demo/live 口径。剩余匹配仅为明确标记的历史/已取代记录、简历专属同 provider 纠错、负向兼容测试或显式离线 demo，没有当前 v8 正向规则回退。干净提交快照通过 118 个测试文件、588 项测试和五模块构建；未提交工作区中的额外测试不作为已提交基线证据。
 - **当前边界：** 本步骤没有调用真实模型、访问云端或部署 worker，也没有启动后续任务。真实 TokenHub 复评、线上时延复验、worker 部署与体验版人工验收仍未开始，因此 10.18 总项继续保持未完成。
 
 ## 体验版真机时延与长期偏好修复 v8（2026-08-15，待真机复验）
@@ -67,7 +67,7 @@
 - **故障根因：** OCR 错误复用了 CloudBase 运行时身份；TokenHub 密钥与输出形态存在漂移；CloudBase JS SDK 对嵌套 profile 的更新返回中未报告有效更新数，导致任务有结果但简历事实未落库。
 - **凭证边界：** worker 改用 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY` 和可选 `APPLYMATE_OCR_SESSION_TOKEN`；TokenHub 继续只使用独立 API Key。`api`、`worker`、`cleanup` 初始化 CloudBase JS SDK 时显式传入受限 `CLOUDBASE_APIKEY`。
 - **持久化兼容：** 结构化简历 profile 在数据库中保存为 JSON 字符串，在 `job.get`、`resume.list`、`resume.confirm` 和生成 worker 边界统一解码，客户端仍收到原有对象契约。该兼容层绕开复杂对象更新静默失败，不改变 API 字段。
-- **简历模型兼容：** TokenHub 的 ResumeProfile 解析响应允许常见 JSON 包装与缺失数组，首次无效输出只进行一次简历专属备用解析尝试；该机制不适用于 v8 岗位生成/改写，后者失败即关闭。
+- **简历模型兼容：** TokenHub 的 ResumeProfile 解析响应允许常见 JSON 包装与缺失数组；首次无效输出会对同一 provider 的同一 `callModel` 入口追加纠错 Prompt 并最多重试一次，不切换备用 provider。该机制不适用于 v8 岗位生成/改写，后者失败即关闭。
 - **云端证据：** 使用完全合成内容完成真实腾讯 OCR 与 TokenHub 闭环。简历任务约 5,469 ms 后进入 `awaiting_user_confirmation`；随后岗位任务约 4,003 ms 成功，生成 293 个可见字符、3 条逐项证据并包含 AI 披露。未使用真实用户数据。
 - **发布边界：** 体验版明确使用真实 AI，只限制微信分发成员；普通账号删除、付费兜底、正式审核和公开发布继续关闭。旧失败任务不会自动重放，验证时应重新上传新文件。
 
