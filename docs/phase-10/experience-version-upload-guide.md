@@ -77,6 +77,15 @@ wx.cloud.callFunction({ name: "worker", data: { healthcheck: true } }).then(cons
 5. 确认结果页显示真实模型披露和“AI生成内容，请核对真实性”。
 6. 在 CloudBase 查看临时文件已清理，再复核腾讯云账单仍为 0 元，OCR 后付费和 TokenHub 按 Token 计费仍关闭。
 
+## 时延与文案复测
+
+1. 更新 worker 后，先在开发者工具重新编译客户端，确保图片会使用 720px/质量 80 临时副本并行上传；不要用旧体验构建判断本轮性能。
+2. 用一份已确认简历连续测试 3 个不同岗位。每次从点击“生成”开始计时，到结果页正文出现为止；分别记录截图张数和总秒数，不记录截图或正文。
+3. 在 CloudBase 的 `applications` 记录中只核对 `processingMetrics.inputDurationMs`、`modelDurationMs`、`totalDurationMs` 和 `renderMode`：输入耗时高说明上传/OCR仍是瓶颈，模型耗时高说明 TokenHub 响应慢，两者都低但页面慢再检查轮询和网络恢复。完成后续 v8 部署的新生成必须为 `model_evidence_planned`；现网部署仍是 v7，本轮文档提交不得把它误记为已更新。
+4. 简历解析和单张清晰 JD 的完整体验目标均小于 20 秒，必须以重新部署后的本轮真实计时为准。简历与 JD 各连续测 3 次，冷启动单独标记，不与两次热运行混算；任何单次超过 20 秒均视为未通过。
+5. 人工检查正文是否为 350–450 个可见字符、3–4 段，并自然包含“您好”；不再要求固定“您好！”首句或固定“期待得到您的回复！”结尾。模型披露的 Prompt 版本必须为 `experience-evidence-planned-v8`，`processingMetrics.renderMode` 必须为 `model_evidence_planned`。
+6. 自动化与格式门通过不等于人工质量通过；至少抽查八类岗位路线，并把失败原因记录为规则标签，不把原始简历、JD 或正文写入仓库。
+
 ## 上传后无法解析简历时
 
 体验版不需要正式审核也能使用真实 AI。若上传简历后没有进入 OCR/AI 解析，按以下顺序检查，不要切回 demo：
