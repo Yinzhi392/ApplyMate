@@ -45,22 +45,29 @@ const VERSIONS = {
   userAgreementVersion: "user-2026-08",
   privacyPolicyVersion: "privacy-2026-08",
 };
-const FACT_TEXT = "使用 SQL 完成3次课程分析";
-const FACT_ID = createFactId("skill", FACT_TEXT);
+const FACTS = [
+  "在课程项目中使用 SQL 完成3次数据分析，清洗课程数据、复核统计口径，并将分析结果整理成结构化结论",
+  "为课程分析编写结构化报告，记录数据口径、关键发现和结果复核过程，并使用图表向项目成员说明分析结论",
+  "根据课程项目反馈调整两项分析口径，重新运行 SQL 查询并复核输出，将修改原因和前后差异同步给项目成员",
+  "在另一项课程任务中整理用户需求与数据字段，拆分资料收集、数据核对和结果说明三个步骤，并按节点记录进展",
+  "对两份课程数据表执行字段映射和缺失值核对，记录异常项并在交付前逐项复查",
+  "在课程汇报中，我向4名项目成员说明数据口径、分析步骤和复核结果，并记录五项提问和三项后续修改事项",
+] as const;
+const FACT_IDS = FACTS.map((text) => createFactId("project", text));
 
 function profile(): ResumeProfile {
   return {
     resumeId: "resume_full_chain",
     education: [],
     experiences: [],
-    projects: [],
-    skills: [{
-      factId: FACT_ID,
-      sourceType: "skill",
-      text: FACT_TEXT,
-      factHash: hashFactText(FACT_TEXT),
-      name: "SQL",
-    }],
+    projects: FACTS.map((text, index) => ({
+      factId: FACT_IDS[index]!,
+      sourceType: "project" as const,
+      text,
+      factHash: hashFactText(text),
+      name: `课程项目事实 ${index + 1}`,
+    })),
+    skills: [],
     languages: [],
     certificates: [],
     achievements: [],
@@ -71,22 +78,39 @@ function profile(): ResumeProfile {
 }
 
 function greeting(): GreetingDraft {
-  const claim = "我使用 SQL 完成3次课程分析";
-  const first = `您好，看到贵司正在招聘产品实习生。${claim}，能够围绕岗位任务认真整理数据、拆解问题并形成清晰结论。`;
-  let second = "我重视事实准确和沟通效率，愿意从基础工作做起，主动同步进展、认真吸收团队反馈，并把每次复盘转化为更稳定的交付。期待有机会进一步交流，也愿意承担细致的资料整理、需求跟进与协作工作。";
-  while (countVisibleCharacters(`${first}\n${second}`) < 250) {
-    second += "我会保持可靠响应，并认真完成每项工作。";
-  }
+  const paragraphs = [
+    "您好，我想应聘示例科技的产品实习生。在课程项目中，我使用 SQL 完成3次数据分析，清洗课程数据、复核统计口径，并将分析结果整理成结构化结论；这段记录能够直接说明我实际处理过数据整理和结果核对任务。",
+    "我也为课程分析编写过结构化报告，完整记录数据口径、关键发现和结果复核过程，并使用图表向项目成员说明分析结论。收到课程项目反馈后，我调整两项分析口径，重新运行 SQL 查询并复核输出，同时同步修改原因和前后差异。",
+    "在另一项课程任务中，我整理用户需求与数据字段，拆分资料收集、数据核对和结果说明三个步骤，并按节点记录进展。我还对两份课程数据表执行字段映射和缺失值核对，记录异常项并在交付前逐项复查。在课程汇报中，我向4名项目成员说明数据口径、分析步骤和复核结果，并记录五项提问和三项后续修改事项。岗位涉及数据整理、需求跟进与团队协作。期待有机会进一步沟通，谢谢。",
+  ];
+  const sources = [
+    [
+      { type: "fact" as const, factId: FACT_IDS[0]! },
+      { type: "jd" as const, fieldId: "jd_job_title" },
+      { type: "jd" as const, fieldId: "jd_responsibility" },
+    ],
+    [
+      { type: "fact" as const, factId: FACT_IDS[1]! },
+      { type: "fact" as const, factId: FACT_IDS[2]! },
+      { type: "jd" as const, fieldId: "jd_responsibility" },
+    ],
+    [
+      { type: "fact" as const, factId: FACT_IDS[3]! },
+      { type: "fact" as const, factId: FACT_IDS[4]! },
+      { type: "fact" as const, factId: FACT_IDS[5]! },
+      { type: "jd" as const, fieldId: "jd_responsibility" },
+    ],
+  ];
+  const body = paragraphs.join("\n");
+  expect(countVisibleCharacters(body)).toBeGreaterThanOrEqual(350);
+  expect(countVisibleCharacters(body)).toBeLessThanOrEqual(450);
   return {
-    body: `${first}\n${second}`,
-    claims: [{
-      claimId: "claim_full_chain",
-      text: claim,
-      sources: [
-        { type: "fact", factId: FACT_ID },
-        { type: "jd", fieldId: "jd_skill_sql" },
-      ],
-    }],
+    body,
+    claims: paragraphs.map((text, index) => ({
+      claimId: `claim_full_chain_${index + 1}`,
+      text,
+      sources: sources[index]!,
+    })),
     omittedRequirements: [],
     warnings: [],
   };
@@ -149,7 +173,7 @@ describe("full generation chain", () => {
       payload: {
         resumeId: "resume_full_chain",
         inputType: "text",
-        text: "产品实习生，要求 SQL，负责数据整理。",
+        text: "示例科技招聘产品实习生，要求 SQL，负责数据整理、需求跟进与团队协作。",
       },
       requestId: "60000011-1234-4234-a234-123456789abc",
     });
@@ -161,7 +185,12 @@ describe("full generation chain", () => {
       parser: new JdStructureParser({
         parseJobDescription: async () => ({
           jobTitle: { fieldId: "jd_job_title", text: "产品实习生", confidence: 1 },
-          responsibilities: [],
+          companyName: { fieldId: "jd_company", text: "示例科技", confidence: 1 },
+          responsibilities: [{
+            fieldId: "jd_responsibility",
+            text: "负责数据整理、需求跟进与团队协作",
+            confidence: 1,
+          }],
           hardSkills: [{ fieldId: "jd_skill_sql", text: "SQL", confidence: 1 }],
           experienceEducation: [],
           locationWorkMode: [],
@@ -207,7 +236,7 @@ describe("full generation chain", () => {
     );
     await expect(resumes.getById("resume_full_chain")).resolves.toBeNull();
     await expect(applications.getByJobId("job_full_chain")).resolves.toMatchObject({
-      factSnapshot: [{ factId: FACT_ID, text: FACT_TEXT }],
+      factSnapshot: FACTS.map((text, index) => ({ factId: FACT_IDS[index], text })),
       jdSnapshot: { jobTitle: { text: "产品实习生" } },
     });
 
@@ -232,7 +261,7 @@ describe("full generation chain", () => {
         providerName: "ApplyMate 本地演示适配器",
         modelName: "本地合成响应",
         modelId: "synthetic-model",
-        promptVersion: "greeting-v1",
+        promptVersion: "greeting-evidence-planned-v8",
       },
     });
   });

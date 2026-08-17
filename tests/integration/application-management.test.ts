@@ -24,12 +24,14 @@ const FACT_ID = "fact_1234567890abcdef12345678";
 
 function validBody(): string {
   const first = "您好，我掌握SQL，能够认真理解岗位资料并清晰整理分析结果。";
-  let second =
+  const second =
+    "在具体执行中，我会先确认问题和数据口径，再完成清洗、分析与结果复核，并用结构化方式同步关键发现。这个过程让我习惯把模糊需求转化为可验证的任务，也能及时暴露风险并依据反馈调整方案。";
+  let third =
     "我重视事实准确与沟通效率，愿意从基础工作做起，主动同步进展、认真吸收反馈，并将每次复盘转化为更稳定的交付。期待有机会进一步交流，也愿意承担细致的资料整理、需求跟进与团队协作工作。";
-  while (countVisibleCharacters(`${first}\n${second}`) < 250) {
-    second += "我会保持可靠响应，并认真完成每项工作。";
+  while (countVisibleCharacters(`${first}\n${second}\n${third}`) < 360) {
+    third += "我会保持可靠响应，并认真完成每项工作。";
   }
-  return `${first}\n${second}`;
+  return `${first}\n${second}\n${third}`;
 }
 
 function application(
@@ -269,7 +271,7 @@ describe("application management", () => {
           canSave: true,
           canCopy: true,
           visibleCharacterCount: countVisibleCharacters(editedBody),
-          paragraphCount: 2,
+          paragraphCount: 3,
           warnings: expect.arrayContaining(["UNSOURCED_NUMBER"]),
         },
       },

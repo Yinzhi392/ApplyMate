@@ -72,6 +72,82 @@ const facts: Fact[] = [
   },
 ];
 
+const naturalJd = buildJdSnapshot({
+  companyName: "示例科技",
+  jobTitle: "AI产品实习生",
+  responsibilities: [
+    "访谈用户并拆分需求，完成原型设计和产品迭代",
+    "根据用户反馈调整信息结构并推进版本验证",
+  ],
+  hardSkills: ["评估模型回复质量并归纳问题"],
+  experienceEducation: [],
+  locationWorkMode: [],
+  availabilityDuration: [],
+});
+
+const naturalFacts: Fact[] = [
+  {
+    factId: "fact_project_discovery",
+    sourceType: "project",
+    text: "在校园智能助手项目中访谈12名学生，整理访谈记录并归纳高频需求，拆分登录、提问和反馈三个核心流程，使用Figma完成交互原型和需求说明；为每个流程标注输入、输出和异常情况，并将访谈结论写入需求说明供项目成员复核",
+  },
+  {
+    factId: "fact_project_iteration",
+    sourceType: "project",
+    text: "组织两轮可用性测试，记录每轮用户操作问题，根据反馈调整入口、导航和信息层级；与开发同学确认技术约束后推进原型迭代",
+  },
+  {
+    factId: "fact_project_record",
+    sourceType: "project",
+    text: "将访谈结论、原型变更与测试结果整理为结构化记录，向项目成员说明需求优先级、修改原因和版本取舍",
+  },
+  {
+    factId: "fact_evaluation_record",
+    sourceType: "experience",
+    text: "在实习中评估300条模型回复，从用户意图、事实准确性和表达完整度判断可用性，将高频问题归纳为三类并整理评估记录；逐条记录判断依据，并将不同问题对应到原始回复供后续复核",
+  },
+  {
+    factId: "fact_project_briefing",
+    sourceType: "project",
+    text: "在一次课程汇报中我向4名项目成员说明数据口径、分析步骤和复核结果",
+  },
+  {
+    factId: "fact_project_followup",
+    sourceType: "project",
+    text: "记录课程汇报中的五项提问，将每项提问关联至原始数据表，随后登记三项修改事项并标注负责人和完成时间",
+  },
+];
+
+function naturalDraft() {
+  return [
+    "您好，我想应聘示例科技的AI产品实习生。在校园智能助手项目中，我访谈12名学生，整理访谈记录并归纳高频需求，拆分登录、提问和反馈三个核心流程，使用Figma完成交互原型和需求说明。我还为每个流程标注输入、输出和异常情况，并将访谈结论写入需求说明供项目成员复核。",
+    "我组织两轮可用性测试，记录每轮用户操作问题，根据反馈调整入口、导航和信息层级；与开发同学确认技术约束后推进原型迭代。我也将访谈结论、原型变更与测试结果整理为结构化记录，向项目成员说明需求优先级、修改原因和版本取舍。",
+    "在实习中，我评估300条模型回复，从用户意图、事实准确性和表达完整度判断可用性，将高频问题归纳为三类并整理评估记录。我逐条记录判断依据，并将不同问题对应到原始回复供后续复核。",
+    "在一次课程汇报中我向4名项目成员说明数据口径、分析步骤和复核结果。我记录课程汇报中的五项提问，将每项提问关联至原始数据表，随后登记三项修改事项并标注负责人和完成时间。期待进一步沟通。谢谢。",
+  ];
+}
+
+function naturalPackage() {
+  const paragraphs = naturalDraft();
+  const plan = {
+    matchMode: "strong",
+    directFactIds: naturalFacts.map(({ factId }) => factId),
+    transferableEvidence: [],
+    supportingFactIds: [],
+    gaps: [],
+    paragraphs,
+  };
+  return {
+    paragraphs,
+    result: modelGreetingPackage(
+      plan,
+      naturalJd,
+      buildFactMatches(plan, naturalJd, naturalFacts),
+      naturalFacts,
+    ),
+  };
+}
+
 function preparedCase(
   calibrationCase: (typeof syntheticGreetingCalibrationCases)[keyof typeof syntheticGreetingCalibrationCases],
   modelOutput: unknown = calibrationCase.modelOutput,
@@ -285,20 +361,50 @@ describe("experience worker privacy and deterministic output", () => {
   });
 
   it("keeps a natural salutation and adaptive closing without rewriting them", () => {
-    const calibrationCase = syntheticGreetingCalibrationCases.investment;
-    const { jdSnapshot, matches, plan } = preparedCase(calibrationCase);
-    const result = modelGreetingPackage(
-      plan,
-      jdSnapshot,
-      matches,
-      [...calibrationCase.facts],
-    );
+    const { paragraphs, result } = naturalPackage();
 
-    expect(result.body).toBe(plan.paragraphs.join("\n"));
-    expect(result.body).toMatch(/^您好，我是/u);
+    expect(result.body).toBe(paragraphs.join("\n"));
+    expect(result.body).toMatch(/^您好，/u);
     expect(result.body).not.toMatch(/期待得到您的回复！$/u);
     expect(result.body.split("\n")).toHaveLength(4);
     expect(result.evidence).toHaveLength(4);
+  });
+
+  it("accepts a natural 350 to 450 character draft backed by distinct facts", () => {
+    const { result } = naturalPackage();
+    const visibleLength = Array.from(result.body.replace(/\s/gu, "")).length;
+
+    expect(visibleLength).toBeGreaterThanOrEqual(350);
+    expect(visibleLength).toBeLessThanOrEqual(450);
+    expect(result.evidence[0]?.sources).toContainEqual({
+      type: "fact",
+      factId: "fact_project_discovery",
+    });
+    expect(result.evidence[1]?.sources).toEqual(
+      expect.arrayContaining([
+        { type: "fact", factId: "fact_project_iteration" },
+        { type: "fact", factId: "fact_project_record" },
+      ]),
+    );
+  });
+
+  it("derives one source-faithful evidence claim for each model paragraph", () => {
+    const { paragraphs, result } = naturalPackage();
+
+    expect(result.evidence.map(({ text }) => text)).toEqual(paragraphs);
+    expect(result.evidence).toHaveLength(paragraphs.length);
+    expect(result.evidence[2]?.sources).toContainEqual({
+      type: "fact",
+      factId: "fact_evaluation_record",
+    });
+    expect(result.evidence[3]?.sources).toContainEqual({
+      type: "fact",
+      factId: "fact_project_briefing",
+    });
+    expect(result.evidence[3]?.sources).toContainEqual({
+      type: "fact",
+      factId: "fact_project_followup",
+    });
   });
 
   it("accepts all locked calibration greetings through the production quality gate", () => {

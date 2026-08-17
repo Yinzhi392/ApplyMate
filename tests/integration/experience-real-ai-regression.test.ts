@@ -84,12 +84,18 @@ describe("experience build real AI regression", () => {
 
   it("keeps greeting generation on a single-call compact evidence plan", () => {
     const worker = read("cloudfunctions/worker/deploy/experience-worker.js");
+    const promptStart = worker.indexOf("function jdPrompt");
+    const promptEnd = worker.indexOf("const REWRITE_WORDING_STRENGTH", promptStart);
+    expect(promptStart).toBeGreaterThanOrEqual(0);
+    expect(promptEnd).toBeGreaterThan(promptStart);
+    const initialPrompt = worker.slice(promptStart, promptEnd);
 
-    expect(worker).toContain('"matchMode"');
-    expect(worker).toContain('"directFactIds"');
-    expect(worker).toContain('"transferableEvidence"');
-    expect(worker).toContain('"paragraphs"');
-    expect(worker).not.toContain('"selectedFactIds"');
+    expect(initialPrompt).toContain('"matchMode"');
+    expect(initialPrompt).toContain('"directFactIds"');
+    expect(initialPrompt).toContain('"transferableEvidence"');
+    expect(initialPrompt).toContain('"paragraphs"');
+    expect(initialPrompt).not.toContain('"claims"');
+    expect(initialPrompt).not.toContain('"selectedFactIds"');
     expect(worker).toContain("experience-evidence-planned-v8");
     expect(worker).toContain("maxTokens: 1_300");
     expect(worker).toContain("timeoutMs: 10_000");
