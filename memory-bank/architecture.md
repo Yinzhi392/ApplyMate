@@ -1,10 +1,57 @@
 # ApplyMate Architecture Memory
 
-**版本：** 阶段 10 开场白质量校准里程碑 v8.11
+**版本：** 阶段 10 低延迟信息流框架 v2 / greeting-v8.19-low-latency
 
-**日期：** 2026-08-17
+**日期：** 2026-08-22
 
-**当前状态：** 阶段 9 已完成并以 `f369de7` 作为基线。阶段 10.1–10.8、10.10–10.15 已完成；10.9 由产品负责人明确风险豁免，不代表双端真机通过。产品负责人确认 CloudBase 与腾讯云账单 0 元、OCR 后付费关闭、TokenHub 按 Token 计费关闭，并批准仅用于开发者/体验成员测试。体验版默认使用真实 CloudBase、腾讯 OCR 与 TokenHub；普通账号删除、正式审核和公开发布保持关闭。体验版上传仍是独立人工平台操作。
+**当前状态：** 产品负责人于 2026-08-22 明确批准低延迟信息流框架 v2。代码已改为选图后最多 3 张原图后台并发上传、`generation.create` 只返回 `jobId`、worker 一次批量取得签名 URL 后并行 OCR、`job.get` 返回本人安全首屏预览。首次生成仍严格一次 Hy3 调用，不生成机械通用兜底；最新批准恢复 350–450 个可见字符、3–4 段、目标称呼、未知 factId、数字来源和隐私格式的本地失败关闭。客户端/服务端管线版本分别为 `jd-submit-v6-background-upload` 与 `greeting-v8.19-low-latency`。新版 `api` 与 `worker` 已部署到固定体验环境并通过只读健康检查；未部署 cleanup、未上传小程序、未创建云资源、未调用真实 OCR/TokenHub。iOS/Android 及 Wi-Fi/移动网络双指标真机计时通过前，10.18 继续未完成。
+
+### 2026-08-22：低延迟信息流框架 v2（api/worker 已部署，待新客户端真机验收）
+
+- 生成页把每张 JD 图建模为 `local / uploading / uploaded / failed`，保存稳定 `localId`、`fileId`、非内容上传耗时和安全错误码。选择原图后立即启动最多 3 张并发上传；成功图片不会因单图失败重传，删除执行尽力云端清理，排序只移动现有引用。上传草稿只在本地保存路径、状态和 fileId，页面恢复后只继续未完成项。
+- `generation.create` 删除 14 次、约 9.75 秒的服务端内联轮询。完成鉴权、幂等任务创建和异步派发后只返回 `{ jobId }`；客户端进入真实任务页密集有限轮询。成功的 `job.get` 以本人 `userId + applicationId` 联查并返回 `resultPreview`，结果页先渲染正文、岗位、公司和模型披露，再后台补拉完整 application。
+- worker 对同一批图片只执行一次 `getTempFileURL({ fileList })`，随后并行调用 OCR 并按用户顺序合并。只有 URL/OCR 传输失败的对应图片才下载原图、用 `sharp` 生成 720×1080/Q80 副本并重试一次；OCR 为空或损坏直接返回可操作错误。原图与副本均不进入 TokenHub。
+- Hy3 仍恰好调用一次。正文在本地检查 350–450 个可见字符、3–4 段、问候、岗位/公司目标、未知事实引用、数字来源和隐私格式；失败明确终止，不调用第二个模型，不生成通用正文。处理记录只保存数字/枚举指标、管线版本和 application 快照，不保存原图、OCR 原文或 Prompt。worker 记录排队、签名/OCR、模型、校验和总耗时；正文显示后客户端异步上报 API 创建、最终 `job.get`、任务到预览及选图到预览耗时，API 核对本人 job/application 关联后才写入两者。
+- 已提交图片在 worker `finally` 中立即尽力删除，删除失败由既有 generation cleanup 语义承接；未提交图片在客户端删除/放弃时尽力清理，1 小时孤立文件规则仍由既有 cleanup 领域服务定义。因为本轮不新增云资源且真实 cleanup 调度仍受限，崩溃后孤立文件的云端定时回收必须在部署前单独核对，不能把本地规则写成已上线能力。
+- 发布硬门为“选图完成到正文首次展示 P50 ≤15 秒、P95 ≤20 秒”和“点击生成到正文首次展示 P50 ≤10 秒、P95 ≤15 秒”；后台上传、API 创建、OCR、模型及结果展示分别以 4/1/2/5.5/1.5 秒子预算诊断。自动测试不替代双端真机计时。
+- 本地完整 `npm run check` 已通过格式、fixture 隔离、敏感信息扫描、严格类型、122 个测试文件共 623 项测试及五模块构建；没有调用真实 OCR 或 TokenHub。
+- 产品负责人单独授权后，CloudBase CLI 3.7.1 于 2026-08-22 只部署 `api` 与 `worker`，两者状态均为 `Deployment completed`；`cleanup` 修改时间保持 2026-08-15，未被触碰。部署后只读健康检查分别耗时 5 ms 和 4 ms，均返回 `experience_real_ai_live / acceptsUserTraffic=true`；worker 只返回模型、OCR 专用凭证与 CloudBase Key 的存在性布尔值，检查未触发 OCR 或模型。
+
+### 历史：2026-08-22 v8.18-direct 首次生成模型正文直出（已被低延迟 v2 的最新批准取代）
+
+- 线上坏文案不是 Prompt 直接生成，而是模型正文被 `unsupported_organization` 拒绝后，由 `buildVerifiedGenericGreeting` 机械拼接。该兜底会暴露事实清单、重复“已确认”并产生无法发送给 HR 的文本，现已从首次生成运行路径和导出中删除。
+- 首次生成仍只调用一次 TokenHub。模型返回可读非空正文后直接保存并展示，不再执行事实映射、机构/数字、证据强度、字数、段落数或跨 JD 术语硬拒绝。Prompt 与三类匹配策略继续负责岗位理解和文案质量。
+- 技术安全检查仅保留空/无法解析输出，以及正文包含邮箱、11 位中国大陆手机号或未替换的敏感遮盖占位符；这些情况明确失败，不生成机械正文。
+- evidence 与 factSnapshot 仅作尽力而为的审计元数据，缺失或覆盖不全不阻断正文。新任务的 `serverPipelineVersion` 固定为 `greeting-v8.18-direct`，`generationMode` 固定为 `model`。
+- 完整 `npm run check` 已通过 122 个测试文件、619 项测试和五模块构建。随后只部署 `worker`；CLI 报告成功，只读健康检查耗时 6 ms 并返回 `experience_real_ai_live / acceptsUserTraffic=true`，凭证诊断完整。本检查未调用 OCR 或模型。v8.17 以下章节保留为历史部署记录，不再代表当前行为。
+
+### 历史：2026-08-22 v8.17 可靠生成与 URL OCR（已被 v8.18-direct 取代）
+
+- 最新 Bad Case 不是 TokenHub 慢：手机端 4MB 强制压缩与上传耗时 22.422 秒；worker 总计 8.516 秒，其中 OCR/输入 1.588 秒、模型 4.812 秒。最终 `unsupported_organization` 来自校验器只查看模型选中的事实，导致正文中来自其他已确认事实的真实学校或公司被误判。
+- 机构、数字、经历和技能仍受严格真实性门保护；区别是机构校验与逐项证据匹配现在可使用全部已确认事实，最终 `factSnapshot` 直接由正文 evidence 引用生成，不再受模型漏选 factId 影响。
+- 首次生成仍最多调用一次 TokenHub。任何结构、长度、证据、数字或机构质量门失败时，立即用已确认事实生成 `verified_generic_fallback`，不再次调用模型，也不向用户返回通用的 `MODEL_INVALID_OUTPUT`。公司、岗位和职责分别安全降级为“贵司”“该岗位”“岗位相关职责与要求”；只有 OCR 无文字、文件损坏、凭证不可用、模型传输失败或免费额度耗尽才允许整单失败。
+- 小程序选择图片时只保存原始本地路径；点击生成后并行直传，不再调用 `wx.compressImage`。worker 优先取得 CloudBase 临时签名 URL 并用 OCR `ImageUrl`；仅当 URL OCR 失败时才用 `sharp@0.35.3` 在云端生成 720×1080、质量 80 的 JPEG 临时副本，OCR 后删除副本，原始临时文件仍由任务 finally 删除。0.34.3 因 2026 年 libvips 高危公告未部署，0.35.3 的生产依赖审计为 0 漏洞。
+- 非内容指标新增原始字节数、手机压缩次数/耗时、上传耗时、OCR 传输方式、云端压缩次数/字节数、OCR/输入、模型、校验、回退与总耗时。客户端版本为 `jd-submit-v5-url-ocr`，worker 版本为 `greeting-v8.17`。
+- 回归覆盖真实机构未被模型选中、无公司/岗位/职责、完全无直接匹配、虚构机构/数字、无效结构与安全回退；目标门禁要求所有可回退校验失败都返回正文，且模型只调用一次。本地 `npm run check` 已通过 122 个测试文件、623 项测试及五模块构建。
+- `api` 与 `worker` 已部署到固定体验环境；CLI 返回部署成功。部署后只读健康检查均返回 `experience_real_ai_live / acceptsUserTraffic=true`，worker 确认 TokenHub、独立 OCR 与 CloudBase 凭证存在。该检查未调用 OCR 或模型；`greeting-v8.17`、`jd-submit-v5-url-ocr` 和真实分段时延须由新建真机任务确认。
+- 微信开发者工具 CLI 已将客户端 `0.10.3` 上传为新的开发版本，包体约 193.3 KB；未提交审核、未公开发布。产品负责人仍需在小程序后台将该开发版本设为体验版，再执行五次新任务验证。
+
+### 历史：2026-08-22 真机真实性误判与分段时延观测（已被低延迟 v2 取代）
+
+- 最近三次真机失败任务的脱敏诊断均指向 `validationGate=jd_field_not_in_current_input`，云端创建到失败分别约 8.6、9.4 和 10.1 秒。问题不在模型超时，而在校准器对模型返回的全部 JD 数组做全量失败关闭：未被核心职能、匹配计划或正文使用的辅助字段也会拖垮任务；此外 `AIAgent`/`AI Agent` 空格漂移和“资本市场”组织误判构成两个可复现边界。
+- `greeting-calibration.js` 先按当前 JD 过滤不可信且未使用的辅助数组字段，再重建 `coreFunctions` 索引；核心职能、证据或正文实际引用的字段仍必须来自当前输入。拉丁专业词使用去空格规范化，“资本市场”不再触发组织名规则。该修复没有降低跨 JD、虚构事实、数字、PII、证据或正文格式门。
+- `generation` 页面选择截图时只保存本地路径并立即返回，不压缩、不上传。用户点击“识别并生成”后，每张图片独立执行 `720px / quality 80` 压缩后立即上传，多张图片管线并发，结果仍按原选择顺序提交；任一失败继续回收同批已上传文件。
+- `api` 在异步派发后执行 14 次有界短轮询，最长约 9.75 秒；常见 8–10 秒任务在首次请求中直接返回 `applicationId`，避免手机任务页额外多轮跨网查询。未在窗口内完成时仍返回 `jobId`，现有任务恢复链路不变。
+- 客户端随 `generation.create` 写入 `clientPipelineVersion=jd-submit-v3` 与 `clientImagePreparationMs`；`api` 只接受有界整数，worker/application/job 只保存图片数、输入/OCR、模型、总耗时和管线版本等非内容指标。由此下一次真机测试可直接区分压缩上传与云端处理，不再用体感反推瓶颈。
+- 新版 `api` 与 `worker` 已于 2026-08-22 部署，只读健康检查均返回 `experience_real_ai_live / acceptsUserTraffic=true`；检查未调用 OCR 或模型。客户端新计时与交互只有重新编译后才生效，在真机计时前不得记为达标。本地完整门禁已通过 121 个测试文件、611 项测试和五模块构建。
+
+### 2026-08-21：v8 worker 部署与三组真实评测失败
+
+- 部署边界严格限定为 `worker`；没有部署 `api`、`cleanup` 或小程序。部署后只读健康检查返回 `experience_real_ai_live / acceptsUserTraffic=true`，并确认模型、OCR 与 CloudBase 凭证存在，不记录凭证值。
+- 调用前控制面确认 Hy3 免费额度 87%、按 Token 计费未启用；OCR 后付费关闭；CloudBase 按量付费关闭且当前周期消耗 0 点；腾讯云本月出账 0.00 元。
+- 战略投资、金融 AI Agent 和 SEO 三条完全合成路线分别只调用一次 Hy3，不重试、不调用评审模型、不保存输入、Prompt、原始响应或正文。总耗时为 4,526、5,100、5,428 ms，中位 5,100 ms。
+- 三次均非网络超时，但模型响应全部未通过 `normalizeGreetingPlan` / `modelGreetingPackage` 组成的 v8 本地结构与真实性边界；按硬失败规则不可计算正文质量分，整组记 0。评测器为保护非内容证据没有持久化具体失败门，因此不能在不新增模型调用的情况下把失败进一步归因到某个子门。
+- 调用后 Hy3 免费额度为 86.6%，按 Token 计费仍未启用。Worker 已部署只证明运行版本更新，不证明生成质量或体验版人工验收通过；新的重试、模型切换或 Prompt 变更必须重新取得产品负责人授权。
 
 ### 2026-08-17：JD 生成 v8 证据计划与本地质量校准
 
@@ -165,7 +212,7 @@
 ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定为三个普通云函数：
 
 - `api`：读取可信 OpenID，执行协议、邀请码、权限和输入校验，创建/查询异步任务，处理轻量数据操作。
-- `worker`：执行文件文字提取、腾讯 OCR、敏感信息遮盖和 Hy3 文本生成。v8 首次生成在一次模型调用中取得结构化 JD、匹配/证据计划与正文，再由共享 Schema 和部署校准器执行质量门；失败不重试，也不使用本地正文兜底。v8 源码已完成本地回归，但尚未部署。
+- `worker`：执行文件文字提取、腾讯 OCR、敏感信息遮盖和 Hy3 文本生成。v8 首次生成在一次模型调用中取得结构化 JD、匹配/证据计划与正文，再由共享 Schema 和部署校准器执行质量门；失败不重试，也不使用本地正文兜底。v8.15 已部署，仍待新客户端真机复验。
 - `cleanup`：回收超时任务、残留文件、过期草稿/幂等记录，并完成账号物理删除。
 
 数据使用 CloudBase 文档数据库，原文件仅临时存入 CloudBase 云存储。运行时不得增加视觉模型、独立服务器、外部队列、Web 框架或付费服务，除非产品负责人另行修订设计并明确批准。
@@ -189,13 +236,13 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 ## 3. 异步数据流
 
 1. 小程序向 `api` 提交写请求和 UUID requestId。
-2. `api` 完成权限、幂等和输入检查，创建 `ai_jobs`，立即返回 `jobId`。
+2. `api` 完成权限、幂等和输入检查并创建 `ai_jobs`；异步派发被接受后只返回 `jobId`，不在 `generation.create` 请求内等待业务结果。
 3. `api` 异步触发 `worker`；`worker` 事务认领任务，避免重复外部调用。
 4. 图片任务进入 OCR；文本任务直接进入解析。所有模型调用前执行脱敏。
 5. JD 包含足够可读职责或要求时直接生成；低置信字段省略并产生提醒，岗位名缺失使用“该岗位”，公司缺失使用“贵司”。内容不足时失败且释放额度，不进入确认页面。
 6. 生成或改写结果经过逐项证据、正文格式、敏感信息和提示注入质量门。
-7. v8 岗位生成或改写首次失败即释放额度，不发起第二次模型调用；简历结构化解析仅在首次结构无效时，通过同一 provider、同一 `callModel` 入口携带纠错 Prompt 再尝试一次。
-8. 客户端通过 `job.get` 恢复状态和结果。
+7. 岗位生成、改写和当前体验路径的简历结构化解析均保持单次模型调用；模型或本地质量门失败即明确结束并释放额度，不自动发起第二次模型调用。
+8. 成功的 `job.get` 返回本人 `resultPreview`，结果页先显示正文再后台补拉完整 application。
 
 ## 4. 状态、时限与幂等
 
@@ -239,7 +286,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `resume.parse`，验证输入后创建草稿和 queued 任务并立即返回 `jobId`/`resumeId`
 - `resume.confirm`，重算事实身份、删除原文件并完成解析任务
 - `resume.list`、`resume.setDefault`、`resume.delete`
-- `generation.create`，验证已确认简历和 JD 输入，创建 queued 任务并立即返回 `jobId`
+- `generation.create`，验证已确认简历和 JD 输入并创建 queued 任务；有界窗口内成功则返回 `applicationId`，否则返回 `jobId`
 - `generation.rewrite`，从本人投递记录快照最新手动正文并立即返回异步 `jobId`
 - `application.list`、`application.get`、`application.update`、`application.delete`
 - `feedback.submit`，为本人单条投递记录创建或覆盖唯一反馈
@@ -777,7 +824,7 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `cloudfunctions/worker/src/greeting-generation-pipeline.ts`：历史兼容管线；旧纠错上下文仅供负向回归，v8 生产生成不得发起第二次模型请求。
 - `cloudfunctions/worker/src/greeting-rewrite-pipeline.ts`：把固定改写模式、低优先级自定义指令、最新正文和快照转换为再次脱敏的文本模型请求。
 - `cloudfunctions/worker/deploy/greeting-calibration.js`：无第三方运行时依赖的 CommonJS 生产校准器，在 CloudBase 部署产物中执行 v8 匹配模式、证据成熟度、来源、跨 JD 和正文硬门。
-- `cloudfunctions/worker/deploy/experience-worker.js`：真实体验 worker；用 `experience-evidence-planned-v8` 在一次模型调用中取得 JD、证据计划和正文，并以 `model_evidence_planned` 保存处理快照。当前源码尚未部署。
+- `cloudfunctions/worker/deploy/experience-worker.js`：真实体验 worker；用 `experience-evidence-planned-v8` 在一次模型调用中取得 JD、证据计划和正文，并以 `model_evidence_planned` 保存处理快照。v8.15 JD 辅助字段过滤、分段耗时与 Prompt 原文约束已部署，需用重新编译的客户端真机复验。
 - `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除，并说明当前无真实调度。
 - `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
 - `cloudfunctions/cleanup/src/index.ts`：cleanup 领域模块公共导出入口，不创建定时器或云连接。
@@ -904,10 +951,18 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `memory-bank/progress.md`：记录真实完成状态、验证证据、例外授权和阻塞。
 - `memory-bank/architecture.md`：记录实际架构、文件职责、数据流和关键决策演变。
 
-## 2026-08-15：体验版长期偏好契约与低往返生成路径
+## 历史：2026-08-15 体验版长期偏好契约与服务端合并查询（2026-08-21 已取代）
 
 - `miniprogram/pages/preferences/index.ts` 与共享 API 契约固定使用 `preferenceText`。`cloudfunctions/api/deploy/experience-api.js` 不再接受历史误字段 `text`，而是执行 NFC 归一化、500 可见字符门禁、按句/换行拆分和稳定 `factId`/`factHash` 生成，将 `preferenceText` 与 `preferenceFacts` 同步写入 `users`。
 - `cloudfunctions/worker/deploy/experience-worker.js` 在岗位生成前读取当前用户的 `preferenceFacts`，与已确认简历事实按 `factId` 去重。长期偏好因此继续受事实来源和反虚构校验保护，不是自由 Prompt 附加文本。
-- `miniprogram/pages/generation/index.ts` 把经评测的 `jpeg-720-q80` 临时副本在选图阶段直接并行上传，页面草稿仅临时保留 fileId；删除图片时同步尝试删除对应云文件。提交阶段优先复用 fileId，上传缺失才执行兼容回退。
-- `cloudfunctions/api/deploy/experience-api.js` 保留 SCF Event 异步派发，但对 `generation.create` 增加有界的服务端终态合并；`live-api.js` 使用 16 次、750ms 间隔的窗口。常见约 9 秒 worker 任务可在同一次云函数请求内返回 `applicationId`，客户端直达结果页；窗口未完成则仍返回 `jobId`，恢复原有任务页轮询。该设计减少跨境/弱网下每次 `job.get` 都重复鉴权与数据库读取的成本，不恢复 API 内同步执行 OCR/模型的旧架构。
+- 当时 `miniprogram/pages/generation/index.ts` 把 `jpeg-720-q80` 副本在选图阶段直接并行上传；2026-08-21 已按产品确认改为选图只保存本地路径，点击生成后才并行执行单图压缩与上传。
+- 当时 `generation.create` 使用 16 次、750ms 的服务端终态合并窗口；2026-08-21 曾临时移除。2026-08-22 根据真实云端 8–10 秒处理证据改为 14 次有界短轮询，最长约 9.75 秒，以在同一请求直接合并常见成功终态；超出窗口仍返回 `jobId`，OCR 和模型始终在异步 worker 内执行。
 - `tests/unit/experience-api-preferences-and-latency.test.ts` 是部署路径的行为回归：要求 `preferenceText` 按共享契约保存且生成事实，并验证 worker 在合并窗口内完成时 `generation.create` 直接返回 `applicationId`。
+
+## 2026-08-22：greeting-v8.16 真机失败与图片时延修复
+
+- 真机任务证据显示，失败分别来自 `job_title_not_in_current_input`、`jd_field_not_in_current_input` 和模型返回的 `directFactIds` 结构异常；这些问题属于 JD 抽取字段或模型计划结构不稳定，不等于候选人正文事实虚构。
+- `greeting-calibration.js` 改为 JD 字段逐项降级：只有能在本次 OCR 原文中回溯的岗位、公司、职责、技能和领域词才进入生成上下文；不可信字段被省略，岗位/公司使用“该岗位/贵司”，不再让单个字段拖垮整次任务。候选人事实、数字、PII 与跨 JD 污染仍保持失败关闭。
+- `experience-worker.js` 在进入严格质量门前，使用同一套段落—事实贡献度算法修复缺失、空值或未知的事实 ID；只能恢复正文实际引用且存在于已确认简历/偏好中的事实，不能新增事实。
+- 真机两次客户端图片准备分别约 18.5 秒和 16.6 秒，而服务端总耗时约 7.9 秒和 8.9 秒。`jd-submit-v4` 因此对不超过 4 MiB 的已测量手机截图跳过重复压缩，较大或未测量图片仍走 720px/质量 80；选图仍立即返回，所有准备、上传和生成从用户点击主按钮后并发开始。
+- `processingMetrics.clientPipelineVersion` 与 `serverPipelineVersion` 分别固定为 `jd-submit-v4` 和 `greeting-v8.16`，用于区分真机复验是否命中新链路。

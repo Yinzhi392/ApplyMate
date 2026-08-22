@@ -9,12 +9,22 @@ export type ClientJobStatus =
   | "failed";
 
 export interface ClientJob {
+  createdAt?: string;
   jobId: string;
   kind: "resume_parse" | "greeting_generate" | "greeting_rewrite";
   status: ClientJobStatus;
   statusLabel: string;
   result?: Record<string, unknown>;
+  resultPreview?: ClientResultPreview;
   error?: { code: string; message: string; retryable: boolean };
+}
+
+export interface ClientResultPreview {
+  applicationId: string;
+  companyName: string;
+  generationDisclosure?: Record<string, unknown>;
+  greetingBody: string;
+  jobTitle: string;
 }
 
 export interface JobProgressView {
@@ -24,6 +34,30 @@ export interface JobProgressView {
   subtitle: string;
   title: string;
 }
+
+export const FAST_JOB_POLL_DELAYS_MS = [
+  250,
+  350,
+  450,
+  550,
+  650,
+  750,
+  850,
+  950,
+  1_000,
+  1_000,
+  1_000,
+  1_000,
+  1_200,
+  1_500,
+  2_000,
+  2_500,
+  3_000,
+  4_000,
+  5_000,
+  6_000,
+  7_000,
+] as const;
 
 const STATUS_PROGRESS: Record<ClientJobStatus, number> = {
   queued: 12,

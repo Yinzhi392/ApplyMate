@@ -91,7 +91,13 @@ function clone(value) {
 }
 
 function decodeJobResult(value) {
-  const result = clone(value);
+  let result;
+  try {
+    result = typeof value === "string" ? JSON.parse(value) : clone(value);
+  } catch {
+    return {};
+  }
+  if (!result || typeof result !== "object" || Array.isArray(result)) return {};
   if (typeof result?.profile !== "string") return result;
   try {
     const profile = JSON.parse(result.profile);
@@ -217,6 +223,7 @@ function createLiveApiHandler({
     const invites = database.collection("invites");
     const auditLogs = database.collection("audit_logs");
     const dailyUsage = database.collection("daily_usage");
+    const applications = database.collection("applications");
     const jobs = new CloudBaseJobRepository(database.collection("ai_jobs"));
     const identityHash = hashTrustedOpenId(openId);
     const timestamp = now().toISOString();
@@ -290,6 +297,32 @@ function createLiveApiHandler({
       if (job === null || job.userId !== user.userId) {
         return failure("NOT_FOUND", "Job was not found.");
       }
+      const result = job.result === undefined ? undefined : decodeJobResult(job.result);
+      const applicationId = typeof result?.applicationId === "string" ? result.applicationId : "";
+      const application = job.status === "succeeded" && applicationId !== ""
+        ? await findOne(applications, {
+            recordType: "application",
+            applicationId,
+            userId: user.userId,
+          })
+        : null;
+      const resultPreview = application === null
+        ? undefined
+        : {
+            applicationId,
+            greetingBody: String(application.greetingBody || ""),
+            jobTitle: String(application.jdSnapshot?.jobTitle?.text || "该岗位"),
+            companyName: String(application.jdSnapshot?.companyName?.text || "贵司"),
+            ...(application.generationDisclosure === undefined
+              ? {}
+              : {
+                  generationDisclosure: {
+                    availability: "available",
+                    ...clone(application.generationDisclosure),
+                    message: "内容由已公示的 AI 服务生成",
+                  },
+                }),
+          };
       return {
         ok: true,
         data: {
@@ -299,7 +332,11 @@ function createLiveApiHandler({
           statusLabel: JOB_STATUS_LABELS[job.status],
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
-          ...(job.result === undefined ? {} : { result: decodeJobResult(job.result) }),
+          ...(job.processingMetrics === undefined
+            ? {}
+            : { processingMetrics: clone(job.processingMetrics) }),
+          ...(result === undefined ? {} : { result }),
+          ...(resultPreview === undefined ? {} : { resultPreview }),
           ...(job.error === undefined ? {} : { error: clone(job.error) }),
         },
       };

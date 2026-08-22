@@ -3,10 +3,38 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createJobProgressView,
   createJobPoller,
+  FAST_JOB_POLL_DELAYS_MS,
   type ClientJob,
 } from "../../miniprogram/core/job-poller.js";
 
 describe("mini-program job recovery", () => {
+  it("observes fast worker completions without multi-second gaps", () => {
+    const pollTimes: number[] = [];
+    let elapsed = 0;
+    for (const delay of FAST_JOB_POLL_DELAYS_MS) {
+      pollTimes.push(elapsed);
+      elapsed += delay;
+    }
+
+    expect(pollTimes.slice(0, 13)).toEqual([
+      0,
+      250,
+      600,
+      1_050,
+      1_600,
+      2_250,
+      3_000,
+      3_850,
+      4_800,
+      5_800,
+      6_800,
+      7_800,
+      8_800,
+    ]);
+    expect(pollTimes[12]! - pollTimes[11]!).toBeLessThanOrEqual(1_000);
+    expect(pollTimes.at(-1)).toBeLessThanOrEqual(45_000);
+  });
+
   it("uses bounded backoff and stops at a terminal state", async () => {
     const jobs: ClientJob[] = [
       { jobId: "job_1", kind: "greeting_generate", status: "queued", statusLabel: "排队" },

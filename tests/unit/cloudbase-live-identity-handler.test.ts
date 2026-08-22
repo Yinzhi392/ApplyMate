@@ -350,6 +350,52 @@ describe("CloudBase live identity and invite handler", () => {
     await expect(
       user({ action: "job.get", payload: { jobId: "invalid" } }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+
+    state.documents("applications").push({
+      _id: "application_preview_001",
+      recordType: "application",
+      applicationId: "application_preview_001",
+      userId: owner?.userId,
+      greetingBody: "您好，这是只返回给当前用户的首屏正文。",
+      jdSnapshot: {
+        jobTitle: { text: "产品实习生" },
+        companyName: { text: "示例公司" },
+      },
+      generationDisclosure: { mode: "real", modelName: "腾讯混元" },
+    });
+    state.documents("ai_jobs").push({
+      _id: "job_synthetic_live_preview_001",
+      recordType: "ai_job",
+      claimState: "claimed",
+      jobId: "job_synthetic_live_preview_001",
+      userId: owner?.userId,
+      kind: "greeting_generate",
+      status: "succeeded",
+      statusHistory: [{ status: "succeeded", enteredAt: timestamp }],
+      result: { applicationId: "application_preview_001" },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await expect(user({
+      action: "job.get",
+      payload: { jobId: "job_synthetic_live_preview_001" },
+    })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        resultPreview: {
+          applicationId: "application_preview_001",
+          companyName: "示例公司",
+          greetingBody: "您好，这是只返回给当前用户的首屏正文。",
+          jobTitle: "产品实习生",
+          generationDisclosure: { availability: "available" },
+        },
+      },
+    });
+    await expect(other({
+      action: "job.get",
+      payload: { jobId: "job_synthetic_live_preview_001" },
+    })).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
   });
 
   it("creates only administrator-owned synthetic reliability probes idempotently", async () => {

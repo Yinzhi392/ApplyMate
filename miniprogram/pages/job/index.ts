@@ -1,6 +1,7 @@
 import {
   createJobPoller,
   createJobProgressView,
+  FAST_JOB_POLL_DELAYS_MS,
   JobPollingError,
   type ClientJob,
 } from "../../core/job-poller.js";
@@ -38,8 +39,13 @@ Page({
     }
     this.setData({ errorMessage: "", loading: true, weakNetwork: false });
     const poller = createJobPoller({
-      delaysMs: [0, 500, 1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000],
-      getJob: async (jobId) => runtime().api.read<ClientJob>("job.get", { jobId }),
+      delaysMs: FAST_JOB_POLL_DELAYS_MS,
+      getJob: async (jobId) => {
+        const startedAt = Date.now();
+        const job = await runtime().api.read<ClientJob>("job.get", { jobId });
+        this.latestJobFetchMs = Date.now() - startedAt;
+        return job;
+      },
       wait: async (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
     });
     try {
@@ -58,7 +64,7 @@ Page({
         });
       });
       this.setData({ loading: false });
-      this.openNext(job);
+      this.openNext(job, this.latestJobFetchMs);
     } catch (error) {
       const paused = error instanceof JobPollingError && error.code === "POLLING_PAUSED";
       this.setData({
@@ -72,7 +78,9 @@ Page({
     }
   },
 
-  openNext(job: ClientJob): void {
+  latestJobFetchMs: 0,
+
+  openNext(job: ClientJob, resultFetchMs = 0): void {
     if (job.status === "awaiting_user_confirmation") {
       if (job.kind !== "resume_parse") {
         this.setData({
@@ -86,6 +94,25 @@ Page({
     }
     if (job.status === "succeeded" && job.kind !== "resume_parse") {
       const applicationId = String(job.result?.applicationId ?? "");
+      if (job.resultPreview?.applicationId === applicationId) {
+        runtime().setResultPreview(job.resultPreview);
+        const displayedAtMs = Date.now();
+        const timing = runtime().getJobTiming(job.jobId);
+        const createdAtMs = Date.parse(job.createdAt ?? "");
+        void runtime().api.write<{ recorded: true }>("performance.recordPreview", {
+          applicationId,
+          jobId: job.jobId,
+          clientApiCreateMs: timing?.apiCreateMs ?? 0,
+          clientJobToPreviewMs: Number.isFinite(createdAtMs)
+            ? Math.max(0, displayedAtMs - createdAtMs)
+            : 0,
+          clientResultFetchMs: Math.max(0, resultFetchMs),
+          clientSelectionToPreviewMs: timing === undefined
+            ? 0
+            : Math.max(0, displayedAtMs - timing.selectionStartedAtMs),
+        }).catch(() => undefined);
+        runtime().clearJobTiming(job.jobId);
+      }
       openPage(`/pages/result/index?applicationId=${applicationId}`);
     }
   },

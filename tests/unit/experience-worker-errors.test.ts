@@ -29,6 +29,7 @@ describe("experience worker public errors", () => {
   });
 
   it.each([
+    "greeting_length",
     "match_plan_schema",
     "cross_jd_domain_term",
     "evidence_strength_mismatch",

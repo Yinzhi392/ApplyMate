@@ -12,8 +12,8 @@ describe("visible character rules", () => {
   });
 
   it("counts exact greeting boundaries", () => {
-    expect(countVisibleCharacters("字".repeat(250))).toBe(250);
     expect(countVisibleCharacters("字".repeat(350))).toBe(350);
+    expect(countVisibleCharacters("字".repeat(450))).toBe(450);
   });
 });
 

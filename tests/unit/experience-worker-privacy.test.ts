@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { JobDescription } from "../../shared/src/index.js";
+
 import { syntheticGreetingCalibrationCases } from "../helpers/synthetic-greeting-calibration-cases.js";
 
-type Fact = {
-  factId: string;
-  sourceType: string;
-  text: string;
+type JdField = { fieldId: string; text: string };
+type JobDescription = {
+  companyName?: JdField;
+  jobTitle?: JdField;
+  responsibilities: JdField[];
+  hardSkills: JdField[];
+  experienceEducation: JdField[];
+  locationWorkMode: JdField[];
+  availabilityDuration: JdField[];
+};
+type Fact = { factId: string; sourceType: string; text: string };
+type Match = {
+  fact: Fact;
+  requirement: JdField & { requirementIndex: number; requirementType: string };
 };
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -17,36 +27,23 @@ const {
   maskProtectedText,
   modelGreetingPackage,
   rankFactsForText,
-  renderGreeting,
+  repairGreetingSelectionShape,
   similarityScore,
-} = require(
-  "../../cloudfunctions/worker/deploy/experience-worker.js",
-) as {
-  buildFactMatches(
-    selection: unknown,
-    jd: JobDescription,
-    facts: Fact[],
-  ): Array<{ fact: Fact; requirement: { fieldId: string; text: string } }>;
+} = require("../../cloudfunctions/worker/deploy/experience-worker.js") as {
+  buildFactMatches(selection: unknown, jd: JobDescription, facts: Fact[]): Match[];
   buildJdSnapshot(input: unknown): JobDescription;
-  classifyRoleFamily(value: string): string;
+  classifyRoleFamily(text: string): string;
   jdPrompt(text: string, facts: readonly Fact[]): string;
   maskProtectedText(value: string): string;
   modelGreetingPackage(
-    plan: Record<string, unknown> & { paragraphs: string[] },
+    selection: Record<string, unknown> & { paragraphs: string[] },
     jd: JobDescription,
-    matches: Array<{ fact: Fact; requirement: { fieldId: string; text: string } }>,
+    matches: Match[],
     facts: Fact[],
   ): { body: string; evidence: Array<{ text: string; sources: unknown[] }> };
-  rankFactsForText(facts: readonly Fact[], text: string): readonly Fact[];
+  rankFactsForText(facts: readonly Fact[], text: string): Fact[];
+  repairGreetingSelectionShape(input: unknown, facts: readonly Fact[]): Record<string, unknown>;
   similarityScore(left: string, right: string): number;
-  renderGreeting(
-    jd: {
-      companyName?: { text: string };
-      jobTitle?: { text: string };
-      responsibilities: Array<{ text: string }>;
-    },
-    facts: Array<{ text: string }>,
-  ): string;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -59,92 +56,57 @@ const { normalizeGreetingPlan } = require(
   ): Record<string, unknown> & { paragraphs: string[] };
 };
 
+const jd: JobDescription = {
+  companyName: { fieldId: "jd_company", text: "示例科技" },
+  jobTitle: { fieldId: "jd_title", text: "AI产品实习生" },
+  responsibilities: [
+    { fieldId: "jd_responsibility", text: "理解用户需求，完成原型并推动迭代" },
+  ],
+  hardSkills: [{ fieldId: "jd_skill", text: "评估模型回复质量并归纳问题" }],
+  experienceEducation: [],
+  locationWorkMode: [],
+  availabilityDuration: [],
+};
+
 const facts: Fact[] = [
   {
     factId: "fact_project",
     sourceType: "project",
-    text: "在校园智能助手项目中访谈用户、拆分需求，使用Figma完成原型并组织可用性测试",
+    text: "在校园智能助手项目中负责访谈目标用户、归纳高频问题、拆分核心流程，使用Figma完成原型并组织可用性测试；根据用户反馈调整项目入口和信息层级，推进方案成为可讨论、可测试的交付物；在信息不完整时判断需求优先级，并和研发同学围绕约束推进迭代；把访谈信息整理成高频问题和核心流程，使用Figma原型验证需求，完成测试后依据反馈同步方案取舍",
   },
   {
     factId: "fact_evaluation",
     sourceType: "experience",
-    text: "在实习中参与模型回复质量评估，从用户意图、事实准确性和表达完整度判断结果",
+    text: "在实习中参与模型回复质量评估，从用户意图、事实准确性和表达完整度判断结果是否可用；在评估中同时检查用户意图、事实准确性和表达完整度，并据此判断模型回复是否可用；评估模型回复质量并归纳问题",
   },
 ];
 
-const naturalJd = buildJdSnapshot({
-  companyName: "示例科技",
-  jobTitle: "AI产品实习生",
-  responsibilities: [
-    "访谈用户并拆分需求，完成原型设计和产品迭代",
-    "根据用户反馈调整信息结构并推进版本验证",
-  ],
-  hardSkills: ["评估模型回复质量并归纳问题"],
-  experienceEducation: [],
-  locationWorkMode: [],
-  availabilityDuration: [],
-});
-
-const naturalFacts: Fact[] = [
-  {
-    factId: "fact_project_discovery",
-    sourceType: "project",
-    text: "在校园智能助手项目中访谈12名学生，整理访谈记录并归纳高频需求，拆分登录、提问和反馈三个核心流程，使用Figma完成交互原型和需求说明；为每个流程标注输入、输出和异常情况，并将访谈结论写入需求说明供项目成员复核",
-  },
-  {
-    factId: "fact_project_iteration",
-    sourceType: "project",
-    text: "组织两轮可用性测试，记录每轮用户操作问题，根据反馈调整入口、导航和信息层级；与开发同学确认技术约束后推进原型迭代",
-  },
-  {
-    factId: "fact_project_record",
-    sourceType: "project",
-    text: "将访谈结论、原型变更与测试结果整理为结构化记录，向项目成员说明需求优先级、修改原因和版本取舍",
-  },
-  {
-    factId: "fact_evaluation_record",
-    sourceType: "experience",
-    text: "在实习中评估300条模型回复，从用户意图、事实准确性和表达完整度判断可用性，将高频问题归纳为三类并整理评估记录；逐条记录判断依据，并将不同问题对应到原始回复供后续复核",
-  },
-  {
-    factId: "fact_project_briefing",
-    sourceType: "project",
-    text: "在一次课程汇报中我向4名项目成员说明数据口径、分析步骤和复核结果",
-  },
-  {
-    factId: "fact_project_followup",
-    sourceType: "project",
-    text: "记录课程汇报中的五项提问，将每项提问关联至原始数据表，随后登记三项修改事项并标注负责人和完成时间",
-  },
-];
-
-function naturalDraft() {
-  return [
-    "您好，我想应聘示例科技的AI产品实习生。在校园智能助手项目中，我访谈12名学生，整理访谈记录并归纳高频需求，拆分登录、提问和反馈三个核心流程，使用Figma完成交互原型和需求说明。我还为每个流程标注输入、输出和异常情况，并将访谈结论写入需求说明供项目成员复核。",
-    "我组织两轮可用性测试，记录每轮用户操作问题，根据反馈调整入口、导航和信息层级；与开发同学确认技术约束后推进原型迭代。我也将访谈结论、原型变更与测试结果整理为结构化记录，向项目成员说明需求优先级、修改原因和版本取舍。",
-    "在实习中，我评估300条模型回复，从用户意图、事实准确性和表达完整度判断可用性，将高频问题归纳为三类并整理评估记录。我逐条记录判断依据，并将不同问题对应到原始回复供后续复核。",
-    "在一次课程汇报中我向4名项目成员说明数据口径、分析步骤和复核结果。我记录课程汇报中的五项提问，将每项提问关联至原始数据表，随后登记三项修改事项并标注负责人和完成时间。期待进一步沟通。谢谢。",
-  ];
+function matchedFacts(): Match[] {
+  return buildFactMatches(
+    {
+      matchMode: "strong",
+      directFactIds: ["fact_project", "fact_evaluation"],
+      transferableEvidence: [],
+      supportingFactIds: [],
+      gaps: [],
+    },
+    jd,
+    facts,
+  );
 }
 
-function naturalPackage() {
-  const paragraphs = naturalDraft();
-  const plan = {
+function localPlan(paragraphs: string[]) {
+  return {
+    jobTitle: "AI产品实习生",
+    companyName: "示例科技",
+    coreFunctions: [],
+    domainContext: [],
     matchMode: "strong",
-    directFactIds: naturalFacts.map(({ factId }) => factId),
+    directFactIds: ["fact_project", "fact_evaluation"],
     transferableEvidence: [],
     supportingFactIds: [],
     gaps: [],
     paragraphs,
-  };
-  return {
-    paragraphs,
-    result: modelGreetingPackage(
-      plan,
-      naturalJd,
-      buildFactMatches(plan, naturalJd, naturalFacts),
-      naturalFacts,
-    ),
   };
 }
 
@@ -162,7 +124,28 @@ function preparedCase(
   return { jdSnapshot, matches, plan };
 }
 
-describe("experience worker privacy and deterministic output", () => {
+function naturalDraft(): string {
+  return [
+    "您好，我想应聘示例科技的AI产品实习生。我在校园智能助手项目中负责访谈目标用户、归纳高频问题、拆分核心流程，并使用Figma完成原型、组织可用性测试；该岗位需要理解用户需求、完成原型并推动迭代。",
+    "我根据用户反馈调整了项目入口和信息层级，推进方案成为可讨论、可测试的交付物。在信息不完整时我会先判断需求优先级，再和研发同学围绕约束推进迭代。项目推进中我把访谈信息整理成高频问题和核心流程，再使用Figma原型验证需求；完成测试后我依据反馈调整入口与信息层级，并同步方案取舍。",
+    "此外，我在实习中参与模型回复质量评估，从用户意图、事实准确性和表达完整度判断结果是否可用。我在评估中同时检查用户意图、事实准确性和表达完整度，并据此判断模型回复是否可用。我也能依据用户意图、事实准确性和表达完整度评估模型回复质量并归纳问题。期待进一步与您沟通。",
+  ].join("\n");
+}
+
+describe("experience worker privacy and case-calibrated output", () => {
+  it("recovers malformed model fact-id arrays from paragraph evidence", () => {
+    const repaired = repairGreetingSelectionShape({
+      ...syntheticGreetingCalibrationCases.financialAiAgent.modelOutput,
+      directFactIds: null,
+    }, syntheticGreetingCalibrationCases.financialAiAgent.facts);
+
+    expect(repaired.directFactIds).toEqual(expect.arrayContaining([
+      "fact_eval",
+      "fact_product",
+    ]));
+    expect(repaired.matchMode).toBe("strong");
+  });
+
   it("masks protected contact details before TokenHub", () => {
     const masked = maskProtectedText(
       "手机 13800138000，邮箱 apply@example.com，身份证 110101199001011234。",
@@ -173,19 +156,29 @@ describe("experience worker privacy and deterministic output", () => {
     expect(masked).toContain("[MASKED_PHONE]");
   });
 
+  it("routes representative jobs to distinct evidence strategies", () => {
+    expect(classifyRoleFamily("负责大模型回复评测、错误归因和评测集建设")).toBe(
+      "ai_evaluation_product",
+    );
+    expect(classifyRoleFamily("参与行业研究、公司估值、DCF模型与战略投资分析")).toBe(
+      "investment_research",
+    );
+    expect(classifyRoleFamily("负责用户研究、产品原型、需求分析与版本迭代")).toBe(
+      "general_product",
+    );
+  });
+
   it("prioritizes core job functions before finance context and job labels", () => {
     for (const calibrationCase of Object.values(syntheticGreetingCalibrationCases)) {
       expect(classifyRoleFamily(calibrationCase.jd)).toBe(calibrationCase.expectedFamily);
-      expect(rankFactsForText(calibrationCase.facts, calibrationCase.jd)[0]?.factId).toBe(
-        calibrationCase.expectedFirstFactId,
-      );
+      expect(rankFactsForText(calibrationCase.facts, calibrationCase.jd)[0]?.factId)
+        .toBe(calibrationCase.expectedFirstFactId);
     }
   });
 
   it("does not route a financial AI evaluation role to investment research", () => {
-    expect(classifyRoleFamily(syntheticGreetingCalibrationCases.financialAiAgent.jd)).toBe(
-      "ai_evaluation_product",
-    );
+    expect(classifyRoleFamily(syntheticGreetingCalibrationCases.financialAiAgent.jd))
+      .toBe("ai_evaluation_product");
   });
 
   it("lets strong AI evaluation duties beat broad finance, fundraising, and SEO tags", () => {
@@ -274,7 +267,7 @@ describe("experience worker privacy and deterministic output", () => {
   });
 
   it("changes ranking when the JD-specific evidence changes", () => {
-    const adaptableFacts = [
+    const adaptableFacts: Fact[] = [
       { factId: "fact_sql", sourceType: "project", text: "使用 SQL 完成留存数据分析" },
       { factId: "fact_interview", sourceType: "project", text: "开展用户访谈并完成需求原型" },
     ];
@@ -341,70 +334,158 @@ describe("experience worker privacy and deterministic output", () => {
     expect(prompt).toContain('"sourceType":"preference"');
   });
 
-  it("renders a 250 to 350 character two-paragraph greeting from facts", () => {
-    const body = renderGreeting(
-      {
-        companyName: { text: "示例科技" },
-        jobTitle: { text: "AI 产品实习生" },
-        responsibilities: [{ text: "需求分析、用户研究和产品迭代" }],
-      },
-      [
-        { text: "负责校园 AI 助手项目的需求梳理与原型设计" },
-        { text: "参与用户访谈并整理反馈" },
-        { text: "熟悉 Figma 和数据分析工具" },
-      ],
-    );
-    const count = Array.from(body.replace(/\s/gu, "")).length;
-    expect(count).toBeGreaterThanOrEqual(250);
-    expect(count).toBeLessThanOrEqual(350);
-    expect(body.split("\n")).toHaveLength(2);
-  });
-
   it("keeps a natural salutation and adaptive closing without rewriting them", () => {
-    const { paragraphs, result } = naturalPackage();
+    const paragraphs = naturalDraft().split("\n");
+    const result = modelGreetingPackage(localPlan(paragraphs), jd, matchedFacts(), facts);
 
     expect(result.body).toBe(paragraphs.join("\n"));
     expect(result.body).toMatch(/^您好，/u);
     expect(result.body).not.toMatch(/期待得到您的回复！$/u);
-    expect(result.body.split("\n")).toHaveLength(4);
-    expect(result.evidence).toHaveLength(4);
+    expect(result.body.split("\n")).toHaveLength(3);
   });
 
-  it("accepts a natural 350 to 450 character draft backed by distinct facts", () => {
-    const { result } = naturalPackage();
-    const visibleLength = Array.from(result.body.replace(/\s/gu, "")).length;
+  it("uses only plan-selected facts and keeps their deterministic order", () => {
+    const rankingJd: JobDescription = {
+      jobTitle: { fieldId: "jd_title", text: "数据分析实习生" },
+      responsibilities: [{ fieldId: "jd_responsibility", text: "分析业务数据并形成报告" }],
+      hardSkills: [{ fieldId: "jd_skill", text: "熟练使用 SQL 和 Python" }],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+    const rankingFacts = [
+      { factId: "fact_school", sourceType: "education", text: "就读于示例大学" },
+      { factId: "fact_sql", sourceType: "skill", text: "熟练使用 SQL 完成数据分析" },
+      { factId: "fact_report", sourceType: "project", text: "整理业务数据并输出分析报告" },
+    ];
 
-    expect(visibleLength).toBeGreaterThanOrEqual(350);
-    expect(visibleLength).toBeLessThanOrEqual(450);
-    expect(result.evidence[0]?.sources).toContainEqual({
-      type: "fact",
-      factId: "fact_project_discovery",
-    });
-    expect(result.evidence[1]?.sources).toEqual(
-      expect.arrayContaining([
-        { type: "fact", factId: "fact_project_iteration" },
-        { type: "fact", factId: "fact_project_record" },
-      ]),
+    const matches = buildFactMatches(
+      {
+        matchMode: "strong",
+        directFactIds: ["fact_sql"],
+        transferableEvidence: [],
+        supportingFactIds: ["fact_report"],
+        gaps: [],
+      },
+      rankingJd,
+      rankingFacts,
     );
+
+    expect(matches.map(({ fact }) => fact.factId)).toEqual(["fact_sql", "fact_report"]);
+    expect(matches.some(({ fact }) => fact.factId === "fact_school")).toBe(false);
   });
 
-  it("derives one source-faithful evidence claim for each model paragraph", () => {
-    const { paragraphs, result } = naturalPackage();
+  it("accepts a natural 350 to 450 character draft with compact evidence references", () => {
+    const body = naturalDraft();
+    const result = modelGreetingPackage(
+      localPlan(body.split("\n")),
+      jd,
+      matchedFacts(),
+      facts,
+    );
 
-    expect(result.evidence.map(({ text }) => text)).toEqual(paragraphs);
-    expect(result.evidence).toHaveLength(paragraphs.length);
-    expect(result.evidence[2]?.sources).toContainEqual({
-      type: "fact",
-      factId: "fact_evaluation_record",
-    });
-    expect(result.evidence[3]?.sources).toContainEqual({
-      type: "fact",
-      factId: "fact_project_briefing",
-    });
-    expect(result.evidence[3]?.sources).toContainEqual({
-      type: "fact",
-      factId: "fact_project_followup",
-    });
+    expect(visibleLengthForTest(result.body)).toBeGreaterThanOrEqual(350);
+    expect(visibleLengthForTest(result.body)).toBeLessThanOrEqual(450);
+    expect(result.evidence).toHaveLength(3);
+    expect(result.evidence[1]?.sources).toEqual([
+      { type: "fact", factId: "fact_project" },
+      { type: "jd", fieldId: "jd_responsibility" },
+    ]);
+  });
+
+  it("rejects a complete draft below the calibrated 350-character floor", () => {
+    const paragraphs = [
+      "您好，我想应聘示例科技的AI产品实习生。我关注真实用户场景，也习惯把模糊问题整理为能够讨论和验证的产品方案；这种先判断问题再推进验证的方式，是我关注该岗位的重要原因。",
+      "在校园智能助手项目中，我访谈目标用户、归纳高频问题、拆分核心流程，并用Figma完成原型后组织可用性测试。我根据反馈调整入口和信息层级，也会主动说明方案取舍，让项目从想法逐步变成可讨论、可测试的交付物。",
+      "此外，我在实习中参与模型回复质量评估，能够从用户意图、事实准确性和表达完整度判断结果是否可用。我希望把这项判断能力用于贵司的产品工作，也愿意进一步介绍项目中的具体取舍并了解团队需求。",
+    ];
+    while (visibleLengthForTest(paragraphs.join("\n")) < 309) {
+      paragraphs[2] += "期待交流。";
+    }
+    const body = paragraphs.join("\n");
+
+    expect(visibleLengthForTest(body)).toBeGreaterThanOrEqual(300);
+    expect(visibleLengthForTest(body)).toBeLessThan(350);
+    expect(() =>
+      modelGreetingPackage(localPlan(paragraphs), jd, matchedFacts(), facts),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("rejects a concise draft below the calibrated 350-character floor", () => {
+    const paragraphs = [
+      "您好！我想应聘示例科技的AI产品实习生。我关注真实用户场景，也习惯先理解问题，再把需求整理成可以验证的产品方案。",
+      "在校园智能助手项目中，我访谈用户、归纳高频问题、拆分核心流程，并用Figma完成原型和可用性测试。我根据反馈调整入口和信息层级，也会向协作同学说明方案取舍。这让我更熟悉在信息不完整时确定优先级并推进迭代。",
+      "此外，我在实习中参与模型回复质量评估，能够从用户意图、事实准确性和表达完整度判断结果是否可用。我希望把这项判断能力用于贵司的产品工作。期待得到您的回复！",
+    ];
+    const body = paragraphs.join("\n");
+
+    expect(visibleLengthForTest(body)).toBeGreaterThanOrEqual(230);
+    expect(visibleLengthForTest(body)).toBeLessThan(300);
+    expect(() =>
+      modelGreetingPackage(localPlan(paragraphs), jd, matchedFacts(), facts),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("derives evidence locally from three model paragraphs without fragile duplicated claims", () => {
+    const body = naturalDraft();
+    const result = modelGreetingPackage(
+      localPlan(body.split("\n")),
+      jd,
+      matchedFacts(),
+      facts,
+    );
+
+    expect(result.body).toMatch(/^您好，/u);
+    expect(result.body).not.toMatch(/期待得到您的回复！$/u);
+    expect(result.evidence).toHaveLength(3);
+    expect(result.evidence[1]?.text).toBe(body.split("\n")[1]);
+    expect(result.evidence[2]?.text).toContain(body.split("\n")[2]);
+  });
+
+  it("rejects mechanical JD-copy language even when its evidence references are valid", () => {
+    const body = naturalDraft().replace(
+      "我在校园智能助手项目中负责访谈目标用户、归纳高频问题、拆分核心流程，并使用Figma完成原型、组织可用性测试；该岗位需要理解用户需求、完成原型并推动迭代。",
+      "看到岗位主要围绕需求分析展开，这些要求与我的经历和能力比较契合。为了完整说明岗位匹配，我会逐项介绍自己的项目、实习、技能和学习经历，并按照岗位描述依次回应每一条要求。",
+    );
+
+    expect(() =>
+      modelGreetingPackage(localPlan(body.split("\n")), jd, matchedFacts(), facts),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("rejects a model draft that introduces a number absent from its evidence", () => {
+    const body = naturalDraft().replace("结果是否可用", "结果是否可用，并让效率提升80%");
+
+    expect(() =>
+      modelGreetingPackage(localPlan(body.split("\n")), jd, matchedFacts(), facts),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("identifies the non-content gate when a draft is too short", () => {
+    const shortDraft = [
+      "您好，我想应聘示例科技的AI产品实习生。",
+      "我在校园智能助手项目中访谈用户、拆分需求并完成原型验证。",
+      "我也参与过模型回复质量评估，希望进一步了解贵司的岗位安排。",
+    ].join("\n");
+
+    try {
+      modelGreetingPackage(
+        localPlan(shortDraft.split("\n")),
+        jd,
+        matchedFacts(),
+        facts,
+      );
+      throw new Error("Expected modelGreetingPackage to reject the short draft.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_length",
+        validationMetrics: {
+          paragraphCount: 3,
+          visibleLength: visibleLengthForTest(shortDraft),
+        },
+      });
+    }
   });
 
   it("accepts all locked calibration greetings through the production quality gate", () => {
@@ -832,6 +913,20 @@ describe("experience worker privacy and deterministic output", () => {
     expect(factIds).toEqual(["fact_eval"]);
   });
 
+  it("accepts a real organization from any confirmed fact even when the model did not select that fact", () => {
+    const calibrationCase = syntheticGreetingCalibrationCases.financialAiAgent;
+    const { jdSnapshot, plan: normalizedPlan } = preparedCase(calibrationCase);
+    const plan = {
+      ...normalizedPlan,
+      supportingFactIds: [],
+    };
+    const matches = buildFactMatches(plan, jdSnapshot, [...calibrationCase.facts]);
+
+    expect(() =>
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
+    ).not.toThrow();
+  });
+
   it("does not treat adjacent company-name bigrams as independent evidence", () => {
     const calibrationCase = syntheticGreetingCalibrationCases.investment;
     const modelOutput = {
@@ -1090,12 +1185,7 @@ describe("experience worker privacy and deterministic output", () => {
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
 
     expect(() =>
-      modelGreetingPackage(
-        plan,
-        jdSnapshot,
-        matches,
-        [...calibrationCase.facts],
-      ),
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
     ).toThrow("MODEL_INVALID_OUTPUT");
   });
 
@@ -1110,12 +1200,11 @@ describe("experience worker privacy and deterministic output", () => {
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
 
     expect(() =>
-      modelGreetingPackage(
-        plan,
-        jdSnapshot,
-        matches,
-        [...calibrationCase.facts],
-      ),
+      modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
     ).toThrow("MODEL_INVALID_OUTPUT");
   });
 });
+
+function visibleLengthForTest(value: string): number {
+  return Array.from(value.replace(/\s/gu, "")).length;
+}

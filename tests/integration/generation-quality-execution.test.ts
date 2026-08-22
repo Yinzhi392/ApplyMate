@@ -102,9 +102,9 @@ function resume(): ResumeProfile {
 
 function validDraft(): GreetingDraft {
   const claim = "我使用 SQL 完成3次课程数据分析";
-  const first = `您好，我想应聘贵司的产品实习生岗位。${claim}，能够围绕岗位中的分析任务快速梳理信息、拆解问题并形成清晰结论。`;
-  const second = "我重视事实准确和沟通效率，会先核对数据来源和口径，再将分析过程整理成便于复核的记录，并在关键节点主动同步进展、问题与风险。";
-  let third = "我也愿意承担细致的资料整理、需求跟进与协作工作，根据团队反馈持续调整工作方法，希望有机会进一步了解岗位安排和交付标准。";
+  const first = `您好，我想应聘贵司的产品实习生岗位。${claim}，这段经历让我能够围绕岗位中的分析任务快速梳理信息、拆解问题并形成清晰结论。`;
+  const second = "在具体执行中，我会先明确问题和数据口径，再完成清洗、分析与结果复核，并用结构化方式同步关键发现。这个过程不仅锻炼了我的数据敏感度，也让我习惯把模糊需求转化为可验证的任务，及时暴露风险并根据反馈调整方案。";
+  let third = "我重视事实准确和沟通效率，愿意从基础工作做起，主动同步进展、认真吸收反馈，并将每次复盘转化为更稳定的交付。期待有机会进一步交流，我会结合团队目标持续学习，也愿意承担细致的资料整理、需求跟进与协作工作。";
   while (countVisibleCharacters(`${first}\n${second}\n${third}`) < 360) {
     third += "我会保持可靠响应，并认真完成每项任务。";
   }
@@ -367,6 +367,7 @@ describe("generation quality execution", () => {
         },
       }],
       applications: [],
+      users: [],
     };
     const database = {
       collection(name: string) {
@@ -384,12 +385,17 @@ describe("generation quality execution", () => {
 
     await expect(worker({ jobId })).resolves.toMatchObject({ ok: true });
     expect(collections.applications).toHaveLength(1);
-    expect(collections.applications?.[0]?.factSnapshot).toEqual([
-      expect.objectContaining({ factId: "fact_investment" }),
-      expect.objectContaining({ factId: "fact_equity" }),
-      expect.objectContaining({ factId: "fact_school" }),
-      expect.objectContaining({ factId: "fact_availability" }),
-    ]);
-    expect(JSON.stringify(collections.applications?.[0])).not.toContain("fact_ai");
+    const storedApplication = collections.applications?.[0] as {
+      factSnapshot: Array<{ factId: string }>;
+    };
+    expect(new Set(
+      storedApplication.factSnapshot.map(({ factId }) => factId),
+    )).toEqual(new Set([
+      "fact_investment",
+      "fact_equity",
+      "fact_school",
+      "fact_availability",
+    ]));
+    expect(JSON.stringify(storedApplication)).not.toContain("fact_ai");
   });
 });

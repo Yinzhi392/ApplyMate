@@ -127,6 +127,13 @@ interface DemoJob {
     | "failed";
   statusLabel: string;
   result?: Record<string, unknown>;
+  resultPreview?: {
+    applicationId: string;
+    companyName: string;
+    generationDisclosure: Record<string, unknown>;
+    greetingBody: string;
+    jobTitle: string;
+  };
   error?: { code: string; message: string; retryable: boolean };
   createdAt: string;
   updatedAt: string;
@@ -330,7 +337,7 @@ function createApplication(
       providerName: "ApplyMate 本地演示适配器",
       modelName: "本地合成响应",
       modelId: "demo-local-v1",
-      promptVersion: "greeting-v1",
+      promptVersion: "greeting-case-calibrated-v4",
       filingReference: "本地演示不适用",
     },
     createdAt: timestamp,
@@ -342,6 +349,17 @@ function createApplication(
   job.statusLabel = STATUS_LABELS.succeeded;
   job.updatedAt = timestamp;
   job.result = { applicationId, application: clone(application) };
+  job.resultPreview = {
+    applicationId,
+    companyName: jdSnapshot.companyName?.text ?? "贵司",
+    greetingBody: application.greetingBody,
+    jobTitle: jdSnapshot.jobTitle?.text ?? "该岗位",
+    generationDisclosure: {
+      availability: "available",
+      ...application.generationDisclosure,
+      message: "本地演示数据，未调用真实 OCR 或模型",
+    },
+  };
   return application;
 }
 
@@ -551,6 +569,9 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       }
       return clone({ tracked: true }) as T;
     }
+    if (action === "performance.recordPreview") {
+      return clone({ recorded: true }) as T;
+    }
     assertActive(state);
     if (action === "user.updatePreferences") {
       const preferenceText = typeof payload.preferenceText === "string" ? payload.preferenceText : "";
@@ -691,8 +712,9 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
           application.memo = memo;
         }
       }
-      application.manualWarnings = application.greetingBody.length < 250
-        ? [{ code: "LENGTH_OUT_OF_RANGE", message: "手动正文不在建议的 250-350 字范围内。" }]
+      application.manualWarnings = application.greetingBody.length < 300 ||
+        application.greetingBody.length > 450
+        ? [{ code: "LENGTH_OUT_OF_RANGE", message: "手动正文不在建议的 300-450 字范围内。" }]
         : [];
       application.updatedAt = now();
       return clone({
@@ -715,7 +737,7 @@ export function createDemoApiClient(options: DemoOptions = {}): ApiClient {
       application.manualWarnings = [];
       application.generationDisclosure = {
         ...application.generationDisclosure,
-        promptVersion: "greeting-rewrite-v1",
+        promptVersion: "greeting-rewrite-case-calibrated-v4",
       };
       application.updatedAt = timestamp;
       state.succeededUsage += 1;

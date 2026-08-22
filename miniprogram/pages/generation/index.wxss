@@ -97,6 +97,20 @@
   font-weight: 650;
 }
 
+.upload-state {
+  margin-top: 6rpx;
+  color: var(--color-text-secondary);
+  font-size: 23rpx;
+}
+
+.upload-state.is-uploaded {
+  color: var(--color-primary);
+}
+
+.upload-state.is-failed {
+  color: var(--color-danger);
+}
+
 .icon-action {
   width: auto;
   min-width: 88rpx;
@@ -137,6 +151,10 @@
 }
 
 .privacy-note {
+  margin-top: 16rpx;
+}
+
+.retry-upload {
   margin-top: 16rpx;
 }
 

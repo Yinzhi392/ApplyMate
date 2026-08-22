@@ -360,7 +360,6 @@ describe("greeting calibration gold cases", () => {
   );
 
   it.each([
-    ["job_title_mismatch", "job_title_mismatch"],
     ["unsourced_number", "greeting_numeric_source"],
     ["cross_jd_domain_term", "cross_jd_domain_term"],
     ["transferable_as_direct", "evidence_strength_mismatch"],
@@ -375,5 +374,11 @@ describe("greeting calibration gold cases", () => {
       message: "MODEL_INVALID_OUTPUT",
       validationGate: expectedGate,
     });
+  });
+
+  it("replaces a mismatched model job title with the trusted current-JD title", () => {
+    const evaluated = runInvalidSyntheticMutation("job_title_mismatch");
+    expect(evaluated.plan.jobTitle).toBe("战略投资实习生");
+    expect(evaluated.result.body).not.toContain("市场营销实习生");
   });
 });

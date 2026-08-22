@@ -60,7 +60,7 @@ const CONTROLLED_PROFESSIONAL_TERMS = Object.freeze([
   "证券从业资格",
 ]);
 
-const NAMED_ORGANIZATION_PATTERN = /[\p{Script=Han}A-Za-z0-9]{2,24}(?:大学|学院|研究院|有限公司|资本)/gu;
+const NAMED_ORGANIZATION_PATTERN = /[\p{Script=Han}A-Za-z0-9]{2,24}(?:大学|学院|研究院|有限公司)/gu;
 
 const ORGANIZATION_INTRO_PREFIXES = Object.freeze([
   "本人目前就读于",
@@ -147,6 +147,30 @@ function isSupportedPhrase(candidate, source, minimumCoverage = 0.55) {
   return candidateBigrams.size > 0 && shared / candidateBigrams.size >= minimumCoverage;
 }
 
+function numericTokens(value) {
+  return new Set(
+    (String(value).match(/\d+(?:[.,]\d+)?%?/gu) || [])
+      .map((token) => token.replaceAll(",", "")),
+  );
+}
+
+function isFaithfulJdExtraction(candidate, source) {
+  if (!isSupportedPhrase(candidate, source, 0.25)) return false;
+  const unsupportedDomainTerm = DOMAIN_TERMS.some((term) =>
+    containsProfessionalTerm(candidate, term) && !containsProfessionalTerm(source, term),
+  );
+  if (unsupportedDomainTerm) return false;
+  const unsupportedProfessionalTerm = CONTROLLED_PROFESSIONAL_TERMS.some((term) =>
+    containsProfessionalTerm(candidate, term) && !containsProfessionalTerm(source, term),
+  );
+  if (unsupportedProfessionalTerm) return false;
+  if (extractNamedOrganizations(candidate).some((name) => !isOrganizationSupported(name, source))) {
+    return false;
+  }
+  const sourceNumbers = numericTokens(source);
+  return Array.from(numericTokens(candidate)).every((token) => sourceNumbers.has(token));
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -155,6 +179,12 @@ function containsProfessionalTerm(text, term) {
   if (/\p{Script=Han}/u.test(term)) {
     return normalized(text).includes(normalized(term));
   }
+  // OCR commonly joins Latin product terms (for example "AI Agent" ->
+  // "AIAgent"). Compare the compact token first, then retain the stricter
+  // boundary matcher for ordinary prose.
+  const compactTerm = normalized(term);
+  const compactText = normalized(text);
+  if (compactTerm.length >= 3 && compactText.includes(compactTerm)) return true;
   const termPattern = escapeRegExp(term).replace(/\s+/gu, "\\s*");
   return new RegExp(`(?:^|[^A-Za-z0-9])${termPattern}(?=$|[^A-Za-z0-9])`, "iu").test(text);
 }
@@ -216,23 +246,82 @@ function normalizeGreetingPlan(input, { facts, jd, rawJdText }) {
   const factIds = new Set(facts.map(({ factId }) => factId));
   if (typeof rawJdText !== "string" || !rawJdText.trim()) fail("raw_jd_missing");
   const rawNormalized = normalized(rawJdText);
-  const extractedJdFields = JD_LIST_KEYS.flatMap((key) => Array.isArray(jd[key]) ? jd[key] : []);
-  if (extractedJdFields.some(({ text }) => !isSupportedPhrase(text, rawJdText))) {
-    fail("jd_field_not_in_current_input");
+  const extractedJobTitle = jd.jobTitle?.text;
+  const extractedCompanyName = jd.companyName?.text;
+  const trustedJobTitle = typeof extractedJobTitle === "string" &&
+    rawNormalized.includes(normalized(extractedJobTitle))
+    ? extractedJobTitle
+    : "该岗位";
+  const trustedCompanyName = typeof extractedCompanyName === "string" &&
+    rawNormalized.includes(normalized(extractedCompanyName))
+    ? extractedCompanyName
+    : "";
+  if (trustedJobTitle === "该岗位") delete jd.jobTitle;
+  if (!trustedCompanyName) delete jd.companyName;
+  // Auxiliary extraction fields are suggestions, not all-or-nothing output.
+  // Drop an ungrounded field before it can be cited; only a field selected as
+  // a core function is allowed to decide whether the generation must fail.
+  const originalJdLists = new Map();
+  const trustedIndexMaps = new Map();
+  for (const key of JD_LIST_KEYS) {
+    const original = Array.isArray(jd[key]) ? jd[key] : [];
+    const trusted = [];
+    const indexMap = new Map();
+    original.forEach((field, originalIndex) => {
+      if (field && typeof field.text === "string" && isFaithfulJdExtraction(field.text, rawJdText)) {
+        indexMap.set(originalIndex, trusted.length);
+        trusted.push(field);
+      }
+    });
+    originalJdLists.set(key, original);
+    trustedIndexMaps.set(key, indexMap);
+    jd[key] = trusted;
   }
-  const coreFunctions = Array.isArray(input.coreFunctions) ? input.coreFunctions : [];
-  if (coreFunctions.length < 2 || coreFunctions.length > 5) fail("core_functions");
-  if (coreFunctions.some((item) => {
+  const proposedCoreFunctions = Array.isArray(input.coreFunctions)
+    ? input.coreFunctions.slice(0, 5)
+    : [];
+  let coreFunctions = proposedCoreFunctions.flatMap((item) => {
     if (
       !isPlainObject(item) ||
       !JD_LIST_KEYS.includes(item.requirementType) ||
       !Number.isInteger(item.requirementIndex) ||
       typeof item.summary !== "string" ||
       !item.summary.trim()
-    ) return true;
-    const requirement = jd[item.requirementType]?.[item.requirementIndex];
-    return !requirement || !isSupportedPhrase(item.summary, requirement.text, 0.35);
-  })) fail("core_function_source");
+    ) return [];
+    const originalRequirement = originalJdLists.get(item.requirementType)?.[item.requirementIndex];
+    const trustedIndex = trustedIndexMaps.get(item.requirementType)?.get(item.requirementIndex);
+    return !originalRequirement || trustedIndex === undefined ||
+      !isSupportedPhrase(item.summary, originalRequirement.text, 0.35)
+      ? []
+      : [{
+          requirementType: item.requirementType,
+          requirementIndex: trustedIndex,
+          summary: item.summary.trim(),
+        }];
+  });
+  if (coreFunctions.length === 0) {
+    coreFunctions = JD_LIST_KEYS.flatMap((requirementType) =>
+      (Array.isArray(jd[requirementType]) ? jd[requirementType] : [])
+        .map((field, requirementIndex) => ({
+          requirementType,
+          requirementIndex,
+          summary: field.text.slice(0, 120),
+        })),
+    ).slice(0, 2);
+  }
+  if (coreFunctions.length === 0) {
+    const fallbackText = rawJdText.replace(/\s+/gu, " ").trim().slice(0, 200);
+    jd.responsibilities = [{
+      fieldId: "jd_fallback_raw_input",
+      text: fallbackText,
+      confidence: 0.5,
+    }];
+    coreFunctions = [{
+      requirementType: "responsibilities",
+      requirementIndex: 0,
+      summary: "岗位相关职责与要求",
+    }];
+  }
   const coreFunctionReferences = coreFunctions.map(
     ({ requirementType, requirementIndex }) => `${requirementType}:${requirementIndex}`,
   );
@@ -276,31 +365,29 @@ function normalizeGreetingPlan(input, { facts, jd, rawJdText }) {
       gaps.length === 0)
   ) fail("low_evidence_invalid");
 
-  const expectedJobTitle = jd.jobTitle?.text || "该岗位";
-  const expectedCompanyName = jd.companyName?.text || "";
-  if (normalized(input.jobTitle) !== normalized(expectedJobTitle)) fail("job_title_mismatch");
-  if (normalized(input.companyName) !== normalized(expectedCompanyName)) fail("company_mismatch");
-  if (expectedJobTitle !== "该岗位" && !rawNormalized.includes(normalized(expectedJobTitle))) {
-    fail("job_title_not_in_current_input");
-  }
-  if (expectedCompanyName && !rawNormalized.includes(normalized(expectedCompanyName))) {
-    fail("company_not_in_current_input");
-  }
-
-  const paragraphs = stringArray(input.paragraphs, 3, 4, "paragraph_count");
-  const domainContext = stringArray(input.domainContext, 0, 4, "domain_context");
-  if (domainContext.some((item) => !rawNormalized.includes(normalized(item)))) {
-    fail("domain_context_source");
-  }
+  const replaceTarget = (value, candidates, fallback) => candidates.reduce(
+    (result, candidate) => typeof candidate === "string" && candidate.trim()
+      ? result.split(candidate.trim()).join(fallback)
+      : result,
+    value,
+  );
+  const paragraphs = stringArray(input.paragraphs, 3, 4, "paragraph_count")
+    .map((paragraph) => replaceTarget(
+      replaceTarget(
+        paragraph,
+        trustedJobTitle === "该岗位" ? [input.jobTitle, extractedJobTitle] : [input.jobTitle],
+        trustedJobTitle,
+      ),
+      trustedCompanyName ? [input.companyName] : [input.companyName, extractedCompanyName],
+      trustedCompanyName || "贵司",
+    ));
+  const domainContext = stringArray(input.domainContext, 0, 4, "domain_context")
+    .filter((item) => rawNormalized.includes(normalized(item)));
 
   return {
-    jobTitle: input.jobTitle.trim(),
-    companyName: input.companyName.trim(),
-    coreFunctions: coreFunctions.map(({ requirementType, requirementIndex, summary }) => ({
-      requirementType,
-      requirementIndex,
-      summary: summary.trim(),
-    })),
+    jobTitle: trustedJobTitle,
+    companyName: trustedCompanyName,
+    coreFunctions,
     domainContext,
     matchMode,
     directFactIds,

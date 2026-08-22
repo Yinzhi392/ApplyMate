@@ -29,17 +29,23 @@
       >
         <view class="image-order">{{index + 1}}</view>
         <image class="screenshot-thumb" src="{{item.path}}" mode="aspectFill" />
-        <view class="screenshot-meta"><view class="screenshot-name">第 {{index + 1}} 张</view><view class="field-help">长按拖动排序</view></view>
+        <view class="screenshot-meta">
+          <view class="screenshot-name">第 {{index + 1}} 张</view>
+          <view wx:if="{{item.uploadState === 'uploaded'}}" class="upload-state is-uploaded">已上传 · 长按拖动排序</view>
+          <view wx:elif="{{item.uploadState === 'failed'}}" class="upload-state is-failed">上传失败 · 仅需重试此图</view>
+          <view wx:else class="upload-state">正在临时上传</view>
+        </view>
         <button class="icon-action" aria-label="删除第 {{index + 1}} 张截图" data-index="{{index}}" catchtap="removeImage">删除</button>
       </view>
     </view>
 
-    <button class="upload-area" disabled="{{images.length >= maxImageCount}}" bindtap="chooseImages">
+    <button class="upload-area" disabled="{{preparingImages || images.length >= maxImageCount}}" bindtap="chooseImages">
       <view class="upload-mark">＋</view>
       <view class="upload-copy">{{images.length ? '继续添加截图' : '从相册或相机添加截图'}}</view>
       <view class="field-help">可一次选择多张，本次还能添加 {{maxImageCount - images.length}} 张</view>
     </button>
-    <view wx:if="{{images.length}}" class="privacy-note">OCR 会按当前顺序合并文字；删除或排序后会使用新的请求标识。</view>
+    <button wx:if="{{failedUploadCount}}" class="button button-secondary retry-upload" bindtap="resumeFailedUploads">重试失败图片</button>
+    <view wx:if="{{images.length}}" class="privacy-note">图片正在临时上传；删除或未提交后将自动清理。OCR 会按当前顺序合并文字。</view>
   </view>
 
   <view wx:if="{{inputMode === 'text'}}" class="section input-workspace glass-surface">
@@ -68,12 +74,12 @@
     </picker>
   </view>
 
-  <view class="section quiet-panel"><view class="section-title">提交后直接生成</view><view class="field-help">低置信字段会省略并在结果中提醒，不会要求再次确认岗位。</view></view>
-  <view wx:if="{{loading}}" class="status section">加载中，正在创建生成任务，请不要连续提交。</view>
+  <view class="section quiet-panel"><view class="section-title">提交后直接生成</view><view class="field-help">低置信字段会自动省略，不会要求再次确认岗位。</view></view>
+  <view wx:if="{{loading}}" class="status section">正在创建生成任务，请不要连续提交。</view>
   <view wx:if="{{errorMessage}}" class="error section">{{errorMessage}}</view>
   <view wx:if="{{weakNetwork}}" class="warning section">网络连接不稳定，相同请求会沿用请求标识，不会重复扣次。</view>
 
   <view class="fixed-action">
-    <button class="button" disabled="{{loading || resumes.length === 0}}" bindtap="submit">识别并生成</button>
+    <button class="button" disabled="{{loading || preparingImages || resumes.length === 0 || (inputMode === 'images' && !imagesReady)}}" bindtap="submit">{{inputMode === 'images' ? uploadStatusText : '识别并生成'}}</button>
   </view>
 </view>

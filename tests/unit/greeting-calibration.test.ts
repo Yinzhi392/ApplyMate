@@ -73,15 +73,14 @@ describe("production greeting calibration", () => {
     expect(calibration.collectGreetingFactIds(plan)).toEqual(["fact_eval", "fact_school"]);
   });
 
-  it("rejects unknown facts and core functions from another JD", () => {
+  it("rejects unknown facts but safely replaces core functions from another JD", () => {
     expect(() =>
       calibration.normalizeGreetingPlan(
         { ...plan, directFactIds: ["fact_unknown"] },
         { facts, jd, rawJdText: "示例科技招聘模型评测产品实习生，负责模型效果评测和Badcase归因。" },
       ),
     ).toThrow("MODEL_INVALID_OUTPUT");
-    expect(() =>
-      calibration.normalizeGreetingPlan(
+    const outOfRange = calibration.normalizeGreetingPlan(
         {
           ...plan,
           coreFunctions: [
@@ -89,11 +88,9 @@ describe("production greeting calibration", () => {
             { requirementType: "responsibilities", requirementIndex: 9, summary: "投研知识库" },
           ],
         },
-        { facts, jd, rawJdText: "示例科技招聘模型评测产品实习生，负责模型效果评测和Badcase归因。" },
-      ),
-    ).toThrow("MODEL_INVALID_OUTPUT");
-    expect(() =>
-      calibration.normalizeGreetingPlan(
+        { facts, jd: structuredClone(jd), rawJdText: "示例科技招聘模型评测产品实习生，负责模型效果评测和Badcase归因。" },
+      );
+    const pollutedSummary = calibration.normalizeGreetingPlan(
         {
           ...plan,
           coreFunctions: [
@@ -101,9 +98,136 @@ describe("production greeting calibration", () => {
             { requirementType: "responsibilities", requirementIndex: 1, summary: "投研知识库" },
           ],
         },
-        { facts, jd, rawJdText: "示例科技招聘模型评测产品实习生，负责模型效果评测和Badcase归因。" },
-      ),
-    ).toThrow("MODEL_INVALID_OUTPUT");
+        { facts, jd: structuredClone(jd), rawJdText: "示例科技招聘模型评测产品实习生，负责模型效果评测和Badcase归因。" },
+      );
+    expect(outOfRange.coreFunctions).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ summary: "投研知识库" }),
+    ]));
+    expect(pollutedSummary.coreFunctions).toEqual(expect.not.arrayContaining([
+      expect.objectContaining({ summary: "投研知识库" }),
+    ]));
+  });
+
+  it("accepts faithful JD paraphrases while rejecting cross-JD and invented numeric fields", () => {
+    const rawJdText = [
+      "示例科技招聘模型评测产品实习生。",
+      "结合真实用户交互数据，通过人工抽检和指标监控分析模型在不同场景下的表现差异。",
+      "针对模型幻觉、策略失效、对话不合理等问题进行归因分析，推动Prompt策略持续优化。",
+    ].join("");
+    const paraphrasedJd = {
+      ...jd,
+      responsibilities: [
+        { fieldId: "jd_eval", text: "围绕真实用户对话持续分析模型表现并归纳失败原因" },
+        { fieldId: "jd_prompt", text: "通过指标监控持续推动提示词策略优化" },
+      ],
+    };
+    const paraphrasedPlan = {
+      ...plan,
+      coreFunctions: [
+        { requirementType: "responsibilities", requirementIndex: 0, summary: "分析模型表现并归纳失败原因" },
+        { requirementType: "responsibilities", requirementIndex: 1, summary: "指标监控与提示词策略优化" },
+      ],
+    };
+
+    expect(() => calibration.normalizeGreetingPlan(
+      paraphrasedPlan,
+      { facts, jd: paraphrasedJd, rawJdText },
+    )).not.toThrow();
+
+    for (const unsupportedText of [
+      "负责投研知识库与研报提取",
+      "每周到岗5天并连续实习6个月",
+    ]) {
+      const localJd = {
+        ...paraphrasedJd,
+        responsibilities: [
+          paraphrasedJd.responsibilities[0],
+          { fieldId: "jd_unsupported", text: unsupportedText },
+        ],
+      };
+      expect(() => calibration.normalizeGreetingPlan(
+        paraphrasedPlan,
+        {
+          facts,
+          jd: localJd,
+          rawJdText,
+        },
+      )).not.toThrow();
+      expect(localJd.responsibilities).toEqual([
+        paraphrasedJd.responsibilities[0],
+      ]);
+    }
+  });
+
+  it("keeps grounded core JD fields when an unused extracted field is unsupported", () => {
+    const rawJdText = [
+      "示例科技招聘投资分析实习生，岗位要求熟悉资本市场投资分析。",
+      "协助完成行业研究，并参与金融AIAgent产品建设。",
+    ].join("");
+    const localJd = {
+      jobTitle: { fieldId: "jd_title", text: "投资分析实习生" },
+      companyName: { fieldId: "jd_company", text: "示例科技" },
+      responsibilities: [
+        { fieldId: "jd_capital", text: "熟悉资本市场投资分析" },
+        { fieldId: "jd_agent", text: "参与金融 AI Agent 产品建设" },
+        { fieldId: "jd_polluted", text: "主导校园招聘增长项目" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+    const localPlan = {
+      ...plan,
+      jobTitle: "投资分析实习生",
+      coreFunctions: [
+        { requirementType: "responsibilities", requirementIndex: 0, summary: "资本市场投资分析" },
+        { requirementType: "responsibilities", requirementIndex: 1, summary: "金融 AI Agent 产品建设" },
+      ],
+    };
+
+    expect(() => calibration.normalizeGreetingPlan(
+      localPlan,
+      { facts, jd: localJd, rawJdText },
+    )).not.toThrow();
+    expect(localJd.responsibilities.map(({ fieldId }) => fieldId)).toEqual([
+      "jd_capital",
+      "jd_agent",
+    ]);
+  });
+
+  it("degrades ungrounded target fields instead of rejecting the whole greeting", () => {
+    const rawJdText = "示例科技招聘战略投资实习生，负责模型效果评测和Badcase归因。";
+    const localJd = {
+      ...jd,
+      jobTitle: { fieldId: "jd_title", text: "投资分析实习生" },
+      companyName: { fieldId: "jd_company", text: "错误公司" },
+    };
+    const localPlan = {
+      ...plan,
+      jobTitle: "投资分析实习生",
+      companyName: "错误公司",
+      paragraphs: [
+        "您好，我希望应聘错误公司的投资分析实习生。",
+        "我参与过模型评测。",
+        "期待进一步沟通。",
+      ],
+    };
+
+    expect(calibration.normalizeGreetingPlan(
+      localPlan,
+      { facts, jd: localJd, rawJdText },
+    )).toMatchObject({
+      jobTitle: "该岗位",
+      companyName: "",
+      paragraphs: [
+        "您好，我希望应聘贵司的该岗位。",
+        "我参与过模型评测。",
+        "期待进一步沟通。",
+      ],
+    });
+    expect(localJd).not.toHaveProperty("jobTitle");
+    expect(localJd).not.toHaveProperty("companyName");
   });
 
   it("rejects duplicate core-function references", () => {

@@ -16,6 +16,10 @@ CloudBase 免费环境核对见 [`cloudbase-free-environment-review.md`](./cloud
 
 TokenHub 免费资源核对见 [`tokenhub-free-resource-review.md`](./tokenhub-free-resource-review.md)，原单模型冒烟失败保留于 [`tokenhub-phase0-smoke-evaluation.md`](./tokenhub-phase0-smoke-evaluation.md)，调整后 30 组正式结果见 [`tokenhub-phase0-evaluation.md`](./tokenhub-phase0-evaluation.md)。最终采用“Hy3 单次选事实 + 本地确定性生成/改写”，字段准确率 98.89%、文案合规率 100%、零虚构、端到端中位 3.41 秒，0.12 已通过。评测后 Hy3 剩余 96.9%、DeepSeek 剩余 99.8%，按 Token 计费均未启用。
 
+当前 v8 三组真实 TokenHub 复评与 worker 部署记录见 [`greeting-v8-live-evaluation.md`](./greeting-v8-live-evaluation.md)。2026-08-21 三次调用均在 5.5 秒内返回，但全部被 v8 本地质量门拒绝，故不得把部署写成质量验收通过。
+
+2026-08-22 的 v8.17 安全通用正文被真机证明不可用：它会把事实清单机械拼接成无法发送给 HR 的文案，机械兜底已永久移除。产品负责人最新批准低延迟信息流框架 v2：选图后最多 3 张原图后台并发上传，API 只返回 jobId，worker 一次批量签名后并行 OCR，job.get 返回本人首屏预览。Hy3 仍只调用一次；恢复 350–450 个可见字符、3–4 段、目标称呼、未知事实引用、数字来源和隐私格式的本地失败关闭，失败不追加模型调用或通用正文。当前仅完成本地实现，未部署、未上传小程序；双指标真机验收完成前 10.18 仍不得标记完成。
+
 五类资源的统一暂停规则见 [`zero-cost-resource-checklist.md`](./zero-cost-resource-checklist.md)。该检查表把 OCR、模型、云函数、存储和流量分别判定，再映射到现有业务门禁；任一状态未知、检查过期、付费兜底开启、实际费用非零或免费剩余量不足时均失败关闭。0.10 只完成本地策略与测试，真实运行时采集器尚未部署。
 
 外发链路证据见 [`phase0-egress-audit.md`](./phase0-egress-audit.md)。阶段 10.6 已实际运行一次完全合成的“腾讯 OCR → 本地脱敏 → Hy3”链路：5 类受保护信息均被遮盖，图片只出现在 OCR 请求，Hy3 收到的请求不含图片、Base64、fileId 或受保护文本；证据不保存请求/响应原文或凭证。30 组五类资源用量、目录价估算和实际零费用证据见 [`phase0-resource-cost-audit.md`](./phase0-resource-cost-audit.md)。0.14 与 10.6 均不替代发布前 10.12 的账单再复核。

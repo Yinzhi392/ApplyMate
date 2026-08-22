@@ -4,7 +4,7 @@ const { createHash } = require("node:crypto");
 const { addIfAbsent, findMany, findOne, updateDocument } = require("./cloudbase-document-store");
 
 const ACTIONS = new Set([
-  "analytics.track", "user.updatePreferences",
+  "analytics.track", "performance.recordPreview", "user.updatePreferences",
   "resume.parse", "resume.confirm", "resume.list", "resume.setDefault", "resume.delete",
   "generation.create", "generation.rewrite",
   "application.list", "application.get", "application.update", "application.delete",
@@ -42,6 +42,31 @@ function copyText(body) {
   return `${body.trim()}\nAI生成内容，请核对真实性`;
 }
 
+function normalizePreferenceText(value) {
+  return value.normalize("NFC").trim().replace(/\s+/gu, " ");
+}
+
+function countVisibleCharacters(value) {
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "grapheme" });
+  return Array.from(segmenter.segment(value.normalize("NFC")), ({ segment }) => segment)
+    .filter((segment) => !/^\s+$/u.test(segment)).length;
+}
+
+function createPreferenceFacts(value) {
+  const facts = new Set(
+    value
+      .split(/[\r\n]+|[。！？；;.!?]+/u)
+      .map(normalizePreferenceText)
+      .filter(Boolean),
+  );
+  return Array.from(facts, (text) => ({
+    factId: `fact_${createHash("sha256").update(`applymate-fact-v1\0preference\0${text}`, "utf8").digest("hex").slice(0, 24)}`,
+    sourceType: "preference",
+    text,
+    factHash: createHash("sha256").update(text, "utf8").digest("hex"),
+  }));
+}
+
 function active(user, accessState) {
   return user.accountStatus === "enabled" && accessState(user) === "active";
 }
@@ -51,7 +76,45 @@ function validFiles(fileIds, maximum) {
     fileIds.every((fileId) => typeof fileId === "string" && /^cloud:\/\//u.test(fileId) && fileId.includes("/temporary/"));
 }
 
-function createExperienceApiHandler({ database, dispatchExperienceJob, accessState, now = () => new Date() }) {
+function clientPipelineMetrics(payload) {
+  if (
+    !["jd-submit-v3", "jd-submit-v4", "jd-submit-v5-url-ocr", "jd-submit-v6-background-upload"].includes(payload.clientPipelineVersion) ||
+    !Number.isInteger(payload.clientImagePreparationMs) ||
+    payload.clientImagePreparationMs < 0 ||
+    payload.clientImagePreparationMs > 120_000
+  ) return {};
+  const boundedMetric = (value, maximum = 120_000) =>
+    Number.isInteger(value) && value >= 0 && value <= maximum ? value : undefined;
+  return {
+    clientImagePreparationMs: payload.clientImagePreparationMs,
+    clientPipelineVersion: payload.clientPipelineVersion,
+    ...(boundedMetric(payload.originalBytes, 50_000_000) === undefined
+      ? {}
+      : { originalBytes: payload.originalBytes }),
+    ...(boundedMetric(payload.clientCompressedCount, 5) === undefined
+      ? {}
+      : { clientCompressedCount: payload.clientCompressedCount }),
+    ...(boundedMetric(payload.clientCompressionMs) === undefined
+      ? {}
+      : { clientCompressionMs: payload.clientCompressionMs }),
+    ...(boundedMetric(payload.clientUploadMs) === undefined
+      ? {}
+      : { clientUploadMs: payload.clientUploadMs }),
+    ...(boundedMetric(payload.clientBackgroundUploadMs) === undefined
+      ? {}
+      : { clientBackgroundUploadMs: payload.clientBackgroundUploadMs }),
+    ...(boundedMetric(payload.clientSelectionToCreateMs) === undefined
+      ? {}
+      : { clientSelectionToCreateMs: payload.clientSelectionToCreateMs }),
+  };
+}
+
+function createExperienceApiHandler({
+  database,
+  dispatchExperienceJob,
+  accessState,
+  now = () => new Date(),
+}) {
   return async ({ event, user }) => {
     if (!ACTIONS.has(event.action)) return null;
     if (!active(user, accessState)) return failure("FORBIDDEN", "Access denied.");
@@ -63,13 +126,15 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
     const jobs = database.collection("ai_jobs");
 
     if (event.action === "user.updatePreferences") {
-      if (typeof payload.text !== "string" || payload.text.length > 500) return invalid();
+      if (typeof payload.preferenceText !== "string" || countVisibleCharacters(payload.preferenceText) > 500) return invalid();
+      const normalizedPreferenceText = payload.preferenceText.normalize("NFC").trim();
+      const preferenceFacts = createPreferenceFacts(normalizedPreferenceText);
       await updateDocument(database.collection("users").where({
         recordType: "user", userId: user.userId,
       }), {
-        preferenceText: payload.text.trim(), updatedAt: timestamp,
+        preferenceText: normalizedPreferenceText, preferenceFacts, updatedAt: timestamp,
       });
-      return { ok: true, data: { preferenceText: payload.text.trim() } };
+      return { ok: true, data: { preferenceText: normalizedPreferenceText, preferenceFacts } };
     }
 
     if (event.action === "resume.parse") {
@@ -157,7 +222,9 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
         await addIfAbsent(jobs, {
           _id: jobId, recordType: "ai_job", jobId, userId: user.userId,
           kind: "greeting_generate", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
-          input: clone(payload), resumeId: payload.resumeId, claimState: "available", createdAt: timestamp, updatedAt: timestamp,
+          input: clone(payload), resumeId: payload.resumeId,
+          processingMetrics: clientPipelineMetrics(payload),
+          claimState: "available", createdAt: timestamp, updatedAt: timestamp,
         });
       }
       if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
@@ -207,7 +274,21 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
       const record = await findOne(applications, { recordType: "application", userId: user.userId, applicationId: payload.applicationId });
       if (record === null) return failure("NOT_FOUND", "Application was not found.");
       const { _id, recordType, userId, generationDisclosure, feedback, ...application } = record;
-      return { ok: true, data: { application: clone(application), copyText: copyText(record.greetingBody), generationDisclosure, feedback } };
+      return {
+        ok: true,
+        data: {
+          application: clone(application),
+          copyText: copyText(record.greetingBody),
+          generationDisclosure: generationDisclosure === undefined
+            ? { availability: "unavailable", message: "生成信息不可用" }
+            : {
+                availability: "available",
+                ...clone(generationDisclosure),
+                message: "内容由已公示的 AI 服务生成",
+              },
+          feedback,
+        },
+      };
     }
 
     if (event.action === "application.update") {
@@ -243,6 +324,56 @@ function createExperienceApiHandler({ database, dispatchExperienceJob, accessSta
         recordType: "application", userId: user.userId, applicationId: payload.applicationId,
       }), { feedback, updatedAt: timestamp });
       return { ok: true, data: { feedback } };
+    }
+
+    if (event.action === "performance.recordPreview") {
+      const keys = Object.keys(payload).sort().join(",");
+      if (
+        keys !== "applicationId,clientApiCreateMs,clientJobToPreviewMs,clientResultFetchMs,clientSelectionToPreviewMs,jobId" ||
+        typeof payload.applicationId !== "string" ||
+        typeof payload.jobId !== "string" ||
+        !/^application_[a-f0-9]{24}$/u.test(payload.applicationId) ||
+        !/^job_generation_[a-f0-9]{24}$/u.test(payload.jobId)
+      ) return invalid();
+      const metricNames = [
+        "clientApiCreateMs",
+        "clientJobToPreviewMs",
+        "clientResultFetchMs",
+        "clientSelectionToPreviewMs",
+      ];
+      if (metricNames.some((name) =>
+        !Number.isInteger(payload[name]) || payload[name] < 0 || payload[name] > 120_000
+      )) return invalid();
+      const [job, application] = await Promise.all([
+        findOne(jobs, {
+          recordType: "ai_job",
+          jobId: payload.jobId,
+          userId: user.userId,
+        }),
+        findOne(applications, {
+          recordType: "application",
+          applicationId: payload.applicationId,
+          userId: user.userId,
+        }),
+      ]);
+      if (
+        job === null ||
+        application === null ||
+        application.jobId !== job.jobId ||
+        job.status !== "succeeded"
+      ) return failure("NOT_FOUND", "Result was not found.");
+      const previewMetrics = Object.fromEntries(
+        metricNames.map((name) => [name, payload[name]]),
+      );
+      await Promise.all([
+        updateDocument(jobs.where({
+          recordType: "ai_job", jobId: job.jobId, userId: user.userId,
+        }), { processingMetrics: { ...(job.processingMetrics || {}), ...previewMetrics } }),
+        updateDocument(applications.where({
+          recordType: "application", applicationId: application.applicationId, userId: user.userId,
+        }), { processingMetrics: { ...(application.processingMetrics || {}), ...previewMetrics } }),
+      ]);
+      return { ok: true, data: { recorded: true } };
     }
 
     if (event.action === "analytics.track") return { ok: true, data: { tracked: true } };

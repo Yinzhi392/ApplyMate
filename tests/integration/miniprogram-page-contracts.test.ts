@@ -164,6 +164,40 @@ describe("native mini-program page contracts", () => {
     expect(controller.match(/\/cancel\/u/gu)).toHaveLength(2);
   });
 
+  it("starts bounded original-image upload after selection and submits only ready fileIds", () => {
+    const controller = read("pages/generation/index.ts");
+    const template = read("pages/generation/index.wxml");
+    const choose = controller.slice(
+      controller.indexOf("async chooseImages():"),
+      controller.indexOf("async submit():"),
+    );
+    const submit = controller.slice(controller.indexOf("async submit():"));
+
+    expect(choose).toContain("startPendingUploads");
+    expect(controller).toContain("runWithConcurrency(pendingIds, 3");
+    expect(controller).toContain("uploadTemporaryFile(image.path)");
+    expect(submit).toContain("fileIds: this.data.images.map");
+    expect(submit).not.toContain("uploadTemporaryFile");
+    expect(template).toContain("图片正在临时上传");
+    expect(template).toContain("重试失败图片");
+    expect(controller).toContain("JD_UPLOAD_DRAFT_KEY");
+    expect(controller).toContain("wx.setStorageSync(JD_UPLOAD_DRAFT_KEY, images)");
+    expect(controller).toContain("restorePreparedImages");
+  });
+
+  it("renders the job result preview before refreshing complete application details", () => {
+    const job = read("pages/job/index.ts");
+    const result = read("pages/result/index.ts");
+    const runtime = read("services/runtime.ts");
+
+    expect(job).toContain("job.resultPreview");
+    expect(job).toContain("setResultPreview");
+    expect(job).toContain('"performance.recordPreview"');
+    expect(result).toContain("getResultPreview(applicationId)");
+    expect(result).toContain("loadResult(preview !== undefined)");
+    expect(runtime).toContain("new Map<string, ClientResultPreview>()");
+  });
+
   it("keeps the native login composition and checkbox state aligned with the approved preview", () => {
     const template = read("pages/login/index.wxml");
     const styles = read("pages/login/index.wxss");
@@ -243,7 +277,7 @@ describe("native mini-program page contracts", () => {
     expect(resultController).toContain("wx.reLaunch");
     expect(resultController).toContain('/pages/generation/index?fresh=1');
     expect(resultController).not.toContain('navigateTo({ url: "/pages/generation');
-    expect(generationController).toContain("images: [] as SelectedImage[]");
+    expect(generationController).toContain("images: [] as PreparedJdImage[]");
     expect(generationController).toContain('requestId: ""');
     expect(generationController).toContain('text: ""');
     expect(generationController).toContain("findIndex(({ isDefault }) => isDefault)");

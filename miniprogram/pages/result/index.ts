@@ -5,7 +5,7 @@ import {
 } from "../../core/generation-disclosure.js";
 import { createResultView } from "../../core/result-presenter.js";
 import { leaveResult, type ResultExitDestination } from "../../core/result-exit.js";
-import { messageFrom, openPage, showSuccess } from "../../services/page-utils.js";
+import { messageFrom, showSuccess } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
@@ -20,10 +20,8 @@ interface ApplicationDetail {
 Page({
   data: {
     applicationId: "",
-    claims: [] as ReturnType<typeof createResultView>["claims"],
     companyDisplayName: "贵司",
     copyText: "",
-    detailsExpanded: false,
     errorMessage: "",
     feedbackNote: "",
     generationDisclosureDetails: "",
@@ -34,26 +32,41 @@ Page({
     loading: true,
     manualWarnings: [] as Array<{ code?: string; message?: string }>,
     memo: "",
-    omittedRequirements: [] as string[],
     rating: "" as "" | "satisfied" | "needs_improvement",
     savedGreetingBody: "",
     secondaryExpanded: false,
     status: "not_applied" as "not_applied" | "applied",
     visibleCharacters: 0,
-    warningMessages: [] as string[],
   },
 
   onLoad(options: Record<string, string | undefined>): void {
-    this.setData({ applicationId: options.applicationId ?? "" });
-    void this.loadResult();
+    const applicationId = options.applicationId ?? "";
+    this.setData({ applicationId });
+    const preview = runtime().getResultPreview(applicationId);
+    if (preview !== undefined) {
+      const disclosure = describeGenerationDisclosure(
+        preview.generationDisclosure as ClientGenerationDisclosure | undefined,
+      );
+      this.setData({
+        companyDisplayName: preview.companyName,
+        generationDisclosureDetails: disclosure.details,
+        generationDisclosureMessage: disclosure.message,
+        greetingBody: preview.greetingBody,
+        jobTitle: preview.jobTitle,
+        loading: false,
+        savedGreetingBody: preview.greetingBody,
+        visibleCharacters: countVisibleCharacters(preview.greetingBody),
+      });
+    }
+    void this.loadResult(preview !== undefined);
   },
 
-  async loadResult(): Promise<void> {
+  async loadResult(keepPreview = false): Promise<void> {
     if (this.data.applicationId === "") {
       this.setData({ errorMessage: "找不到生成结果。", loading: false });
       return;
     }
-    this.setData({ errorMessage: "", loading: true });
+    this.setData({ errorMessage: "", loading: !keepPreview });
     try {
       const response = await runtime().api.read<ApplicationDetail>("application.get", {
         applicationId: this.data.applicationId,
@@ -68,7 +81,6 @@ Page({
         response.generationDisclosure,
       );
       this.setData({
-        claims: view.claims,
         companyDisplayName: view.companyDisplayName,
         copyText: response.copyText,
         feedbackNote: response.feedback?.note ?? "",
@@ -79,16 +91,24 @@ Page({
         loading: false,
         manualWarnings: view.manualWarnings,
         memo: view.memo,
-        omittedRequirements: view.omittedRequirements,
         rating: response.feedback?.rating ?? "",
         savedGreetingBody: view.greetingBody,
         status: view.status,
         visibleCharacters: countVisibleCharacters(view.greetingBody),
-        warningMessages: view.warningMessages,
       });
+      runtime().clearResultPreview(this.data.applicationId);
     } catch (error) {
-      this.setData({ errorMessage: messageFrom(error), loading: false });
+      this.setData({
+        errorMessage: keepPreview
+          ? `正文已显示，完整详情暂未同步：${messageFrom(error)}`
+          : messageFrom(error),
+        loading: false,
+      });
     }
+  },
+
+  retryLoadResult(): void {
+    void this.loadResult(this.data.greetingBody !== "");
   },
 
   updateBody(event: TextInputEvent): void {
@@ -102,10 +122,6 @@ Page({
 
   updateFeedbackNote(event: TextInputEvent): void {
     this.setData({ feedbackNote: event.detail.value });
-  },
-
-  toggleDetails(): void {
-    this.setData({ detailsExpanded: !this.data.detailsExpanded });
   },
 
   toggleSecondary(): void {
@@ -171,32 +187,6 @@ Page({
         event: "greeting_copied",
         applicationId: this.data.applicationId,
       });
-    } catch (error) {
-      this.setData({ errorMessage: messageFrom(error) });
-    }
-  },
-
-  async rewrite(): Promise<void> {
-    const modal = await wx.showModal({
-      title: "确认 AI 改写？",
-      content: "将基于你当前保存的文字重新改写，并消耗 1 次今日额度。",
-      confirmText: "确认改写",
-    });
-    if (!modal.confirm) {
-      return;
-    }
-    const saved = await this.updateApplication({ greetingBody: this.data.greetingBody });
-    if (!saved) {
-      return;
-    }
-    this.setData({ savedGreetingBody: this.data.greetingBody });
-    try {
-      const result = await runtime().api.write<{ jobId: string }>("generation.rewrite", {
-        applicationId: this.data.applicationId,
-        mode: "rephrase",
-      });
-      runtime().setLastJobId(result.jobId);
-      openPage(`/pages/job/index?jobId=${result.jobId}`);
     } catch (error) {
       this.setData({ errorMessage: messageFrom(error) });
     }

@@ -83,6 +83,22 @@ function modelValidationFailure(validationGate, validationMetrics = {}) {
   return error;
 }
 
+function safeValidationDiagnostics(error) {
+  if (error?.message !== "MODEL_INVALID_OUTPUT" || typeof error.validationGate !== "string") {
+    return null;
+  }
+  const metrics = error.validationMetrics && typeof error.validationMetrics === "object"
+    ? error.validationMetrics
+    : {};
+  const safeMetrics = {};
+  for (const [key, value] of Object.entries(metrics)) {
+    if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
+      safeMetrics[key] = value;
+    }
+  }
+  return { validationGate: error.validationGate, ...safeMetrics };
+}
+
 function maskProtectedText(value) {
   return String(value)
     .replace(/(?<!\d)(?:\+?86[\s-]?)?1[3-9]\d(?:[\s-]?\d){8}(?!\d)/gu, "[MASKED_PHONE]")
@@ -137,11 +153,15 @@ function tc3Headers({ secretId, secretKey, token, body, timestamp }) {
   };
 }
 
-async function recognizeImage(bytes, credentials) {
+async function recognizeImage(input, credentials, timeoutMs = 12_000) {
   if (!credentials.secretId || !credentials.secretKey) throw new Error("OCR_CREDENTIALS_MISSING");
-  const body = JSON.stringify({ ImageBase64: bytes.toString("base64") });
+  const body = JSON.stringify(
+    typeof input === "string"
+      ? { ImageUrl: input }
+      : { ImageBase64: Buffer.from(input).toString("base64") },
+  );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 40_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`https://${OCR_HOST}/`, {
       method: "POST",
@@ -161,10 +181,7 @@ async function recognizeImage(bytes, credentials) {
   }
 }
 
-async function callModel(
-  prompt,
-  { maxTokens = 1_800, timeoutMs = 40_000, temperature = 0.1 } = {},
-) {
+async function callModel(prompt, { maxTokens = 1_800, timeoutMs = 16_000, temperature = 0.1 } = {}) {
   const key = process.env.TOKENHUB_API_KEY;
   if (!key) throw new Error("MODEL_CREDENTIALS_MISSING");
   const base = (process.env.TOKENHUB_BASE_URL || "https://tokenhub.tencentmaas.com/v1").replace(/\/$/u, "");
@@ -190,36 +207,152 @@ async function callModel(
     const payload = await response.json();
     if (!response.ok) throw new Error("MODEL_FAILED");
     return parseJson(payload?.choices?.[0]?.message?.content);
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("MODEL_FAILED");
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function extractFileText(app, fileId, inputType, credentials) {
+async function temporaryFileUrls(app, fileIds) {
+  const urls = new Map();
+  if (typeof app.getTempFileURL !== "function") return urls;
+  const response = await app.getTempFileURL({ fileList: fileIds });
+  const items = Array.isArray(response?.fileList) ? response.fileList : [];
+  items.forEach((item, index) => {
+    const fileId = typeof item?.fileID === "string" ? item.fileID : fileIds[index];
+    const url = item?.tempFileURL || item?.download_url || item?.downloadUrl;
+    if (typeof fileId === "string" && typeof url === "string" && /^https:\/\//u.test(url)) {
+      urls.set(fileId, url);
+    }
+  });
+  return urls;
+}
+
+async function temporaryFileUrl(app, fileId) {
+  const urls = await temporaryFileUrls(app, [fileId]);
+  return urls instanceof Map ? urls.get(fileId) || "" : "";
+}
+
+async function compressedOcrCopy(app, fileId, credentials) {
+  const response = await app.downloadFile({ fileID: fileId });
+  const originalBytes = Buffer.from(response.fileContent);
+  let compressedBytes;
+  try {
+    const sharp = require("sharp");
+    compressedBytes = await sharp(originalBytes)
+      .rotate()
+      .resize({ width: 720, height: 1_080, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+  } catch {
+    throw new Error("OCR_FAILED");
+  }
+  const cloudPath = `temporary/ocr-copy-${sha256(`${fileId}:${Date.now()}`).slice(0, 24)}.jpg`;
+  const uploaded = await app.uploadFile({ cloudPath, fileContent: compressedBytes });
+  const copyFileId = uploaded?.fileID;
+  if (typeof copyFileId !== "string" || !copyFileId) throw new Error("OCR_FAILED");
+  try {
+    const imageUrl = await temporaryFileUrl(app, copyFileId);
+    if (!imageUrl) throw new Error("OCR_FAILED");
+    return {
+      text: await recognizeImage(imageUrl, credentials),
+      originalBytes: originalBytes.length,
+      compressedBytes: compressedBytes.length,
+      ocrTransportMode: "compressed_image_url",
+      cloudCompressed: true,
+    };
+  } finally {
+    await app.deleteFile({ fileList: [copyFileId] }).catch(() => undefined);
+  }
+}
+
+async function extractFileTextDetailed(app, fileId, inputType, credentials, signedImageUrl = "") {
+  const isDocx = inputType === "docx" || /\.docx(?:$|\?)/iu.test(fileId);
+  const isPdf = inputType === "pdf" || /\.pdf(?:$|\?)/iu.test(fileId);
+  if (!isDocx && !isPdf) {
+    if (signedImageUrl) {
+      try {
+        return {
+          text: await recognizeImage(signedImageUrl, credentials, 8_000),
+          originalBytes: 0,
+          compressedBytes: 0,
+          ocrTransportMode: "image_url",
+          cloudCompressed: false,
+        };
+      } catch (error) {
+        if (error?.message !== "OCR_FAILED") throw error;
+        return compressedOcrCopy(app, fileId, credentials);
+      }
+    }
+    return compressedOcrCopy(app, fileId, credentials);
+  }
   const response = await app.downloadFile({ fileID: fileId });
   const bytes = Buffer.from(response.fileContent);
-  if (inputType === "docx" || /\.docx(?:$|\?)/iu.test(fileId)) {
+  if (isDocx) {
     const result = await mammoth.extractRawText({ buffer: bytes });
     if (!result.value.trim()) throw new Error("DOCUMENT_EMPTY");
-    return result.value.trim();
+    return { text: result.value.trim(), originalBytes: bytes.length, ocrTransportMode: "document" };
   }
-  if (inputType === "pdf" || /\.pdf(?:$|\?)/iu.test(fileId)) {
+  if (isPdf) {
     const { extractText, getDocumentProxy } = await import("unpdf");
     const pdf = await getDocumentProxy(new Uint8Array(bytes));
     if (pdf.numPages > 10) throw new Error("PDF_PAGE_LIMIT");
     const result = await extractText(pdf, { mergePages: true });
     const text = String(result.text ?? "");
     if (!text.trim()) throw new Error("SCANNED_PDF_SCREENSHOT_REQUIRED");
-    return text.trim();
+    return { text: text.trim(), originalBytes: bytes.length, ocrTransportMode: "document" };
   }
-  return recognizeImage(bytes, credentials);
+  return {
+    text: await recognizeImage(bytes, credentials),
+    originalBytes: bytes.length,
+    compressedBytes: 0,
+    ocrTransportMode: "base64_fallback",
+    cloudCompressed: false,
+  };
+}
+
+async function readInputTextDetailed(app, input, credentials) {
+  if (input.inputType === "text") {
+    return {
+      text: String(input.text).trim(),
+      originalBytes: 0,
+      compressedBytes: 0,
+      ocrTransportMode: "text",
+      cloudCompressedCount: 0,
+    };
+  }
+  const fileIds = input.fileIds || [];
+  const batchSigningStartedAt = Date.now();
+  const signedUrls = input.inputType === "images"
+    ? await temporaryFileUrls(app, fileIds).catch(() => new Map())
+    : new Map();
+  const signedUrlBatchMs = Date.now() - batchSigningStartedAt;
+  const results = await Promise.all(
+    fileIds.map((fileId) =>
+      extractFileTextDetailed(
+        app,
+        fileId,
+        input.inputType,
+        credentials,
+        signedUrls.get(fileId) || "",
+      )
+    ),
+  );
+  const modes = new Set(results.map(({ ocrTransportMode }) => ocrTransportMode));
+  return {
+    text: results.map(({ text }) => text).join("\n").trim(),
+    originalBytes: results.reduce((total, result) => total + (result.originalBytes || 0), 0),
+    compressedBytes: results.reduce((total, result) => total + (result.compressedBytes || 0), 0),
+    ocrTransportMode: modes.size === 1 ? Array.from(modes)[0] : "mixed",
+    cloudCompressedCount: results.filter(({ cloudCompressed }) => cloudCompressed).length,
+    signedUrlBatchMs,
+  };
 }
 
 async function readInputText(app, input, credentials) {
-  if (input.inputType === "text") return String(input.text).trim();
-  const texts = [];
-  for (const fileId of input.fileIds || []) texts.push(await extractFileText(app, fileId, input.inputType, credentials));
-  return texts.join("\n").trim();
+  return (await readInputTextDetailed(app, input, credentials)).text;
 }
 
 const SECTION_TYPES = {
@@ -261,20 +394,15 @@ function normalizeResumeModel(value, resumeId) {
 }
 
 function resumePrompt(text) {
-  return `将以下已脱敏简历拆成可核对事实，不得补写。严格返回 {"name":"","education":[{"school":"","major":"","degree":"","text":""}],"experiences":[{"organization":"","role":"","text":""}],"projects":[{"name":"","text":""}],"skills":[{"name":"","text":""}],"languages":[{"name":"","text":""}],"certificates":[{"name":"","text":""}],"achievements":[{"name":"","text":""}],"otherFacts":[{"text":""}]} 。缺失分类用空数组。\n简历：${maskProtectedText(text).slice(0, 30_000)}`;
+  return `从已脱敏简历中提取可核对事实，不得补写。只返回 JSON 对象；缺失分类可以省略或使用空数组。字段：name；education[{school,major,degree,text}]；experiences[{organization,role,text}]；projects[{name,text}]；skills/languages/certificates/achievements[{name,text}]；otherFacts[{text}]。每一项的 text 保留原意并包含最有验证价值的动作、方法和结果，不要合并互不相关的经历。\n简历：${maskProtectedText(text).slice(0, 24_000)}`;
 }
 
-function resumeCorrectionPrompt(text) {
-  return `${resumePrompt(text)}\n纠错要求：顶层必须是 JSON 对象；上述八个分类键必须全部出现且值必须为数组；每个数组项必须包含非空 text；无法识别的分类必须返回 []，不得省略键、不得输出解释文字。`;
-}
-
-async function parseResumeWithCorrection(rawText, resumeId) {
-  try {
-    return normalizeResumeModel(await callModel(resumePrompt(rawText)), resumeId);
-  } catch (error) {
-    if (String(error?.message) !== "MODEL_INVALID_OUTPUT") throw error;
-    return normalizeResumeModel(await callModel(resumeCorrectionPrompt(rawText)), resumeId);
-  }
+async function parseResumeOnce(rawText, resumeId) {
+  const value = await callModel(resumePrompt(rawText), {
+    maxTokens: 1_000,
+    timeoutMs: 16_000,
+  });
+  return normalizeResumeModel(value, resumeId);
 }
 
 function allFacts(profile) {
@@ -283,7 +411,9 @@ function allFacts(profile) {
 
 function compactText(value, maximum) {
   const characters = Array.from(String(value ?? "").replace(/\s+/gu, " ").trim());
-  return characters.slice(0, maximum).join("");
+  return characters.length <= maximum
+    ? characters.join("")
+    : `${characters.slice(0, maximum - 1).join("")}…`;
 }
 
 function matchTokens(value) {
@@ -421,6 +551,90 @@ function evidenceContributors(claim, entries, textOf) {
     if (found) return found;
   }
   return [];
+}
+
+function repairGreetingSelectionShape(input, facts) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const knownFacts = new Map(
+    (Array.isArray(facts) ? facts : [])
+      .filter((fact) => fact && typeof fact.factId === "string" && typeof fact.text === "string")
+      .map((fact) => [fact.factId, fact]),
+  );
+  const knownIds = new Set(knownFacts.keys());
+  const cleanIds = (value) => Array.from(new Set(
+    (Array.isArray(value) ? value : [])
+      .filter((factId) => typeof factId === "string" && knownIds.has(factId)),
+  )).slice(0, 4);
+  const paragraphs = Array.isArray(input.paragraphs)
+    ? input.paragraphs.filter((paragraph) => typeof paragraph === "string")
+    : [];
+  const inferredIds = Array.from(new Set(paragraphs.flatMap((paragraph) =>
+    evidenceContributors(paragraph, Array.from(knownFacts.values()), (fact) => fact.text)
+      .map((fact) => fact.factId)
+  ))).slice(0, 4);
+  let directFactIds = cleanIds(input.directFactIds);
+  let supportingFactIds = cleanIds(input.supportingFactIds)
+    .filter((factId) => !directFactIds.includes(factId));
+  let transferableEvidence = (Array.isArray(input.transferableEvidence)
+    ? input.transferableEvidence
+    : [])
+    .filter((item) => item && typeof item === "object" &&
+      typeof item.factId === "string" && knownIds.has(item.factId) &&
+      typeof item.capability === "string" && item.capability.trim() &&
+      ["transferable", "foundation"].includes(item.wordingStrength))
+    .filter((item, index, all) => all.findIndex(({ factId }) => factId === item.factId) === index)
+    .slice(0, 4);
+
+  if (!Array.isArray(input.directFactIds)) directFactIds = inferredIds.slice(0, 4);
+  transferableEvidence = transferableEvidence.filter(({ factId }) =>
+    !directFactIds.includes(factId));
+  supportingFactIds = supportingFactIds.filter((factId) =>
+    !directFactIds.includes(factId) &&
+    !transferableEvidence.some((item) => item.factId === factId));
+  for (const factId of inferredIds) {
+    if (
+      directFactIds.includes(factId) ||
+      supportingFactIds.includes(factId) ||
+      transferableEvidence.some((item) => item.factId === factId)
+    ) continue;
+    if (supportingFactIds.length < 4) supportingFactIds.push(factId);
+  }
+
+  let matchMode = ["strong", "partial", "low"].includes(input.matchMode)
+    ? input.matchMode
+    : "low";
+  let gaps = (Array.isArray(input.gaps) ? input.gaps : [])
+    .filter((gap) => typeof gap === "string" && gap.trim())
+    .slice(0, 5);
+  if (matchMode === "strong" && directFactIds.length === 0) {
+    matchMode = transferableEvidence.length > 0 ? "partial" : "low";
+  }
+  if (matchMode === "partial" && transferableEvidence.length === 0) matchMode = "low";
+  if (matchMode === "low") {
+    supportingFactIds = Array.from(new Set([
+      ...supportingFactIds,
+      ...directFactIds,
+      ...transferableEvidence.map(({ factId }) => factId),
+      ...inferredIds,
+    ])).slice(0, 4);
+    directFactIds = [];
+    transferableEvidence = [];
+  }
+  if (supportingFactIds.length === 0 && directFactIds.length === 0 && knownFacts.size > 0) {
+    supportingFactIds = [knownFacts.keys().next().value];
+    matchMode = "low";
+  }
+  if (matchMode !== "strong" && gaps.length === 0) {
+    gaps = ["缺少与该岗位完全对应的已确认经历"];
+  }
+  return {
+    ...input,
+    matchMode,
+    directFactIds,
+    transferableEvidence,
+    supportingFactIds,
+    gaps,
+  };
 }
 
 const ATOMIC_CLAUSE_START = "(?:由我|我的|我|本人|该岗位|此岗位|这个岗位|贵司|希望|想|期待|愿意|申请|应聘|加入|主导|负责|开展|完成|参与|掌握|熟悉|使用|搭建|分析|推进|提升|介绍|拥有|具备|能够|可以|会|可|不会|不能|没有|未曾|尚未|从未|需要|继续|独立|再|通过|根据|输出|形成|整理|复核|验证|理解|阅读|检索|支持|连续|投入|到岗)";
@@ -662,10 +876,18 @@ function mentionsTarget(body, target, fallback) {
 }
 
 const ROLE_STRATEGIES = Object.freeze({
+  ai_evaluation_product: "主证据优先选择模型评测、错误归因、评测集或AI产品实习；辅证据再选择产品项目或行业理解。",
+  ai_finance_research: "主证据优先选择金融研究、估值、财务分析或内容判断；辅证据选择模型评测，说明如何判断AI产出的研究价值。",
+  ai_business_product: "主证据围绕业务问题、AI方案、原型或演示、验证结果形成闭环；辅证据选择商业分析或跨团队推进。",
+  ai_product_builder: "主证据围绕用户场景、需求拆解、原型、验证和迭代形成完整产品闭环；辅证据选择AI实习或模型理解。",
+  investment_research: "只突出行业研究、公司分析、估值、财务或投资判断；与岗位无关的AI经历不得为了覆盖简历而强行写入。",
+  fundraising_execution: "主证据围绕公开信息整理、融资材料、财务分析和执行细节；AI或科技兴趣只能作为次要差异点。",
   seo_growth: Object.freeze({
     direct: "已有直接 SEO 证据时，按事实说明实际完成的关键词研究、自然排名或搜索数据监测工作；不得把相邻能力扩展为未提供的 SEO 能力。",
     partial: "没有直接 SEO 证据时进入部分匹配；必须明确披露缺少直接 SEO 经验；只说明网站实操、数据分析和实验迭代如何迁移，不得改写成关键词研究、自然排名或 Technical SEO 经验。",
   }),
+  general_product: "主证据围绕用户需求、方案设计、原型验证和版本迭代；辅证据选择沟通推进或数据分析。",
+  general: "选择一条最强事实链作为主线，再用一项真正相关的差异点补充，不按简历顺序罗列。",
 });
 
 function isRoleRoutingMetaInstruction(value) {
@@ -728,8 +950,7 @@ function hasDirectSeoEvidence(facts) {
 }
 
 function resolveRoleStrategy(roleFamily, facts) {
-  const strategy = ROLE_STRATEGIES[roleFamily] ||
-    "选择与岗位核心功能最相关的事实作为主线，并严格区分直接证据、可迁移能力和辅助背景。";
+  const strategy = ROLE_STRATEGIES[roleFamily];
   if (roleFamily !== "seo_growth") return strategy;
   return hasDirectSeoEvidence(facts) ? strategy.direct : strategy.partial;
 }
@@ -737,10 +958,14 @@ function resolveRoleStrategy(roleFamily, facts) {
 function roleEvidenceBonus(fact, roleFamily) {
   const text = String(fact?.text ?? "");
   const rules = {
-    ai_evaluation_product: /(?:评测|评估|模型|失败归因|错误归因|用户意图|事实准确|prompt|a\/b test)/iu,
-    ai_finance_research: /(?:金融|投研|估值|财务|研报|行业研究|模型|agent)/iu,
-    investment_research: /(?:投研|投资|财务|估值|dcf|wacc|capm|beta|pe|行业研究|公司分析|投资报告)/iu,
+    ai_evaluation_product: /(?:评测|评估|模型|错误归因|用户意图|事实准确|prompt)/iu,
+    ai_finance_research: /(?:投研|投资|金融|财务|估值|dcf|研报|行业研究|模型评测)/iu,
+    ai_business_product: /(?:业务|商业|客户|解决方案|原型|演示|验证|ai|模型)/iu,
+    ai_product_builder: /(?:用户|需求|原型|迭代|验证|产品|ai|模型)/iu,
+    investment_research: /(?:投研|投资|财务|估值|dcf|行业研究|公司分析)/iu,
+    fundraising_execution: /(?:融资|募资|路演|材料|财务|公开信息|尽调)/iu,
     seo_growth: /(?:网站|web|页面|部署|数据|指标|实验|a\/b|英文资料)/iu,
+    general_product: /(?:用户|需求|原型|迭代|验证|产品|数据)/iu,
   };
   if (roleFamily === "seo_growth" && /(?:网站|web|页面|部署)/iu.test(text)) return 24;
   return rules[roleFamily]?.test(text) ? 18 : 0;
@@ -757,7 +982,7 @@ function requirementEntries(jd) {
       ...requirement,
       requirementIndex,
       requirementType,
-    })),
+    }))
   );
 }
 
@@ -770,26 +995,13 @@ function sourceCompatibility(sourceType, requirementType) {
 }
 
 function rankFactsForText(facts, text, roleFamily = classifyRoleFamily(text)) {
-  const sourcePriority = {
-    experience: 5,
-    skill: 5,
-    project: 4,
-    achievement: 3,
-    preference: 3,
-    education: 1,
-  };
-
-  return facts
-    .map((fact, index) => {
-      return {
-        fact,
-        index,
-        score: similarityScore(fact?.text, text) +
-          (sourcePriority[fact?.sourceType] || 0) + roleEvidenceBonus(fact, roleFamily),
-      };
-    })
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map(({ fact }) => fact);
+  const priority = { experience: 5, project: 4, skill: 5, achievement: 3, preference: 3, education: 1 };
+  return facts.map((fact, index) => ({
+    fact,
+    index,
+    score: similarityScore(fact.text, text) + (priority[fact.sourceType] || 0) +
+      roleEvidenceBonus(fact, roleFamily),
+  })).sort((left, right) => right.score - left.score || left.index - right.index).map(({ fact }) => fact);
 }
 
 function jdPrompt(text, facts) {
@@ -804,7 +1016,7 @@ function jdPrompt(text, facts) {
   );
   return `你是中文求职开场白编辑。岗位路线：${roleFamily}。路线规则：${roleStrategy}
 你必须在一次 JSON 响应中完成岗位理解、证据分层和正文写作，不输出解释、推理过程、Markdown 或产品层 AI 标识。
-判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
+判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；每个 JD 数组项目必须优先复制本次 JD 的原句片段，只能删除不必要文字，禁止同义改写或补充截图中没有的职责；不确定的辅助字段直接省略。coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
 证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
 matchMode：strong 至少有一项核心直接证据；partial 用一句话诚实披露 JD 明确要求但缺少的直接经验，再说明可迁移证据；low 没有足够直接或可迁移证据，只写真实背景、相关基础和投入条件，不得声称高度匹配或能够快速上手。
 正文硬规则：简体中文；350至450个可见字符；3至4个非空段落；第一段自然包含“您好”，优先写“您好，我是…”；结尾根据证据和匹配模式自然收束，不固定句式；必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
@@ -1289,11 +1501,26 @@ function modelGreetingPackage(plan, jd, matches, facts) {
   });
   assertNamedTermsSupported(body, {
     companyName: company,
-    factTexts: Array.from(selectedFacts.values(), ({ text }) => text),
+    factTexts: facts.map(({ text }) => text),
   });
   const blockedTerms = blockedTermsFromGaps(plan.gaps);
 
   const requirements = requirementEntries(jd);
+  const validationMatches = facts.map((fact) => {
+    const requirement = requirements
+      .map((candidate, requirementIndex) => ({
+        candidate,
+        requirementIndex,
+        score:
+          similarityScore(fact.text, candidate.text) +
+          sourceCompatibility(fact.sourceType, candidate.requirementType),
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score || left.requirementIndex - right.requirementIndex,
+      )[0]?.candidate;
+    return requirement ? { fact, requirement } : undefined;
+  }).filter(Boolean);
   const targetNumericTokens = new Set(numericTokens([role, company].join("\n")));
   const jdNumericTokens = new Set(numericTokens([
     role,
@@ -1307,7 +1534,7 @@ function modelGreetingPackage(plan, jd, matches, facts) {
     for (const clause of claimClauses(paragraph)) {
       const clauseFacts = evidenceContributors(
         clause,
-        matches,
+        validationMatches,
         ({ fact }) => fact.text,
       );
       const clauseRequirements = evidenceContributors(
@@ -1324,7 +1551,7 @@ function modelGreetingPackage(plan, jd, matches, facts) {
       const representationFacts = representation
         ? anaphoricRepresentation
           ? Array.from(factMatches.values())
-          : evidenceContributors(representation.subject, matches, ({ fact }) => fact.text)
+          : evidenceContributors(representation.subject, validationMatches, ({ fact }) => fact.text)
         : [];
       const isSupportedRepresentation = Boolean(
         representation &&
@@ -1448,28 +1675,157 @@ function modelGreetingPackage(plan, jd, matches, facts) {
   return { body, evidence };
 }
 
-function renderGreeting(jd, selectedFacts) {
-  const role = jd.jobTitle?.text || "该岗位";
-  const company = jd.companyName?.text || "贵司";
-  const responsibility = jd.responsibilities[0]?.text || "岗位相关工作";
-  const facts = selectedFacts.slice(0, 3);
-  if (facts.length < 1) throw new Error("INSUFFICIENT_FACTS");
-  const factSummary = facts.map((fact) => fact.text.replace(/\s+/gu, " ").slice(0, 72)).join("、");
-  const first = `您好，我想应聘${company}的${role}。我了解到这一岗位重点关注${responsibility}，与我已确认的经历和能力有较高匹配度。`;
-  const additions = [
-    `我的相关事实包括${factSummary}。`,
-    "如果有机会参与，我会先对齐团队目标和交付标准，再按优先级推进任务，并在关键节点主动同步进度、问题与风险。",
-    "对于简历中尚未体现的要求，我会保持诚实，不夸大现有经验，同时通过资料学习和实际任务持续补齐。",
-    "我重视清晰沟通、过程记录和结果复盘，也愿意根据反馈及时调整工作方法。希望有机会进一步了解岗位安排和团队期待，谢谢。",
-  ];
-  let second = "";
-  for (const addition of additions) {
-    if (visibleLength(`${first}\n${second}${addition}`) <= 350) second += addition;
-    if (visibleLength(`${first}\n${second}`) >= 250) break;
+function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
+  if (!rawSelection || typeof rawSelection !== "object" || Array.isArray(rawSelection)) {
+    throw new Error("MODEL_INVALID_OUTPUT");
   }
-  const body = `${first}\n${second}`;
-  if (visibleLength(body) < 250 || visibleLength(body) > 350) throw new Error("GREETING_LENGTH_INVALID");
-  return body;
+  const knownFactIds = new Set(facts.map(({ factId }) => factId));
+  if (collectGreetingFactIds(rawSelection).some((factId) => !knownFactIds.has(factId))) {
+    throw modelValidationFailure("greeting_unknown_fact", { unknownFactCount: 1 });
+  }
+  const selection = repairGreetingSelectionShape(rawSelection, facts);
+  const paragraphs = Array.isArray(selection?.paragraphs)
+    ? selection.paragraphs
+        .map((paragraph) => typeof paragraph === "string" ? paragraph.trim() : "")
+        .filter(Boolean)
+    : typeof rawSelection.body === "string"
+      ? rawSelection.body
+          .split(/\n{2,}/u)
+          .map((paragraph) => paragraph.trim())
+          .filter(Boolean)
+      : [];
+  if (paragraphs.length === 0) throw new Error("MODEL_INVALID_OUTPUT");
+
+  const body = paragraphs.join("\n");
+  const outputVisibleLength = visibleLength(body);
+  if (outputVisibleLength < 350 || outputVisibleLength > 450) {
+    throw modelValidationFailure("greeting_length", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (paragraphs.length < 3 || paragraphs.length > 4) {
+    throw modelValidationFailure("greeting_paragraph_count", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (!/^您好(?:[，,!！。]|$)/u.test(paragraphs[0])) {
+    throw modelValidationFailure("greeting_salutation", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu.test(body) ||
+    /(?<!\d)1[3-9]\d{9}(?!\d)/u.test(body) ||
+    /\[MASKED_(?:PHONE|EMAIL|ID|ADDRESS)\]/u.test(body) ||
+    /作为(?:一个)?AI|根据(?:你|您)提供的简历|```|^\s*#|本人具备|贵公司是行业领先者/mu.test(body) ||
+    containsMechanicalGreetingPhrase(body)
+  ) {
+    throw modelValidationFailure("greeting_forbidden_content", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  if (
+    !mentionsTarget(body, jd.jobTitle?.text, "该岗位") ||
+    !mentionsTarget(body, jd.companyName?.text, "贵司")
+  ) {
+    throw modelValidationFailure("greeting_target_mention", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+    });
+  }
+  const allowedNumbers = new Set(numericTokens([
+    JSON.stringify(jd),
+    ...facts.map(({ text }) => text),
+  ].join("\n")));
+  const unsupportedNumericCount = numericTokens(body)
+    .filter((token) => !allowedNumbers.has(token)).length;
+  if (unsupportedNumericCount > 0) {
+    throw modelValidationFailure("greeting_numeric_source", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+      unsupportedNumericCount,
+    });
+  }
+
+  const requirements = requirementEntries(jd);
+  const selectedFactIds = new Set(collectGreetingFactIds(selection));
+  const selectedFacts = facts.filter(({ factId }) => selectedFactIds.has(factId));
+  const evidence = paragraphs.map((paragraph, paragraphIndex) => {
+    const sources = [];
+    const sourceKeys = new Set();
+    const appendSource = (source) => {
+      const key = source.type === "fact"
+        ? `fact:${source.factId}`
+        : `jd:${source.fieldId}`;
+      if (sourceKeys.has(key)) return;
+      sourceKeys.add(key);
+      sources.push(source);
+    };
+    for (const fact of evidenceContributors(paragraph, selectedFacts, (item) => item.text)) {
+      appendSource({ type: "fact", factId: fact.factId });
+    }
+    for (const requirement of evidenceContributors(paragraph, requirements, (item) => item.text)) {
+      appendSource({ type: "jd", fieldId: requirement.fieldId });
+    }
+    if (paragraphIndex === 0 && jd.jobTitle) {
+      appendSource({ type: "jd", fieldId: jd.jobTitle.fieldId });
+    }
+    if (paragraphIndex === 0 && jd.companyName) {
+      appendSource({ type: "jd", fieldId: jd.companyName.fieldId });
+    }
+    return {
+      claimId: `claim_match_${paragraphIndex + 1}`,
+      text: paragraph,
+      sources,
+    };
+  });
+
+  return {
+    greetingPackage: { body, evidence },
+    selection,
+  };
+}
+
+async function resolveGreetingGeneration({ rawText, facts, modelCall }) {
+  let modelDurationMs = 0;
+  let validationDurationMs = 0;
+  const modelStartedAt = Date.now();
+  let rawModelSelection;
+  try {
+    rawModelSelection = await modelCall(jdPrompt(rawText, facts), {
+      maxTokens: 1_300,
+      timeoutMs: 10_000,
+      temperature: 0.1,
+    });
+  } finally {
+    modelDurationMs = Date.now() - modelStartedAt;
+  }
+  const validationStartedAt = Date.now();
+  try {
+    const jdSnapshot = buildJdSnapshot(rawModelSelection);
+    const { greetingPackage, selection } = modelGreetingPackageWithLocalValidation(
+      rawModelSelection,
+      jdSnapshot,
+      facts,
+    );
+    return {
+      fallbackDurationMs: 0,
+      fallbackReason: "",
+      generationMode: "model",
+      greetingPackage,
+      jdSnapshot,
+      modelDurationMs,
+      selection,
+      validationDurationMs: Date.now() - validationStartedAt,
+      warnings: [],
+    };
+  } finally {
+    validationDurationMs = Date.now() - validationStartedAt;
+  }
 }
 
 function rewriteApplicationSnapshot(application) {
@@ -1588,7 +1944,8 @@ function rewriteReconciliationPending() {
 function disclosure() {
   return {
     mode: "real", providerName: "腾讯云 TokenHub", modelName: "腾讯混元",
-    modelId: process.env.TOKENHUB_MODEL || "hy3", promptVersion: "experience-evidence-planned-v8",
+    modelId: process.env.TOKENHUB_MODEL || "hy3",
+    promptVersion: "experience-evidence-planned-v8",
     filingReference: process.env.TOKENHUB_FILING_REFERENCE || "腾讯云控制台公示的模型备案信息",
   };
 }
@@ -1609,6 +1966,30 @@ function createExperienceWorker({
     const claimed = await jobs.claimJob(job.jobId, `worker_${job.jobId.slice(-12)}`, now());
     if (!claimed) return failure("CONFLICT", "Job is already processing.", true);
     const fileIds = Array.isArray(job.input?.fileIds) ? job.input.fileIds : [];
+    const processingStartedAt = Date.now();
+    const createdAtMs = Date.parse(job.createdAt);
+    const queueDurationMs = Number.isFinite(createdAtMs)
+      ? Math.max(0, processingStartedAt - createdAtMs)
+      : 0;
+    const clientProcessingMetrics =
+      ["jd-submit-v3", "jd-submit-v4", "jd-submit-v5-url-ocr", "jd-submit-v6-background-upload"].includes(job.processingMetrics?.clientPipelineVersion) &&
+      Number.isInteger(job.processingMetrics?.clientImagePreparationMs)
+        ? {
+            clientImagePreparationMs: job.processingMetrics.clientImagePreparationMs,
+            clientPipelineVersion: job.processingMetrics.clientPipelineVersion,
+            ...(["originalBytes", "clientCompressedCount", "clientCompressionMs", "clientUploadMs", "clientBackgroundUploadMs", "clientSelectionToCreateMs"]
+              .reduce((metrics, key) => {
+                const value = job.processingMetrics?.[key];
+                if (Number.isInteger(value) && value >= 0) metrics[key] = value;
+                return metrics;
+              }, {})),
+          }
+        : {};
+    let inputDurationMs = 0;
+    let modelDurationMs = 0;
+    let validationDurationMs = 0;
+    let fallbackDurationMs = 0;
+    let inputMetrics = {};
     try {
       if (job.kind === "greeting_rewrite") {
         await jobs.transitionJob(job.jobId, "queued", "generating", now());
@@ -1679,12 +2060,37 @@ function createExperienceWorker({
       }
       const firstStatus = fileIds.length > 0 && job.input.inputType === "images" ? "ocr" : "parsing";
       await jobs.transitionJob(job.jobId, "queued", firstStatus, now());
-      const rawText = await readInputText(app, job.input, credentials);
+      const inputStartedAt = Date.now();
+      const inputResult = await readInputTextDetailed(app, job.input, credentials);
+      const rawText = inputResult.text;
+      inputMetrics = {
+        ocrTransportMode: inputResult.ocrTransportMode,
+        cloudCompressedCount: inputResult.cloudCompressedCount || 0,
+        workerObservedOriginalBytes: inputResult.originalBytes || 0,
+        workerCompressedBytes: inputResult.compressedBytes || 0,
+        signedUrlBatchMs: inputResult.signedUrlBatchMs || 0,
+      };
+      inputDurationMs = Date.now() - inputStartedAt;
       if (firstStatus === "ocr") await jobs.transitionJob(job.jobId, "ocr", "parsing", now());
       if (job.kind === "resume_parse") {
-        const profile = await parseResumeWithCorrection(rawText, job.resumeId);
+        const modelStartedAt = Date.now();
+        const profile = await parseResumeOnce(rawText, job.resumeId);
+        modelDurationMs = Date.now() - modelStartedAt;
         const profileJson = JSON.stringify(profile);
-        const result = { profile: profileJson, reviewFactIds: [] };
+        const result = {
+          profile: profileJson,
+          reviewFactIds: [],
+          processingMetrics: {
+            ...clientProcessingMetrics,
+            imageCount: fileIds.length,
+            queueDurationMs,
+            inputDurationMs,
+            modelDurationMs,
+            ...inputMetrics,
+            serverPipelineVersion: "greeting-v8.19-low-latency",
+            totalDurationMs: Date.now() - processingStartedAt,
+          },
+        };
         const resumeRecord = await findOne(database.collection("resumes"), {
           recordType: "resume", resumeId: job.resumeId, userId: job.userId,
         });
@@ -1704,57 +2110,99 @@ function createExperienceWorker({
       const resume = await findOne(database.collection("resumes"), { recordType: "resume", resumeId: job.resumeId, userId: job.userId, status: "confirmed" });
       const resumeProfile = decodeStoredProfile(resume?.profile);
       if (!resumeProfile?.confirmed) throw new Error("RESUME_NOT_FOUND");
-      const facts = allFacts(resumeProfile);
-      const modelStartedAt = Date.now();
-      const rawSelection = await modelCall(jdPrompt(rawText, facts), {
-        maxTokens: 1_300,
-        timeoutMs: 10_000,
-        temperature: 0.1,
+      const userRecord = await findOne(database.collection("users"), {
+        recordType: "user",
+        userId: job.userId,
       });
-      const modelDurationMs = Date.now() - modelStartedAt;
-      const jdSnapshot = buildJdSnapshot(rawSelection);
-      const selection = normalizeGreetingPlan(rawSelection, {
-        facts,
-        jd: jdSnapshot,
-        rawJdText: rawText,
-      });
-      const matches = buildFactMatches(selection, jdSnapshot, facts);
-      await jobs.transitionJob(job.jobId, "parsing", "generating", now());
-      const greetingPackage = modelGreetingPackage(selection, jdSnapshot, matches, facts);
-      const renderMode = "model_evidence_planned";
-      const { body: greetingBody, evidence } = greetingPackage;
-      const referencedFactIds = new Set(
-        evidence.flatMap(({ sources }) =>
-          sources.flatMap((source) => source.type === "fact" ? [source.factId] : []),
-        ),
+      const savedPreferenceFacts = Array.isArray(userRecord?.preferenceFacts)
+        ? userRecord.preferenceFacts.filter((fact) =>
+            fact && fact.sourceType === "preference" && typeof fact.factId === "string" && typeof fact.text === "string"
+          )
+        : [];
+      const facts = Array.from(
+        new Map(
+          [...allFacts(resumeProfile), ...savedPreferenceFacts].map((fact) => [fact.factId, fact]),
+        ).values(),
       );
-      const factMap = new Map(facts.map((fact) => [fact.factId, fact]));
-      const factSnapshot = collectGreetingFactIds(selection)
-        .filter((factId, index, orderedIds) =>
-          referencedFactIds.has(factId) && orderedIds.indexOf(factId) === index,
-        )
-        .map((factId) => factMap.get(factId))
-        .filter(Boolean)
-        .map(({ factId: id, sourceType, text }) => ({ factId: id, sourceType, text }));
+      await jobs.transitionJob(job.jobId, "parsing", "generating", now());
+      const resolvedGreeting = await resolveGreetingGeneration({ rawText, facts, modelCall });
+      const {
+        fallbackReason,
+        generationMode,
+        greetingPackage,
+        jdSnapshot,
+        selection,
+        warnings,
+      } = resolvedGreeting;
+      modelDurationMs = resolvedGreeting.modelDurationMs;
+      validationDurationMs = resolvedGreeting.validationDurationMs;
+      fallbackDurationMs = resolvedGreeting.fallbackDurationMs;
+      const { body: greetingBody, evidence } = greetingPackage;
+      const factSnapshot = (() => {
+            const referencedFactIds = new Set(
+              evidence.flatMap(({ sources }) =>
+                sources.flatMap((source) => source.type === "fact" ? [source.factId] : []),
+              ),
+            );
+            const factMap = new Map(facts.map((fact) => [fact.factId, fact]));
+            return Array.from(referencedFactIds)
+              .map((factId) => factMap.get(factId))
+              .filter(Boolean)
+              .map(({ factId: id, sourceType, text }) => ({ factId: id, sourceType, text }));
+          })();
       await jobs.transitionJob(job.jobId, "generating", "validating", now());
       const applicationId = `application_${job.jobId.slice(-24)}`;
       const application = persistGreetingMatchMode({
         _id: applicationId, recordType: "application", applicationId, userId: job.userId,
         resumeId: job.resumeId, jobId: job.jobId, status: "not_applied", memo: "", greetingBody,
-        warnings: [], omittedRequirements: [],
+        warnings, omittedRequirements: [], generationMode,
         factSnapshot,
         jdSnapshot, evidence, manualWarnings: [], generationDisclosure: disclosure(),
-        processingMetrics: { modelDurationMs, renderMode },
+        processingMetrics: {
+          ...clientProcessingMetrics,
+          imageCount: fileIds.length,
+          queueDurationMs,
+          inputDurationMs,
+          modelDurationMs,
+          validationDurationMs,
+          fallbackDurationMs,
+          ...inputMetrics,
+          generationMode,
+          renderMode: generationMode,
+          ...(fallbackReason ? { fallbackReason } : {}),
+          serverPipelineVersion: "greeting-v8.19-low-latency",
+          totalDurationMs: Date.now() - processingStartedAt,
+        },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
       }, selection);
       await database.collection("applications").add(application);
-      await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), { result: { applicationId } });
+      await jobs.transitionJob(job.jobId, "validating", "succeeded", now(), {
+        result: { applicationId },
+        processingMetrics: application.processingMetrics,
+      });
       return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId } };
     } catch (error) {
       const publicError = publicProcessingError(error);
       const current = await jobs.getJobById(job.jobId);
       if (current && !TERMINAL.has(current.status) && !error?.rewriteReconciliationPending) {
-        await jobs.transitionJob(job.jobId, current.status, "failed", now(), { error: publicError });
+        const validationDiagnostics = safeValidationDiagnostics(error);
+        await jobs.transitionJob(job.jobId, current.status, "failed", now(), {
+          error: publicError,
+          processingMetrics: {
+            ...(current.processingMetrics || {}),
+            ...clientProcessingMetrics,
+            imageCount: fileIds.length,
+            queueDurationMs,
+            inputDurationMs,
+            modelDurationMs,
+            validationDurationMs,
+            fallbackDurationMs,
+            ...inputMetrics,
+            serverPipelineVersion: "greeting-v8.19-low-latency",
+            totalDurationMs: Date.now() - processingStartedAt,
+            ...(validationDiagnostics ? { validation: validationDiagnostics } : {}),
+          },
+        });
       }
       return failure(publicError.code, publicError.message, publicError.retryable);
     } finally {
@@ -1766,19 +2214,26 @@ function createExperienceWorker({
 module.exports = {
   buildFactMatches,
   buildJdSnapshot,
+  callModel,
   classifyRoleFamily,
   containsMechanicalGreetingPhrase,
   createExperienceWorker,
   jdPrompt,
   maskProtectedText,
   modelGreetingPackage,
+  modelGreetingPackageWithLocalValidation,
   normalizeResumeModel,
   normalizeRewriteModel,
   parseJson,
   persistGreetingMatchMode,
   publicProcessingError,
   rankFactsForText,
-  renderGreeting,
+  repairGreetingSelectionShape,
+  readInputText,
+  readInputTextDetailed,
+  resolveGreetingGeneration,
   rewritePrompt,
+  safeValidationDiagnostics,
   similarityScore,
+  temporaryFileUrls,
 };

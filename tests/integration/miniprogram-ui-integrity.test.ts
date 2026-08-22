@@ -46,14 +46,19 @@ describe("native mini-program UI integrity", () => {
     expect(controller).toContain("MAX_JD_IMAGE_COUNT");
   });
 
-  it("keeps result details and secondary actions behind working disclosures", () => {
+  it("keeps only operational secondary actions on the result page", () => {
     const template = read("pages/result/index.wxml");
     const controller = read("pages/result/index.ts");
 
-    expect(template).toContain('bindtap="toggleDetails"');
     expect(template).toContain('bindtap="toggleSecondary"');
-    expect(controller).toMatch(/\btoggleDetails\s*\(/u);
     expect(controller).toMatch(/\btoggleSecondary\s*\(/u);
+    expect(template).not.toContain("匹配依据、遗漏与提醒");
+    expect(template).not.toContain("未采用要求");
+    expect(template).not.toContain("匹配依据");
+    expect(template).not.toContain("AI 改写");
+    expect(template).not.toContain('bindtap="rewrite"');
+    expect(controller).not.toMatch(/\btoggleDetails\s*\(/u);
+    expect(controller).not.toMatch(/\brewrite\s*\(/u);
   });
 
   it("does not reuse the retired card stack in page templates", () => {

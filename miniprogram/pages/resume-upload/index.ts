@@ -5,7 +5,10 @@ import {
 } from "../../core/input-rules.js";
 import { messageFrom, openPage } from "../../services/page-utils.js";
 import { runtime } from "../../services/runtime.js";
-import { uploadTemporaryFiles } from "../../services/cloud-storage.js";
+import {
+  prepareOcrImagePaths,
+  uploadTemporaryFiles,
+} from "../../services/cloud-storage.js";
 
 type TextInputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 type UploadInputType = "pdf" | "docx" | "images";
@@ -72,7 +75,12 @@ Page({
 
   async chooseImages(): Promise<void> {
     try {
-      const response = await wx.chooseMedia({ count: 6, mediaType: ["image"], sourceType: ["album", "camera"] });
+      const response = await wx.chooseMedia({
+        count: 6,
+        mediaType: ["image"],
+        sizeType: ["compressed"],
+        sourceType: ["album", "camera"],
+      });
       const images = response.tempFiles.map(({ size, tempFilePath }) => ({ path: tempFilePath, size }));
       const validation = validateResumeImageSelection(images);
       if (!validation.valid) {
@@ -104,7 +112,9 @@ Page({
           this.setData({ errorMessage: validation.message, loading: false });
           return;
         }
-        payload.fileIds = await uploadTemporaryFiles(this.data.images.map(({ path }) => path));
+        payload.fileIds = await uploadTemporaryFiles(
+          await prepareOcrImagePaths(this.data.images.map(({ path }) => path)),
+        );
       } else {
         const validation = validateResumeDocument({
           name: this.data.selectedName,
