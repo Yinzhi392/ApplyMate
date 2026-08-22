@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createLiveApiHandler, hashBootstrapToken } = require("../../cloudfunctions/api/deploy/live-api.js") as {
+const { createLiveApiHandler, hashBootstrapToken, hashTrustedIdentity, stripClientIdentity } = require("../../cloudfunctions/api/deploy/live-api.js") as {
   createLiveApiHandler(input: {
     database: { collection(name: string): unknown };
     dispatchReliabilityProbe?(jobId: string): Promise<void>;
@@ -12,6 +12,8 @@ const { createLiveApiHandler, hashBootstrapToken } = require("../../cloudfunctio
     now(): Date;
   }): (event: unknown) => Promise<unknown>;
   hashBootstrapToken(token: string): string;
+  hashTrustedIdentity(identity: string, namespace: string): string;
+  stripClientIdentity(value: unknown): unknown;
 };
 
 type StoredDocument = Record<string, unknown>;
@@ -109,6 +111,15 @@ function handlerFor(
 }
 
 describe("CloudBase live identity and invite handler", () => {
+  it("domain-separates anonymous identities and recursively ignores forged client identity", () => {
+    expect(hashTrustedIdentity("same", "web-anonymous-uid-v1"))
+      .not.toBe(hashTrustedIdentity("same", "applymate-openid-v1"));
+    expect(stripClientIdentity({
+      userId: "forged-envelope",
+      payload: { uid: "forged-payload", nested: { OPENID: "forged", keep: true } },
+    })).toEqual({ payload: { nested: { keep: true } } });
+  });
+
   it("initializes an ordinary event cloud function without cloud-hosting context", async () => {
     const source = readFileSync("cloudfunctions/api/deploy/index.js", "utf8");
     const exportsObject: Record<string, unknown> = {};
@@ -212,8 +223,8 @@ describe("CloudBase live identity and invite handler", () => {
       data: { accessState: "invite_required" },
     });
     await expect(handler({ action: "user.get", payload: {} })).resolves.toMatchObject({
-      ok: true,
-      data: { user: { preferenceText: "", remainingQuota: 5 } },
+      ok: false,
+      error: { code: "FORBIDDEN" },
     });
   });
 
@@ -278,6 +289,87 @@ describe("CloudBase live identity and invite handler", () => {
       payload: { code: invitation.data.code },
       requestId: "e1234567-1234-4123-8123-123456789abc",
     })).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+  });
+
+  it("lets an administrator adjust today's quota and enable or disable ordinary users", async () => {
+    const state = createDatabase();
+    const admin = handlerFor(state.database, "wx_web_admin");
+    const target = handlerFor(state.database, "wx_web_target");
+    const late = handlerFor(state.database, "wx_web_late_confirmation");
+
+    await admin({ action: "agreement.accept", payload: AGREEMENTS });
+    await admin({
+      action: "admin.bootstrap",
+      payload: { token: "bootstrap-token-is-only-used-in-tests" },
+      requestId: ADMIN_REQUEST_ID,
+    });
+    await target({ action: "agreement.accept", payload: AGREEMENTS });
+    await late({ action: "agreement.accept", payload: AGREEMENTS });
+
+    const targetHash = hashTrustedIdentity("wx_web_target", "applymate-openid-v1");
+    const lateHash = hashTrustedIdentity("wx_web_late_confirmation", "applymate-openid-v1");
+    const targetUser = state.documents("users").find((item) => item.identityHash === targetHash);
+    const lateUser = state.documents("users").find((item) => item.identityHash === lateHash);
+    expect(targetUser).toBeDefined();
+    expect(lateUser).toBeDefined();
+    Object.assign(targetUser ?? {}, {
+      activationStatus: "active",
+      activatedAt: "2026-08-05T12:00:00.000Z",
+      firstResumeConfirmedAt: "2026-08-06T12:00:00.000Z",
+    });
+    Object.assign(lateUser ?? {}, {
+      activationStatus: "active",
+      activatedAt: "2026-07-01T12:00:00.000Z",
+      firstResumeConfirmedAt: "2026-07-10T12:00:00.000Z",
+    });
+
+    await expect(admin({
+      action: "admin.quotaAdjust",
+      payload: {
+        targetUserId: targetUser?.userId,
+        increase: 5,
+        reason: "synthetic Web test allowance",
+      },
+      requestId: "71234567-1234-4123-8123-123456789abc",
+    })).resolves.toMatchObject({ ok: true, data: { temporaryIncrease: 5, limit: 25 } });
+    await expect(target({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { user: { remainingQuota: 25 } },
+    });
+
+    await expect(admin({ action: "admin.stats", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        metrics: { firstResumeConfirmation: { numerator: 1, denominator: 2 } },
+        ratios: { firstResumeConfirmation: 0.5 },
+      },
+    });
+
+    await expect(admin({
+      action: "admin.userSetEnabled",
+      payload: {
+        targetUserId: targetUser?.userId,
+        enabled: false,
+        reason: "synthetic Web access test",
+      },
+      requestId: "81234567-1234-4123-8123-123456789abc",
+    })).resolves.toMatchObject({ ok: true, data: { accountStatus: "disabled" } });
+    await expect(target({ action: "auth.status", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { accessState: "disabled" },
+    });
+    await expect(admin({
+      action: "admin.userSetEnabled",
+      payload: {
+        targetUserId: targetUser?.userId,
+        enabled: true,
+        reason: "synthetic Web access test",
+      },
+      requestId: "91234567-1234-4123-8123-123456789abc",
+    })).resolves.toMatchObject({ ok: true, data: { accountStatus: "enabled" } });
+    expect(state.documents("audit_logs").filter((item) =>
+      ["admin.quotaAdjust", "admin.userSetEnabled"].includes(String(item.action)),
+    )).toHaveLength(3);
   });
 
   it("rejects missing trusted identity and keeps unrelated capabilities paused", async () => {

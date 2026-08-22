@@ -12,17 +12,32 @@ import {
 } from "./identity-domain.js";
 import type { IdentityRepository } from "./identity-repository.js";
 
-export function hashTrustedOpenId(openId: string): string {
+export type IdentityNamespace =
+  | "applymate-openid-v1"
+  | "web-anonymous-uid-v1";
+
+export function hashTrustedIdentity(
+  identity: string,
+  namespace: IdentityNamespace,
+): string {
   return createHash("sha256")
-    .update(`applymate-openid-v1\0${openId}`, "utf8")
+    .update(`${namespace}\0${identity}`, "utf8")
     .digest("hex");
+}
+
+export function hashTrustedOpenId(openId: string): string {
+  return hashTrustedIdentity(openId, "applymate-openid-v1");
 }
 
 export class UserService {
   constructor(private readonly repository: IdentityRepository) {}
 
-  async getOrCreateUser(openId: string, now: Date): Promise<UserRecord> {
-    const identityHash = hashTrustedOpenId(openId);
+  async getOrCreateUser(
+    identity: string,
+    now: Date,
+    namespace: IdentityNamespace = "applymate-openid-v1",
+  ): Promise<UserRecord> {
+    const identityHash = hashTrustedIdentity(identity, namespace);
     return this.repository.ensureUser(identityHash, () => {
       const timestamp = now.toISOString();
       return {

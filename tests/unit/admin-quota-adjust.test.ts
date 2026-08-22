@@ -64,7 +64,7 @@ describe("admin.quotaAdjust", () => {
         targetUserId: target.userId,
         dateKey: "2026-08-05",
         temporaryIncrease: 2,
-        limit: 7,
+        limit: 22,
       },
     });
     expect(quotaRepository.listAuditRecords()).toHaveLength(1);
@@ -76,7 +76,7 @@ describe("admin.quotaAdjust", () => {
     await expect(quotas.getUsage(target.userId, now)).resolves.toMatchObject({
       dateKey: "2026-08-06",
       temporaryIncrease: 0,
-      limit: 5,
+      limit: 20,
     });
   });
 

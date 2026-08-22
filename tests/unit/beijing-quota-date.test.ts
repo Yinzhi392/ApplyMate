@@ -19,9 +19,9 @@ describe("Beijing daily quota boundary", () => {
     );
   });
 
-  it("uses five by default and adds only the current-day temporary amount", () => {
-    expect(DEFAULT_DAILY_AI_LIMIT).toBe(5);
-    expect(getDailyQuotaLimit(0)).toBe(5);
-    expect(getDailyQuotaLimit(3)).toBe(8);
+  it("uses twenty by default and adds only the current-day temporary amount", () => {
+    expect(DEFAULT_DAILY_AI_LIMIT).toBe(20);
+    expect(getDailyQuotaLimit(0)).toBe(20);
+    expect(getDailyQuotaLimit(3)).toBe(23);
   });
 });

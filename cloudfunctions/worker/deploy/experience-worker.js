@@ -2180,6 +2180,31 @@ function createExperienceWorker({
         result: { applicationId },
         processingMetrics: application.processingMetrics,
       });
+      if (typeof job.quotaReservationId === "string") {
+        await updateExactlyOne(database.collection("daily_usage").where({
+          _id: job.quotaReservationId,
+          userId: job.userId,
+          jobId: job.jobId,
+          status: "reserved",
+        }), {
+          status: "succeeded",
+          succeededAt: now().toISOString(),
+          updatedAt: now().toISOString(),
+        });
+      }
+      const userRecordAfterSuccess = await findOne(database.collection("users"), {
+        recordType: "user",
+        userId: job.userId,
+      });
+      const analytics = { ...(userRecordAfterSuccess?.analytics || {}) };
+      analytics.firstGenerationSucceededAt ||= now().toISOString();
+      await updateExactlyOne(database.collection("users").where({
+        recordType: "user",
+        userId: job.userId,
+      }), {
+        analytics,
+        updatedAt: now().toISOString(),
+      });
       return { ok: true, data: { jobId: job.jobId, status: "succeeded", applicationId } };
     } catch (error) {
       const publicError = publicProcessingError(error);
@@ -2203,6 +2228,14 @@ function createExperienceWorker({
             ...(validationDiagnostics ? { validation: validationDiagnostics } : {}),
           },
         });
+      }
+      if (job.kind === "greeting_generate" && typeof job.quotaReservationId === "string") {
+        await database.collection("daily_usage").where({
+          _id: job.quotaReservationId,
+          userId: job.userId,
+          jobId: job.jobId,
+          status: "reserved",
+        }).remove().catch(() => undefined);
       }
       return failure(publicError.code, publicError.message, publicError.retryable);
     } finally {

@@ -15,6 +15,62 @@ function hashId(domain, value) {
   return createHash("sha256").update(`${domain}\0${value}`, "utf8").digest("hex").slice(0, 24);
 }
 
+function beijingDateKey(now) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+async function reserveDailyGenerationSlot(collection, userId, jobId, now, maximum = 20) {
+  const dateKey = beijingDateKey(now);
+  for (let slot = 1; slot <= maximum; slot += 1) {
+    const reservationId = `quota_${hashId("web-jd-quota-slot-v1", `${userId}:${dateKey}:${slot}`)}`;
+    const created = await addIfAbsent(collection, {
+      _id: reservationId,
+      recordType: "web_jd_quota_slot",
+      reservationId,
+      userId,
+      dateKey,
+      slot,
+      jobId,
+      status: "reserved",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    });
+    if (created) return reservationId;
+    const existing = await findOne(collection, { _id: reservationId });
+    if (existing?.jobId === jobId) return reservationId;
+  }
+  return null;
+}
+
+async function reserveRewriteRateSlot(collection, userId, jobId, now) {
+  const windowKey = String(Math.floor(now.getTime() / (10 * 60 * 1000)));
+  for (let slot = 1; slot <= 5; slot += 1) {
+    const reservationId = `rewrite_${hashId("web-rewrite-rate-v1", `${userId}:${windowKey}:${slot}`)}`;
+    const created = await addIfAbsent(collection, {
+      _id: reservationId,
+      recordType: "web_rewrite_rate_slot",
+      reservationId,
+      userId,
+      windowKey,
+      slot,
+      jobId,
+      expiresAt: new Date(now.getTime() + 20 * 60 * 1000).toISOString(),
+      createdAt: now.toISOString(),
+    });
+    if (created) return reservationId;
+    const existing = await findOne(collection, { _id: reservationId });
+    if (existing?.jobId === jobId) return reservationId;
+  }
+  return null;
+}
+
 function failure(code, message, retryable = false) {
   return { ok: false, error: { code, message, retryable } };
 }
@@ -71,9 +127,12 @@ function active(user, accessState) {
   return user.accountStatus === "enabled" && accessState(user) === "active";
 }
 
-function validFiles(fileIds, maximum) {
+function validFiles(fileIds, maximum, user) {
+  const ownerPath = `/temporary/web/${user.userId}/`;
+  const requiresWebOwnerPath = user.identityNamespace === "web-anonymous-uid-v1";
   return Array.isArray(fileIds) && fileIds.length > 0 && fileIds.length <= maximum &&
-    fileIds.every((fileId) => typeof fileId === "string" && /^cloud:\/\//u.test(fileId) && fileId.includes("/temporary/"));
+    fileIds.every((fileId) => typeof fileId === "string" && /^cloud:\/\//u.test(fileId) &&
+      (requiresWebOwnerPath ? fileId.includes(ownerPath) : fileId.includes("/temporary/")));
 }
 
 function clientPipelineMetrics(payload) {
@@ -124,6 +183,8 @@ function createExperienceApiHandler({
     const resumes = database.collection("resumes");
     const applications = database.collection("applications");
     const jobs = database.collection("ai_jobs");
+    const dailyUsage = database.collection("daily_usage");
+    const users = database.collection("users");
 
     if (event.action === "user.updatePreferences") {
       if (typeof payload.preferenceText !== "string" || countVisibleCharacters(payload.preferenceText) > 500) return invalid();
@@ -139,7 +200,7 @@ function createExperienceApiHandler({
 
     if (event.action === "resume.parse") {
       const isText = payload.inputType === "text" && typeof payload.text === "string" && payload.text.trim().length > 0;
-      const isFiles = ["images", "pdf", "docx"].includes(payload.inputType) && validFiles(payload.fileIds, 6);
+      const isFiles = ["images", "pdf", "docx"].includes(payload.inputType) && validFiles(payload.fileIds, 6, user);
       if ((!isText && !isFiles) || typeof event.requestId !== "string") return invalid();
       const suffix = hashId("resume-parse-v1", `${user.userId}:${event.requestId}`);
       const resumeId = `resume_${suffix}`;
@@ -184,6 +245,12 @@ function createExperienceApiHandler({
         profile: JSON.stringify(profile), status: "confirmed", confirmedAt: timestamp,
         isDefault: record.isDefault || confirmed.length === 0, updatedAt: timestamp,
       });
+      if (!user.firstResumeConfirmedAt) {
+        await updateDocument(users.where({ recordType: "user", userId: user.userId }), {
+          firstResumeConfirmedAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
       return { ok: true, data: { resumeId: payload.resumeId, confirmed: true } };
     }
 
@@ -211,7 +278,7 @@ function createExperienceApiHandler({
 
     if (event.action === "generation.create") {
       const isText = payload.inputType === "text" && typeof payload.text === "string" && payload.text.trim().length > 0;
-      const isFiles = payload.inputType === "images" && validFiles(payload.fileIds, 5);
+      const isFiles = payload.inputType === "images" && validFiles(payload.fileIds, 5, user);
       if ((!isText && !isFiles) || typeof payload.resumeId !== "string" || typeof event.requestId !== "string") return invalid();
       const resume = await findOne(resumes, { recordType: "resume", userId: user.userId, resumeId: payload.resumeId, status: "confirmed" });
       if (resume === null) return failure("NOT_FOUND", "Confirmed resume was not found.");
@@ -219,13 +286,27 @@ function createExperienceApiHandler({
       const jobId = `job_generation_${suffix}`;
       const existing = await findOne(jobs, { recordType: "ai_job", jobId });
       if (existing === null) {
-        await addIfAbsent(jobs, {
+        const quotaReservationId = await reserveDailyGenerationSlot(
+          dailyUsage,
+          user.userId,
+          jobId,
+          now(),
+          20 + Math.max(0, Number(user.dailyQuotaAdjustments?.[beijingDateKey(now())] || 0)),
+        );
+        if (quotaReservationId === null) {
+          return failure("LIMIT_EXCEEDED", "Daily JD quota is exhausted.");
+        }
+        const created = await addIfAbsent(jobs, {
           _id: jobId, recordType: "ai_job", jobId, userId: user.userId,
           kind: "greeting_generate", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
           input: clone(payload), resumeId: payload.resumeId,
+          quotaReservationId,
           processingMetrics: clientPipelineMetrics(payload),
           claimState: "available", createdAt: timestamp, updatedAt: timestamp,
         });
+        if (!created) {
+          await dailyUsage.where({ _id: quotaReservationId, status: "reserved" }).remove();
+        }
       }
       if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
         const result = await dispatchExperienceJob(jobId);
@@ -248,11 +329,21 @@ function createExperienceApiHandler({
       const jobId = `job_generation_${suffix}`;
       const existing = await findOne(jobs, { recordType: "ai_job", jobId });
       if (existing === null) {
+        const rewriteReservationId = await reserveRewriteRateSlot(
+          dailyUsage,
+          user.userId,
+          jobId,
+          now(),
+        );
+        if (rewriteReservationId === null) {
+          return failure("LIMIT_EXCEEDED", "Rewrite rate limit is exhausted. Please try again later.");
+        }
         await addIfAbsent(jobs, {
           _id: jobId, recordType: "ai_job", jobId, userId: user.userId,
           kind: "greeting_rewrite", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
           input: { applicationId: payload.applicationId, mode: payload.mode },
-          resumeId: application.resumeId, claimState: "available", createdAt: timestamp, updatedAt: timestamp,
+          resumeId: application.resumeId, rewriteReservationId,
+          claimState: "available", createdAt: timestamp, updatedAt: timestamp,
         });
       }
       if (existing === null || (existing.status === "queued" && existing.claimState === "available")) {
@@ -376,7 +467,41 @@ function createExperienceApiHandler({
       return { ok: true, data: { recorded: true } };
     }
 
-    if (event.action === "analytics.track") return { ok: true, data: { tracked: true } };
+    if (event.action === "analytics.track") {
+      if (payload.event === "app_opened" && Object.keys(payload).length === 1) {
+        const analytics = { ...(user.analytics || {}) };
+        analytics.firstOpenedAt ||= timestamp;
+        analytics.lastOpenedAt = timestamp;
+        if (analytics.firstGenerationSucceededAt) {
+          const elapsed = now().getTime() - new Date(analytics.firstGenerationSucceededAt).getTime();
+          if (elapsed >= 24 * 60 * 60 * 1000 && elapsed <= 7 * 24 * 60 * 60 * 1000) {
+            analytics.returnedDay2To7At ||= timestamp;
+          }
+        }
+        await updateDocument(users.where({ recordType: "user", userId: user.userId }), {
+          analytics,
+          updatedAt: timestamp,
+        });
+        return { ok: true, data: { tracked: true } };
+      }
+      if (
+        payload.event === "greeting_copied" &&
+        typeof payload.applicationId === "string" &&
+        Object.keys(payload).length === 2
+      ) {
+        const application = await findOne(applications, {
+          recordType: "application", userId: user.userId, applicationId: payload.applicationId,
+        });
+        if (application === null) return failure("NOT_FOUND", "Application was not found.");
+        const analytics = { ...(user.analytics || {}), firstGreetingCopiedAt: user.analytics?.firstGreetingCopiedAt || timestamp };
+        await updateDocument(users.where({ recordType: "user", userId: user.userId }), {
+          analytics,
+          updatedAt: timestamp,
+        });
+        return { ok: true, data: { tracked: true } };
+      }
+      return invalid();
+    }
     return invalid();
   };
 }

@@ -1,5 +1,50 @@
 # ApplyMate Architecture Memory
 
+## Web v2.0 当前架构（2026-08-23 本地实现）
+
+微信小程序从提交 `b99be7e` 起冻结为 Legacy。`miniprogram/`、既有体验版云函数和旧数据只读保留；Web 不迁移旧 OpenID 用户或其数据，任何删除仍需单独授权。
+
+### 新增文件职责
+
+- `web/`：React/Vite 移动端生产客户端，负责路由、匿名会话启动、临时文件上传、任务恢复与 PWA 外壳。
+- `web/src/app/`：路由、查询客户端、访问门和全局布局。
+- `web/src/features/`：按登录、简历、岗位、结果、记录、账户和管理员拆分业务页面。
+- `web/src/lib/cloudbase.ts`：CloudBase Web SDK 唯一初始化点；前端只调用匿名认证、云函数和临时存储。
+- `web/src/lib/api.ts`：统一 `{ action, payload, requestId }` API 客户端；不接受身份字段。
+- `web/src/styles/`：移动设计令牌、安全区、玻璃表面和无溢出布局。
+- `web/public/sw.js`：只缓存带版本号的网站外壳；API、CloudBase、文件及用户路由响应全部网络直连且不落缓存。
+- `docs/web-wireframes.md`：八组响应式结构基线和 320–430px 验收规则。
+- `docs/web-cloudbase-setup.md`：测试域名部署、匿名认证、数据库拒绝直连、存储规则和人工验收清单；它不是已部署证明。
+
+### 匿名身份边界
+
+1. 浏览器使用 CloudBase `local` 持久化创建或恢复匿名会话。
+2. 云函数上下文提供可信 UID；`api-entry` 在任意嵌套对象或数组中递归删除客户端 UID/OpenID/userId/identityHash 后再校验请求。
+3. `UserService` 使用 `web-anonymous-uid-v1\0<uid>` 计算 SHA-256 身份哈希；Legacy OpenID 继续使用 `applymate-openid-v1`，两个命名空间绝不碰撞。
+4. 业务记录只持久化内部 `userId`；仓储的读取、写入和删除都把当前 `userId` 作为必要条件。
+5. 未激活匿名身份只允许 `auth.status`、`agreement.accept` 和 `invite.activate`；管理员通过独立身份哈希白名单判断。
+
+### Web 数据与缓存边界
+
+- 浏览器不直连业务数据库；CloudBase 数据库安全规则拒绝客户端直接读写。
+- 文件上传路径由可信 UID 归属的临时前缀和随机 ID 组成；提交给 API 的 fileId 仍需服务端所有权校验。
+- TanStack Query 只保存在内存，不启用持久化；LocalStorage 只由 CloudBase SDK 保存匿名会话，不写简历、JD、正文或任务响应。
+- Service Worker 只缓存构建期静态文件，明确绕过 CloudBase、文件、导航和非 GET 请求。
+
+### 额度与任务
+
+- 新 JD 使用北京时间日期键和 `reserved + succeeded` 事务，默认上限 20；成功正文（包括安全通用版）结算一次，失败/超时释放，重复 requestId 回放原结果。
+- 改写不占新 JD 额度，使用独立的用户级短窗口频率限制。
+- 截图选择后可并行上传但不 OCR；点击生成后才创建任务。最多 3 张并行上传，worker 只在超过上游限制时创建临时副本，不进行第二次模型纠错调用。
+- 管理员写操作只接受 `targetUserId`，避免它被通用身份字段过滤器当作客户端自报身份删除；启停、加额和邀请码操作均写审计。首份简历确认率只计算邀请码激活后 168 小时内的首次确认。
+- `cleanup` 增加 Web 僵死任务、24 小时草稿、1 小时孤立文件、过期幂等/改写频率槽和账号删除清理；实际定时触发仍需 W9 云端配置与验证。
+
+### 本地验证与部署边界
+
+- `npm run check` 当前覆盖 124 个测试文件、636 项测试、共享/三个云函数/Legacy 小程序五模块构建和 Web 生产构建。
+- `dist/web/` 是唯一 Web 托管产物；React Router 的路径回退必须在 CloudBase 静态托管中配置为 `index.html` 后，再逐路由验证直接刷新。
+- 本地实现通过不代表匿名认证、存储安全规则、跨设备行为或真实 AI 已上线。W8b/W9 和任何云资源写入仍等待单独授权。
+
 **版本：** 阶段 10 低延迟信息流框架 v2 / greeting-v8.19-low-latency
 
 **日期：** 2026-08-22

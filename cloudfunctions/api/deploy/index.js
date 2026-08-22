@@ -4,10 +4,6 @@ const CloudBase = require("@cloudbase/js-sdk");
 const { createLiveApiHandler } = require("./live-api");
 const { createScfAsyncInvoker } = require("./scf-async-invoker");
 
-function readTrustedOpenId() {
-  return process.env.WX_OPENID;
-}
-
 function readBootstrapTokenHash() {
   return process.env.APPLYMATE_ADMIN_BOOTSTRAP_TOKEN_SHA256;
 }
@@ -50,6 +46,16 @@ exports.main = async (event, context) => {
       ? { accessKey: cloudbaseContext.CLOUDBASE_APIKEY }
       : {}),
   });
+  const readTrustedIdentity = async () => {
+    const userInfo = await app.auth.getUserInfo();
+    if (userInfo && hasValue(userInfo.openId)) {
+      return { value: userInfo.openId, namespace: "applymate-openid-v1" };
+    }
+    if (userInfo && hasValue(userInfo.uid)) {
+      return { value: userInfo.uid, namespace: "web-anonymous-uid-v1" };
+    }
+    return null;
+  };
   const dispatchExperienceJob = async (jobId) => {
     if (!realAiEnabled()) {
       return { ok: false, error: { code: "RESOURCE_PAUSED", message: "Real AI is not enabled.", retryable: true } };
@@ -85,6 +91,6 @@ exports.main = async (event, context) => {
       }
     },
     readBootstrapTokenHash,
-    readTrustedOpenId,
+    readTrustedIdentity,
   })(event);
 };

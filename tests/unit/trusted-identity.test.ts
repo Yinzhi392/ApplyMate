@@ -3,15 +3,21 @@ import { describe, expect, it } from "vitest";
 import {
   ActionRegistry,
   createApiEntry,
+  hashTrustedIdentity,
+  hashTrustedOpenId,
 } from "../../cloudfunctions/api/src/index.js";
 
 describe("trusted CloudBase identity boundary", () => {
   it("uses only OPENID from the trusted context and ignores client identity", async () => {
     const registry = new ActionRegistry();
-    registry.register("user.get", async (_payload, context) => ({
-      ok: true,
-      data: { trustedOpenId: context.trustedOpenId },
-    }));
+    let receivedPayload: Record<string, unknown> | undefined;
+    registry.register("user.get", async (payload, context) => {
+      receivedPayload = payload;
+      return {
+        ok: true,
+        data: { trustedOpenId: context.trustedOpenId },
+      };
+    });
     const api = createApiEntry({
       registry,
       readCloudBaseContext: () => ({ OPENID: "wx_trusted_user" }),
@@ -23,12 +29,71 @@ describe("trusted CloudBase identity boundary", () => {
         payload: {
           openId: "wx_forged_user",
           userId: "user_forged",
+          filters: {
+            uid: "nested_forged_uid",
+            keep: "safe-filter",
+          },
+          rows: [{ identityHash: "nested_forged_hash", keep: "safe-row" }],
         },
         openId: "wx_forged_envelope",
       }),
     ).resolves.toEqual({
       ok: true,
       data: { trustedOpenId: "wx_trusted_user" },
+    });
+    expect(receivedPayload).toEqual({
+      filters: { keep: "safe-filter" },
+      rows: [{ keep: "safe-row" }],
+    });
+  });
+
+  it("uses an authenticated anonymous UID when no mini-program OPENID exists", async () => {
+    const registry = new ActionRegistry();
+    registry.register("user.get", async (_payload, context) => ({
+      ok: true,
+      data: {
+        identity: context.trustedOpenId,
+        namespace: context.identityNamespace ?? "applymate-openid-v1",
+      },
+    }));
+    const api = createApiEntry({
+      registry,
+      readCloudBaseContext: () => ({
+        uid: "anonymous_uid_a",
+      }),
+    });
+
+    await expect(api({
+      action: "user.get",
+      payload: { uid: "forged_uid", userId: "forged_user" },
+    })).resolves.toEqual({
+      ok: true,
+      data: {
+        identity: "anonymous_uid_a",
+        namespace: "web-anonymous-uid-v1",
+      },
+    });
+    expect(hashTrustedIdentity("same_value", "web-anonymous-uid-v1"))
+      .not.toBe(hashTrustedOpenId("same_value"));
+  });
+
+  it("keeps OPENID as the Legacy identity when both identifiers exist", async () => {
+    const registry = new ActionRegistry();
+    registry.register("user.get", async (_payload, context) => ({
+      ok: true,
+      data: {
+        identity: context.trustedOpenId,
+        namespace: context.identityNamespace ?? "applymate-openid-v1",
+      },
+    }));
+    const api = createApiEntry({
+      registry,
+      readCloudBaseContext: () => ({ OPENID: "wx_legacy", uid: "anonymous_web" }),
+    });
+
+    await expect(api({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { identity: "wx_legacy", namespace: "applymate-openid-v1" },
     });
   });
 

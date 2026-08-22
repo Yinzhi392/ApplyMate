@@ -192,20 +192,11 @@ export class GenerationRewriteExecutionService {
       this.dependencies.now(),
     );
 
-    const reservationId = `quota_${jobId}`;
-    let reserved = false;
     try {
-      await this.dependencies.quotas.reserve(
-        record.userId,
-        reservationId,
-        this.dependencies.now(),
-      );
-      reserved = true;
       await this.dependencies.jobs.transitionJob(
         jobId,
         "generating",
         this.dependencies.now(),
-        { quotaReservationId: reservationId },
       );
 
       const jdEvaluation = evaluateJobDescription(record.jdSnapshot);
@@ -318,10 +309,6 @@ export class GenerationRewriteExecutionService {
           current,
           timestamp,
         );
-        await this.dependencies.quotas.release(
-          reservationId,
-          this.dependencies.now(),
-        );
         await this.dependencies.rewrites.save({
           ...record,
           status: "failed",
@@ -329,10 +316,6 @@ export class GenerationRewriteExecutionService {
         });
         return true;
       }
-      await this.dependencies.quotas.succeed(
-        reservationId,
-        this.dependencies.now(),
-      );
       await this.dependencies.rewrites.save({
         ...record,
         status: "succeeded",
@@ -340,18 +323,6 @@ export class GenerationRewriteExecutionService {
       });
       return true;
     } catch (error) {
-      if (reserved) {
-        const currentJob = await this.dependencies.jobs.getJobForUser(
-          record.userId,
-          jobId,
-        );
-        if (currentJob.quotaReservationId === undefined) {
-          await this.dependencies.quotas.release(
-            reservationId,
-            this.dependencies.now(),
-          );
-        }
-      }
       await this.fail(record, error);
       return true;
     }
@@ -363,19 +334,6 @@ export class GenerationRewriteExecutionService {
       stableRewriteError(error),
       this.dependencies.now(),
     );
-    if (final.job.quotaReservationId !== undefined) {
-      if (final.job.status === "succeeded") {
-        await this.dependencies.quotas.succeed(
-          final.job.quotaReservationId,
-          this.dependencies.now(),
-        );
-      } else {
-        await this.dependencies.quotas.release(
-          final.job.quotaReservationId,
-          this.dependencies.now(),
-        );
-      }
-    }
     await this.dependencies.rewrites.save({
       ...record,
       status: final.job.status === "succeeded" ? "succeeded" : "failed",

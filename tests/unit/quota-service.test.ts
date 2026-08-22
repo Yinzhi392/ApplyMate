@@ -8,11 +8,11 @@ import {
 const now = new Date("2026-08-05T12:00:00.000Z");
 
 describe("daily quota reservations", () => {
-  it("allows at most five of six concurrent reservations", async () => {
+  it("allows at most twenty of twenty-one concurrent reservations", async () => {
     const service = new QuotaService(new InMemoryQuotaRepository());
 
     const results = await Promise.allSettled(
-      Array.from({ length: 6 }, (_, index) =>
+      Array.from({ length: 21 }, (_, index) =>
         service.reserve(
           "user_synthetic_a",
           `reservation_synthetic_${index + 1}`,
@@ -21,15 +21,15 @@ describe("daily quota reservations", () => {
       ),
     );
 
-    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(5);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(20);
     expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
     expect(
       results.find(({ status }) => status === "rejected"),
     ).toMatchObject({ reason: { code: "LIMIT_EXCEEDED" } });
     await expect(service.getUsage("user_synthetic_a", now)).resolves.toMatchObject({
-      reserved: 5,
+      reserved: 20,
       succeeded: 0,
-      limit: 5,
+      limit: 20,
       remaining: 0,
     });
   });
@@ -47,8 +47,8 @@ describe("daily quota reservations", () => {
     await expect(service.getUsage("user_synthetic_a", now)).resolves.toMatchObject({
       reserved: 0,
       succeeded: 1,
-      limit: 5,
-      remaining: 4,
+      limit: 20,
+      remaining: 19,
     });
   });
 
@@ -69,6 +69,6 @@ describe("daily quota reservations", () => {
     ).resolves.toMatchObject({ succeeded: 1, reserved: 0 });
     await expect(
       service.getUsage("user_synthetic_a", afterMidnight),
-    ).resolves.toMatchObject({ succeeded: 0, reserved: 0, remaining: 5 });
+    ).resolves.toMatchObject({ succeeded: 0, reserved: 0, remaining: 20 });
   });
 });

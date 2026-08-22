@@ -42,7 +42,11 @@ import {
 import type { ResumeConfirmationService } from "./resume-confirmation-service.js";
 import type { ResumeManagementService } from "./resume-management-service.js";
 import type { ResumeWorkflowService } from "./resume-workflow-service.js";
-import { UserService, hashTrustedOpenId } from "./user-service.js";
+import {
+  UserService,
+  hashTrustedIdentity,
+  hashTrustedOpenId,
+} from "./user-service.js";
 
 const EmptyPayloadSchema = z.object({}).strict();
 const AgreementPayloadSchema = z
@@ -214,7 +218,11 @@ export function createIdentityAccessApi(
   );
 
   async function currentUser(context: ApiExecutionContext): Promise<UserRecord> {
-    return users.getOrCreateUser(context.trustedOpenId, dependencies.now());
+    return users.getOrCreateUser(
+      context.trustedOpenId,
+      dependencies.now(),
+      context.identityNamespace,
+    );
   }
 
   function isAdmin(user: UserRecord): boolean {
@@ -303,7 +311,7 @@ export function createIdentityAccessApi(
           preferenceText: user.preferenceText,
           preferenceFacts: user.preferenceFacts,
           isAdmin: isAdmin(user),
-          remainingQuota: usage?.remaining ?? 5,
+          remainingQuota: usage?.remaining ?? 20,
           resourcePauseReason: unavailable.length === 0
             ? ""
             : `${unavailable.map((resource) => resourceLabels[resource]).join("、")}免费额度已暂停`,
@@ -815,7 +823,8 @@ export function createIdentityAccessApi(
       : {
           idempotency: {
             service: dependencies.idempotency,
-            createCallerKey: hashTrustedOpenId,
+            createCallerKey: (identity, namespace = "applymate-openid-v1") =>
+              hashTrustedIdentity(identity, namespace),
             now: dependencies.now,
           },
         }),

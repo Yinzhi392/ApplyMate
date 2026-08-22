@@ -233,7 +233,7 @@ describe("generation.rewrite", () => {
     });
   });
 
-  it("revalidates AI output, corrects once, saves success, and charges once", async () => {
+  it("revalidates AI output, corrects once, saves success, and does not consume JD quota", async () => {
     const applications = new InMemoryApplicationRepository();
     await applications.create(application("user_rewrite_execution"));
     const applicationService = new ApplicationService(applications);
@@ -288,7 +288,7 @@ describe("generation.rewrite", () => {
     ).resolves.toMatchObject({ status: "succeeded" });
     await expect(quotas.getUsage("user_rewrite_execution", FINISH)).resolves.toMatchObject({
       reserved: 0,
-      succeeded: 1,
+      succeeded: 0,
     });
     await expect(applications.getById("application_rewrite_01")).resolves.toMatchObject({
       greetingBody: valid.body,

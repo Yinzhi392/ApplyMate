@@ -19,10 +19,18 @@ const CLIENT_IDENTITY_FIELDS = new Set([
   "openId",
   "userId",
   "uid",
+  "customUserId",
+  "identityHash",
 ]);
 
 export interface CloudBaseContextSnapshot {
   OPENID?: unknown;
+  openId?: unknown;
+  uid?: unknown;
+  userInfo?: {
+    openId?: unknown;
+    uid?: unknown;
+  };
 }
 
 export interface ApiEntryDependencies {
@@ -32,7 +40,10 @@ export interface ApiEntryDependencies {
     | Promise<CloudBaseContextSnapshot>;
   idempotency?: {
     service: IdempotencyService;
-    createCallerKey: (trustedOpenId: string) => string;
+    createCallerKey: (
+      trustedIdentity: string,
+      namespace?: "applymate-openid-v1" | "web-anonymous-uid-v1",
+    ) => string;
     now: () => Date;
   };
   resourceGate?: {
@@ -45,44 +56,48 @@ export interface ApiEntryDependencies {
 }
 
 function stripClientIdentityFields(value: unknown): unknown {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (Array.isArray(value)) {
+    return value.map((child) => stripClientIdentityFields(child));
+  }
+  if (value === null || typeof value !== "object") {
     return value;
   }
 
   const result: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     if (!CLIENT_IDENTITY_FIELDS.has(key)) {
-      result[key] = child;
+      result[key] = stripClientIdentityFields(child);
     }
   }
   return result;
 }
 
 function sanitizeRequestIdentity(input: unknown): unknown {
-  const envelope = stripClientIdentityFields(input);
-  if (
-    envelope === null ||
-    typeof envelope !== "object" ||
-    Array.isArray(envelope)
-  ) {
-    return envelope;
-  }
-
-  return {
-    ...envelope,
-    payload: stripClientIdentityFields(
-      (envelope as Record<string, unknown>).payload,
-    ),
-  };
+  return stripClientIdentityFields(input);
 }
 
-function isTrustedOpenId(value: unknown): value is string {
+function isTrustedIdentity(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.trim().length > 0 &&
     value.length <= 256 &&
     hasValidUnicode(value)
   );
+}
+
+function resolveTrustedIdentity(cloudContext: CloudBaseContextSnapshot): {
+  value: string;
+  namespace: "applymate-openid-v1" | "web-anonymous-uid-v1";
+} | null {
+  const openId = cloudContext.OPENID ?? cloudContext.openId ?? cloudContext.userInfo?.openId;
+  if (isTrustedIdentity(openId)) {
+    return { value: openId, namespace: "applymate-openid-v1" };
+  }
+  const uid = cloudContext.uid ?? cloudContext.userInfo?.uid;
+  if (isTrustedIdentity(uid)) {
+    return { value: uid, namespace: "web-anonymous-uid-v1" };
+  }
+  return null;
 }
 
 export function createApiEntry(
@@ -103,7 +118,8 @@ export function createApiEntry(
 
     try {
       const cloudContext = await dependencies.readCloudBaseContext();
-      if (!isTrustedOpenId(cloudContext.OPENID)) {
+      const trustedIdentity = resolveTrustedIdentity(cloudContext);
+      if (trustedIdentity === null) {
         return {
           ok: false,
           error: {
@@ -113,7 +129,7 @@ export function createApiEntry(
           },
         };
       }
-      const trustedOpenId = cloudContext.OPENID;
+      const trustedOpenId = trustedIdentity.value;
       const dispatch = () => {
         if (dependencies.resourceGate !== undefined) {
           dependencies.resourceGate.service.assertAvailable(
@@ -128,6 +144,7 @@ export function createApiEntry(
           parsed.data.payload,
           {
             trustedOpenId,
+            identityNamespace: trustedIdentity.namespace,
             requestId: parsed.data.requestId,
           },
         );
@@ -137,7 +154,10 @@ export function createApiEntry(
         dependencies.idempotency !== undefined
       ) {
         return await dependencies.idempotency.service.execute(
-          dependencies.idempotency.createCallerKey(trustedOpenId),
+          dependencies.idempotency.createCallerKey(
+            trustedOpenId,
+            trustedIdentity.namespace,
+          ),
           parsed.data.action,
           parsed.data.requestId,
           parsed.data.payload,

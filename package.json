@@ -2,7 +2,7 @@
   "name": "applymate",
   "version": "0.0.0",
   "private": true,
-  "description": "ApplyMate WeChat mini program and CloudBase service",
+  "description": "ApplyMate mobile Web app, Legacy mini program, and CloudBase service",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20 <25",
@@ -24,6 +24,9 @@
     "ocr:credentials": "node scripts/configure-tencent-ocr-credentials.mjs",
     "sensitive:check": "node scripts/check-sensitive.mjs",
     "env:check": "node scripts/check-env.mjs",
+    "web:dev": "vite --config web/vite.config.mts",
+    "web:typecheck": "tsc -p web/tsconfig.json --pretty false",
+    "web:build": "vite build --config web/vite.config.mts",
     "typecheck": "tsc -p tsconfig.check.json --pretty false",
     "test:unit": "vitest run tests/unit",
     "test:contract": "vitest run tests/contract",
@@ -31,22 +34,33 @@
     "test:model": "vitest run tests/model-evaluation",
     "test": "vitest run",
     "clean": "tsc -b --clean",
-    "build": "tsc -b --pretty false",
-    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm test && npm run build"
+    "build": "tsc -b --pretty false && npm run web:build",
+    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "3.7.1",
     "@cloudbase/signature-nodejs": "2.0.0",
+    "@tanstack/react-query": "^5.101.4",
     "mammoth": "1.12.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "sharp": "0.35.3",
     "unpdf": "1.8.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@cloudbase/cli": "3.7.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/node": "24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "jsdom": "^30.0.1",
     "miniprogram-api-typings": "5.2.2",
     "typescript": "7.0.2",
+    "vite": "^8.2.2",
     "vitest": "4.1.10"
   }
 }

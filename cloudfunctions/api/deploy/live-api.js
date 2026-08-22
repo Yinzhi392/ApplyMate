@@ -4,6 +4,7 @@ const { createHash, timingSafeEqual } = require("node:crypto");
 const {
   addDocument,
   addIfAbsent,
+  findMany,
   findOne,
   updateDocument,
 } = require("./cloudbase-document-store");
@@ -38,6 +39,9 @@ const JOB_STATUS_LABELS = Object.freeze({
   succeeded: "成功",
   failed: "失败",
 });
+const CLIENT_IDENTITY_FIELDS = new Set([
+  "uid", "UID", "openId", "openid", "OPENID", "userId", "customUserId", "identityHash",
+]);
 
 function hashValue(domain, value) {
   return createHash("sha256").update(`${domain}\0${value}`, "utf8").digest("hex");
@@ -45,6 +49,10 @@ function hashValue(domain, value) {
 
 function hashTrustedOpenId(openId) {
   return hashValue("applymate-openid-v1", openId);
+}
+
+function hashTrustedIdentity(identity, namespace) {
+  return hashValue(namespace, identity);
 }
 
 function hashInviteCode(code) {
@@ -90,6 +98,16 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function stripClientIdentity(value) {
+  if (Array.isArray(value)) return value.map(stripClientIdentity);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !CLIENT_IDENTITY_FIELDS.has(key))
+      .map(([key, item]) => [key, stripClientIdentity(item)]),
+  );
+}
+
 function decodeJobResult(value) {
   let result;
   try {
@@ -109,12 +127,13 @@ function decodeJobResult(value) {
   }
 }
 
-function createUser(identityHash, now) {
+function createUser(identityHash, identityNamespace, now) {
   return {
     _id: `user_${identityHash.slice(0, 24)}`,
     recordType: "user",
     userId: `user_${identityHash.slice(0, 24)}`,
     identityHash,
+    identityNamespace,
     roles: [],
     accountStatus: "enabled",
     activationStatus: "pending_invite",
@@ -130,7 +149,7 @@ function isAdmin(user) {
   return Array.isArray(user.roles) && user.roles.includes("admin");
 }
 
-function safeUser(user, experienceEnabled = false) {
+function safeUser(user, experienceEnabled = false, remainingQuota = 20) {
   return {
     userId: user.userId,
     accountStatus: user.accountStatus,
@@ -139,7 +158,7 @@ function safeUser(user, experienceEnabled = false) {
     preferenceText: user.preferenceText || "",
     preferenceFacts: clone(user.preferenceFacts || []),
     isAdmin: isAdmin(user),
-    remainingQuota: 5,
+    remainingQuota,
     resourcePauseReason: experienceEnabled ? "" : "OCR、模型与任务处理尚未启用",
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -197,6 +216,17 @@ function timestampAfter(now, milliseconds) {
   return new Date(now.getTime() + milliseconds).toISOString();
 }
 
+function beijingDateKey(now) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
 function canUseInvite(user) {
   return user.accountStatus === "enabled" && accessState(user) !== "agreement_required";
 }
@@ -206,18 +236,32 @@ function createLiveApiHandler({
   dispatchExperienceJob = async () => paused(),
   experienceEnabled = false,
   dispatchReliabilityProbe = async () => undefined,
+  readTrustedIdentity,
   readTrustedOpenId,
   readBootstrapTokenHash = () => process.env.APPLYMATE_ADMIN_BOOTSTRAP_TOKEN_SHA256,
   now = () => new Date(),
 }) {
   return async (event) => {
-    const openId = await readTrustedOpenId();
-    if (typeof openId !== "string" || openId.trim() === "") {
+    const resolvedIdentity = typeof readTrustedIdentity === "function"
+      ? await readTrustedIdentity()
+      : typeof readTrustedOpenId === "function"
+        ? await readTrustedOpenId()
+        : null;
+    const trustedIdentity = typeof resolvedIdentity === "string"
+      ? { value: resolvedIdentity, namespace: "applymate-openid-v1" }
+      : resolvedIdentity;
+    if (
+      !trustedIdentity ||
+      typeof trustedIdentity.value !== "string" ||
+      trustedIdentity.value.trim() === "" ||
+      !["applymate-openid-v1", "web-anonymous-uid-v1"].includes(trustedIdentity.namespace)
+    ) {
       return unauthenticated();
     }
     if (!event || typeof event !== "object" || Array.isArray(event)) {
       return invalidRequest();
     }
+    event = stripClientIdentity(event);
 
     const users = database.collection("users");
     const invites = database.collection("invites");
@@ -225,12 +269,21 @@ function createLiveApiHandler({
     const dailyUsage = database.collection("daily_usage");
     const applications = database.collection("applications");
     const jobs = new CloudBaseJobRepository(database.collection("ai_jobs"));
-    const identityHash = hashTrustedOpenId(openId);
+    const identityHash = hashTrustedIdentity(
+      trustedIdentity.value,
+      trustedIdentity.namespace,
+    );
     const timestamp = now().toISOString();
     let user = await findOne(users, { recordType: "user", identityHash });
     if (user === null) {
-      user = createUser(identityHash, timestamp);
+      user = createUser(identityHash, trustedIdentity.namespace, timestamp);
       await addDocument(users, user);
+    } else if (user.identityNamespace !== trustedIdentity.namespace) {
+      user = { ...user, identityNamespace: trustedIdentity.namespace, updatedAt: timestamp };
+      await updateDocument(users.doc(user._id), {
+        identityNamespace: trustedIdentity.namespace,
+        updatedAt: timestamp,
+      });
     }
 
     if (event.action === "auth.status") {
@@ -275,7 +328,72 @@ function createLiveApiHandler({
       if (!isEmptyPayload(event.payload)) {
         return invalidRequest();
       }
-      return { ok: true, data: { accessState: accessState(user), user: safeUser(user, experienceEnabled) } };
+      if (user.accountStatus !== "enabled" || accessState(user) !== "active") {
+        return forbidden();
+      }
+      const dateKey = beijingDateKey(now());
+      const usedSlots = await findMany(dailyUsage, {
+        recordType: "web_jd_quota_slot",
+        userId: user.userId,
+        dateKey,
+      }, 40);
+      const dailyLimit = 20 + Math.max(0, Number(user.dailyQuotaAdjustments?.[dateKey] || 0));
+      return {
+        ok: true,
+        data: {
+          accessState: accessState(user),
+          user: safeUser(user, experienceEnabled, Math.max(0, dailyLimit - usedSlots.length)),
+        },
+      };
+    }
+
+    if (event.action === "user.delete") {
+      if (!hasWriteRequestId(event) || !event.payload || typeof event.payload !== "object") {
+        return invalidRequest();
+      }
+      if (event.payload.operation === "request") {
+        const confirmationToken = `delete_${hashValue(
+          "applymate-web-delete-token-v1",
+          `${identityHash}:${event.requestId}:${timestamp}`,
+        )}`;
+        const confirmationHash = hashValue("applymate-web-delete-confirmation-v1", confirmationToken);
+        await updateDocument(users.doc(user._id), {
+          deletionConfirmationHash: confirmationHash,
+          deletionConfirmationExpiresAt: timestampAfter(now(), 10 * 60 * 1000),
+          updatedAt: timestamp,
+        });
+        return { ok: true, data: { confirmationToken } };
+      }
+      if (
+        event.payload.operation !== "confirm" ||
+        typeof event.payload.confirmationToken !== "string" ||
+        typeof user.deletionConfirmationHash !== "string" ||
+        typeof user.deletionConfirmationExpiresAt !== "string" ||
+        new Date(user.deletionConfirmationExpiresAt).getTime() <= now().getTime() ||
+        !constantTimeHashEquals(
+          user.deletionConfirmationHash,
+          hashValue("applymate-web-delete-confirmation-v1", event.payload.confirmationToken),
+        )
+      ) {
+        return invalidRequest();
+      }
+      await updateDocument(users.doc(user._id), {
+        accountStatus: "disabled",
+        deletionStatus: "pending",
+        deletionRequestedAt: timestamp,
+        deletionDueAt: timestampAfter(now(), 24 * 60 * 60 * 1000),
+        deletionConfirmationHash: null,
+        deletionConfirmationExpiresAt: null,
+        updatedAt: timestamp,
+      });
+      await addIfAbsent(auditLogs, {
+        _id: `audit_${hashValue("applymate-web-delete-audit-v1", `${user.userId}:${event.requestId}`).slice(0, 24)}`,
+        recordType: "account_deletion_audit",
+        action: "user.delete",
+        actorUserId: user.userId,
+        createdAt: timestamp,
+      });
+      return { ok: true, data: { disabled: true, deleteWithinHours: 24 } };
     }
 
     if (event.action === "job.get") {
@@ -623,6 +741,146 @@ function createLiveApiHandler({
       return { ok: true, data: { inviteId, status: "revoked" } };
     }
 
+    if (event.action === "admin.userSetEnabled") {
+      const targetUserId = event.payload?.targetUserId;
+      const enabled = event.payload?.enabled;
+      const reason = event.payload?.reason;
+      if (
+        typeof targetUserId !== "string" ||
+        typeof enabled !== "boolean" ||
+        typeof reason !== "string" ||
+        reason.trim() === "" ||
+        reason.length > 500 ||
+        !hasWriteRequestId(event)
+      ) {
+        return invalidRequest();
+      }
+      if (user.accountStatus !== "enabled" || accessState(user) !== "active" || !isAdmin(user)) {
+        return forbidden();
+      }
+      const target = await findOne(users, { recordType: "user", userId: targetUserId });
+      if (target === null || isAdmin(target)) return failure("NOT_FOUND", "User was not found.");
+      await updateDocument(users.doc(target._id), {
+        accountStatus: enabled ? "enabled" : "disabled",
+        updatedAt: timestamp,
+      });
+      await addIfAbsent(auditLogs, {
+        _id: `audit_${hashValue("applymate-user-status-audit-v1", `${user.userId}:${event.requestId}`).slice(0, 24)}`,
+        recordType: "audit_log",
+        action: "admin.userSetEnabled",
+        actorUserId: user.userId,
+        targetUserId,
+        enabled,
+        reason: reason.trim(),
+        createdAt: timestamp,
+      });
+      return { ok: true, data: { userId: targetUserId, accountStatus: enabled ? "enabled" : "disabled" } };
+    }
+
+    if (event.action === "admin.quotaAdjust") {
+      const targetUserId = event.payload?.targetUserId;
+      const increase = event.payload?.increase;
+      const reason = event.payload?.reason;
+      if (
+        typeof targetUserId !== "string" ||
+        !Number.isInteger(increase) ||
+        increase < 1 ||
+        increase > 20 ||
+        typeof reason !== "string" ||
+        reason.trim() === "" ||
+        reason.length > 500 ||
+        !hasWriteRequestId(event)
+      ) {
+        return invalidRequest();
+      }
+      if (user.accountStatus !== "enabled" || accessState(user) !== "active" || !isAdmin(user)) {
+        return forbidden();
+      }
+      const target = await findOne(users, { recordType: "user", userId: targetUserId });
+      if (target === null || isAdmin(target)) return failure("NOT_FOUND", "User was not found.");
+      const dateKey = beijingDateKey(now());
+      const adjustedTotal = Math.min(20, Math.max(0, Number(target.dailyQuotaAdjustments?.[dateKey] || 0)) + increase);
+      const dailyQuotaAdjustments = { ...(target.dailyQuotaAdjustments || {}), [dateKey]: adjustedTotal };
+      await updateDocument(users.doc(target._id), { dailyQuotaAdjustments, updatedAt: timestamp });
+      await addIfAbsent(auditLogs, {
+        _id: `audit_${hashValue("applymate-quota-adjust-audit-v1", `${user.userId}:${event.requestId}`).slice(0, 24)}`,
+        recordType: "audit_log",
+        action: "admin.quotaAdjust",
+        actorUserId: user.userId,
+        targetUserId,
+        dateKey,
+        increase,
+        temporaryIncrease: adjustedTotal,
+        reason: reason.trim(),
+        createdAt: timestamp,
+      });
+      return {
+        ok: true,
+        data: {
+          targetUserId,
+          dateKey,
+          temporaryIncrease: adjustedTotal,
+          limit: 20 + adjustedTotal,
+        },
+      };
+    }
+
+    if (event.action === "admin.stats") {
+      if (!isEmptyPayload(event.payload)) return invalidRequest();
+      if (user.accountStatus !== "enabled" || accessState(user) !== "active" || !isAdmin(user)) {
+        return forbidden();
+      }
+      const [allUsers, allJobs, allApplications] = await Promise.all([
+        findMany(users, { recordType: "user" }, 1000),
+        findMany(database.collection("ai_jobs"), { recordType: "ai_job" }, 1000),
+        findMany(applications, { recordType: "application" }, 1000),
+      ]);
+      const ordinaryUsers = allUsers.filter((item) => !isAdmin(item) && item.syntheticTest !== true);
+      const ordinaryUserIds = new Set(ordinaryUsers.map((item) => item.userId));
+      const generationJobs = allJobs.filter((item) =>
+        ordinaryUserIds.has(item.userId) && item.syntheticTest !== true && item.kind === "greeting_generate"
+      );
+      const succeededUsers = new Set(
+        generationJobs.filter((item) => item.status === "succeeded").map((item) => item.userId),
+      );
+      const copiedUsers = new Set(
+        ordinaryUsers.filter((item) => item.analytics?.firstGreetingCopiedAt).map((item) => item.userId),
+      );
+      const ratedApplications = allApplications.filter((item) =>
+        ordinaryUserIds.has(item.userId) && item.feedback?.rating
+      );
+      const satisfiedApplications = ratedApplications.filter((item) => item.feedback.rating === "satisfied");
+      const activatedUsers = ordinaryUsers.filter((item) => item.activatedAt);
+      const firstResumeConfirmedUsers = activatedUsers.filter((item) => {
+        const activatedAt = new Date(item.activatedAt).getTime();
+        const confirmedAt = new Date(item.firstResumeConfirmedAt).getTime();
+        const elapsed = confirmedAt - activatedAt;
+        return Number.isFinite(elapsed) && elapsed >= 0 && elapsed <= 168 * 60 * 60 * 1000;
+      });
+      const rate = (numerator, denominator) => denominator === 0 ? null : numerator / denominator;
+      return {
+        ok: true,
+        data: {
+          users: ordinaryUsers.length,
+          generationJobs: generationJobs.length,
+          metrics: {
+            firstResumeConfirmation: { numerator: firstResumeConfirmedUsers.length, denominator: activatedUsers.length },
+            generationSuccess: { numerator: generationJobs.filter((item) => item.status === "succeeded").length, denominator: generationJobs.length },
+            copy: { numerator: copiedUsers.size, denominator: succeededUsers.size },
+            satisfaction: { numerator: satisfiedApplications.length, denominator: ratedApplications.length },
+            sevenDayReturn: { numerator: ordinaryUsers.filter((item) => item.analytics?.returnedDay2To7At).length, denominator: ordinaryUsers.filter((item) => item.analytics?.firstGenerationSucceededAt).length },
+          },
+          ratios: {
+            firstResumeConfirmation: rate(firstResumeConfirmedUsers.length, activatedUsers.length),
+            generationSuccess: rate(generationJobs.filter((item) => item.status === "succeeded").length, generationJobs.length),
+            copy: rate(copiedUsers.size, succeededUsers.size),
+            satisfaction: rate(satisfiedApplications.length, ratedApplications.length),
+            sevenDayReturn: rate(ordinaryUsers.filter((item) => item.analytics?.returnedDay2To7At).length, ordinaryUsers.filter((item) => item.analytics?.firstGenerationSucceededAt).length),
+          },
+        },
+      };
+    }
+
     return paused();
   };
 }
@@ -647,5 +905,7 @@ module.exports = {
   createLiveApiHandler,
   hashBootstrapToken,
   hashInviteCode,
+  hashTrustedIdentity,
   hashTrustedOpenId,
+  stripClientIdentity,
 };

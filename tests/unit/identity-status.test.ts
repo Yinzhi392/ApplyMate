@@ -155,7 +155,7 @@ describe("auth.status and user.get", () => {
       ok: true,
       data: {
         user: {
-          remainingQuota: 4,
+          remainingQuota: 19,
           resourcePauseReason: "模型免费额度已暂停",
         },
       },

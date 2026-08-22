@@ -4,6 +4,7 @@ import { DomainError } from "./domain-error.js";
 
 export interface ApiExecutionContext {
   trustedOpenId: string;
+  identityNamespace?: "applymate-openid-v1" | "web-anonymous-uid-v1";
   requestId: string | undefined;
 }
 

@@ -1,0 +1,426 @@
+.stack {
+  display: grid;
+  gap: 28px;
+}
+
+.compactStack {
+  display: grid;
+  gap: 14px;
+}
+
+.intro {
+  margin: -10px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.brand {
+  display: grid;
+  gap: 14px;
+  padding-top: clamp(20px, 9dvh, 88px);
+}
+
+.brandMark {
+  color: var(--jade);
+  font-size: 48px;
+  line-height: 1;
+}
+
+.brand h1 {
+  max-width: 360px;
+  margin: 0;
+  font-size: clamp(36px, 11vw, 52px);
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.brand p {
+  max-width: 390px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field span,
+.label {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(38, 118, 108, 0.22);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.textarea {
+  min-height: 144px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.checkRow {
+  display: flex;
+  min-height: 44px;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.checkRow input {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.linkText {
+  color: var(--jade);
+  font-weight: 700;
+}
+
+.factLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.factLine::before {
+  width: 22px;
+  height: 2px;
+  flex: 0 0 auto;
+  background: var(--jade);
+  content: "";
+}
+
+.statusGrid,
+.split {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.statusBlock {
+  min-width: 0;
+  flex: 1;
+}
+
+.statusBlock + .statusBlock {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.meta {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.value {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.heroAction {
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--jade);
+  color: white;
+  box-shadow: 0 16px 34px rgba(38, 118, 108, 0.22);
+}
+
+.heroAction strong {
+  font-size: 23px;
+}
+
+.heroAction span {
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.55;
+}
+
+.sectionTitle {
+  margin: 0 0 14px;
+  font-size: 19px;
+}
+
+.legalHeading {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.list {
+  display: grid;
+  gap: 0;
+}
+
+.listRow {
+  display: flex;
+  min-width: 0;
+  min-height: 66px;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.listRow:last-child {
+  border-bottom: 0;
+}
+
+.rowMain {
+  min-width: 0;
+  flex: 1;
+}
+
+.rowMain strong,
+.rowMain span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.rowMain span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.rowAction {
+  flex: 0 0 auto;
+  color: var(--jade);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--mist);
+  color: var(--jade-dark);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--mist);
+  font-size: 21px;
+}
+
+.buttonRow {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+}
+
+.buttonRow > * {
+  min-width: 0;
+  flex: 1;
+}
+
+.dangerButton {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(161, 76, 76, 0.24);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.tabs {
+  display: flex;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(221, 236, 230, 0.7);
+}
+
+.tab,
+.activeTab {
+  min-width: 0;
+  min-height: 44px;
+  flex: 1;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  font-weight: 750;
+}
+
+.activeTab {
+  background: white;
+  box-shadow: 0 6px 16px rgba(23, 52, 59, 0.08);
+}
+
+.dropZone {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  padding: 20px;
+  border: 1px dashed rgba(38, 118, 108, 0.38);
+  border-radius: 20px;
+  background: rgba(221, 236, 230, 0.35);
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+}
+
+.dropZone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.previews {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.preview {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  background: var(--mist);
+}
+
+.preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(23, 52, 59, 0.76);
+  color: white;
+}
+
+.progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--mist);
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--jade);
+  transition: width 240ms ease;
+}
+
+.progressSteps {
+  display: grid;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressSteps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.progressSteps li::before {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mist);
+  color: var(--jade);
+  content: "✓";
+  font-weight: 800;
+}
+
+.editor {
+  width: 100%;
+  min-height: 300px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+  line-height: 1.85;
+  resize: vertical;
+}
+
+.disclosure {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.dangerText {
+  color: var(--danger) !important;
+}
+
+.legalBody {
+  white-space: pre-wrap;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.skeleton {
+  min-height: 180px;
+}
+
+@media (max-width: 359px) {
+  .statusGrid,
+  .buttonRow {
+    flex-direction: column;
+  }
+
+  .statusBlock + .statusBlock {
+    padding-top: 12px;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}

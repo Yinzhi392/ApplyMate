@@ -113,7 +113,7 @@ describe("Phase 4 task infrastructure", () => {
     await expect(quotas.getUsage(owner.userId, now)).resolves.toMatchObject({
       reserved: 1,
       succeeded: 0,
-      remaining: 4,
+      remaining: 19,
     });
 
     const createQueryApi = () =>
@@ -158,22 +158,22 @@ describe("Phase 4 task infrastructure", () => {
     await expect(quotas.getUsage(owner.userId, now)).resolves.toMatchObject({
       reserved: 0,
       succeeded: 1,
-      remaining: 4,
+      remaining: 19,
     });
 
     now = new Date("2026-08-05T16:00:00.000Z");
     const nextDayReservations = await Promise.allSettled(
-      Array.from({ length: 6 }, (_, index) =>
+      Array.from({ length: 21 }, (_, index) =>
         quotas.reserve(owner.userId, `next_day_${index}`, now),
       ),
     );
     expect(nextDayReservations.filter(({ status }) => status === "fulfilled"))
-      .toHaveLength(5);
+      .toHaveLength(20);
     expect(nextDayReservations.filter(({ status }) => status === "rejected"))
       .toHaveLength(1);
     await expect(quotas.getUsage(owner.userId, now)).resolves.toMatchObject({
       dateKey: "2026-08-06",
-      reserved: 5,
+      reserved: 20,
       succeeded: 0,
       remaining: 0,
     });
@@ -210,7 +210,7 @@ describe("Phase 4 task infrastructure", () => {
     await expect(quotas.getUsage("user_stale", startedAt)).resolves.toMatchObject({
       reserved: 0,
       succeeded: 0,
-      remaining: 5,
+      remaining: 20,
     });
   });
 });

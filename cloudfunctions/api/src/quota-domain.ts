@@ -1,4 +1,4 @@
-export const DEFAULT_DAILY_AI_LIMIT = 5;
+export const DEFAULT_DAILY_AI_LIMIT = 20;
 
 export type QuotaReservationStatus = "reserved" | "succeeded" | "released";
 

@@ -1,42 +1,50 @@
 # 《投了吗》ApplyMate 技术栈选型
 
-**版本：** MVP v1.15
+**版本：** Web MVP v2.0
 
-**日期：** 2026-08-17
+**日期：** 2026-08-22
 
 **依据：** [`design-document.md`](./design-document.md)
 
 **文档关系：** 设计文档定义产品规则，本文定义实现选择；如有冲突，以设计文档为准。
 
-**选型目标：** 简单、健壮、适合 30–100 人微信邀请制内测，并严格保持实际费用为零。
+**选型目标：** 简单、健壮、适合 30–100 人移动 Web 邀请制测试，并严格保持实际费用为零。微信小程序栈自 2026-08-22 起冻结为 Legacy。
 
 ## 1. 最终推荐
 
-采用腾讯生态内的单平台方案：
+Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
 
-> **微信原生小程序 + TypeScript + CloudBase 普通云函数/文档数据库/临时存储 + 腾讯 OCR + TokenHub 文本模型**
+> **React + Vite + TypeScript + React Router + TanStack Query + Zod + CSS Modules + CloudBase Web SDK/PWA + `api + worker + cleanup`**
 
 | 层级 | 技术 | 职责 |
 |---|---|---|
-| 客户端 | 微信原生小程序、TypeScript、WXML、WXSS | 登录、文件选择、任务状态、编辑、复制和记录 |
+| 客户端 | React、Vite、TypeScript、React Router、TanStack Query、CSS Modules | 匿名登录、文件选择、任务恢复、编辑、复制和记录 |
 | 服务端 | 3 个 CloudBase 普通云函数、Node.js、TypeScript | API、异步重任务、清理与数据删除 |
 | 数据 | CloudBase 文档数据库 | 用户、简历、任务、投递、额度、反馈和审计 |
 | 文件 | CloudBase 云存储 | 只保存待处理的临时原文件和截图 |
 | 图片文字识别 | 腾讯 OCR | 处理全部简历图片和 JD 截图 |
 | 文本 AI | TokenHub OpenAI 兼容 API | Hy3 一次完成 JD 结构化、证据计划与开场白正文；首次生成可读正文直接展示，不进行事实/格式硬拒绝，不使用本地正文回退 |
-| 校验 | Zod + 确定性规则 | 入参、模型 JSON、证据映射、长度和敏感信息校验 |
+| 校验 | Zod + 确定性规则 | 入参、隐私和非空正文硬门；模型格式不完整不再整单失败 |
 | 文档解析 | Mammoth、unpdf | DOCX 与文本型 PDF 的本地文字提取 |
-| 测试 | Vitest + 脱敏 fixtures + 真机清单 | 单元、契约、集成、质量、安全和设备验收 |
+| 测试 | Vitest + Testing Library + 脱敏 fixtures + 移动浏览器清单 | 单元、契约、集成、质量、安全、PWA 和设备验收 |
 
-不 fork 现有开源项目，不引入 Web 框架、ORM、工作流框架、独立服务器、消息队列或客户端 API Key。
+不 fork 现有开源项目，不引入 ORM、工作流框架、独立服务器、消息队列或客户端 API Key。PWA 只缓存带版本号的静态外壳，不配置 API、文件或页面数据运行时缓存。
+
+### 1.1 Web 运行边界
+
+- `web/` 是唯一新增生产客户端；`miniprogram/` 保留为 Legacy，不参与 Web 构建和发布。
+- CloudBase Web SDK 使用 `local` 持久化匿名身份；浏览器不直接访问业务数据库，所有业务动作都通过 `api`。
+- CloudBase 环境 ID 通过 Vite 环境变量提供，密钥只存在云函数环境变量；前端仓库不得包含 SecretId、SecretKey 或模型 API Key。
+- Web 构建产物部署到 CloudBase 静态托管测试域名；自定义域名、备案和公开发布不属于本阶段。
+- 设计系统使用本地系统字体、暖白 `#F4F6F1`、墨蓝灰 `#17343B`、低饱和青绿 `#26766C`、薄荷雾 `#DDECE6`、暖棕 `#B97845` 与白色 `#FFFFFF`，不加载第三方字体或视觉脚本。
 
 ## 2. 选择理由
 
 ### 2.1 简单
 
-- 产品只面向微信，不承担跨端框架和独立账号系统的复杂度。
+- 产品只面向移动浏览器和微信内置浏览器，不承担自建密码、邮件验证或跨设备找回系统的复杂度。
 - 前后端统一 TypeScript，数据库保存 JSON 文档，无需 Python 服务或 SQL ORM。
-- 小程序直接调用普通云函数，服务端从运行上下文读取可信 OpenID。
+- Web 只调用 `api` 云函数，服务端从认证上下文读取可信匿名 UID。
 - 只有 `api`、`worker`、`cleanup` 三个部署单元，职责固定。
 
 ### 2.2 健壮
@@ -60,13 +68,17 @@
 
 ## 3. 客户端
 
-### 3.1 微信原生小程序
+### 3.1 Web 客户端
+
+使用 React、Vite、TypeScript、React Router、TanStack Query、CSS Modules 和 CloudBase Web SDK。认证会话由 CloudBase SDK 使用 `local` 持久化；TanStack Query 只使用内存缓存，不把业务响应持久化到 LocalStorage。文件选择后可以后台上传，但只有点击生成才创建 OCR/模型任务。
+
+### 3.2 Legacy 微信原生小程序（冻结）
 
 使用 TypeScript、WXML、WXSS、原生 Page/Component，以及微信文件、媒体、云函数和剪贴板 API。MVP 不使用 Taro、uni-app、React 或 Vue。
 
 页面内部状态放在 Page `data`；登录态、当前用户和默认简历 ID 放在应用级状态。服务端是任务和额度的事实来源，本地只保存无敏感信息的界面偏好、最近 `jobId`，以及最多 20 条只含事件名和可选 applicationId 的分析重试队列。
 
-### 3.2 UI 组件
+### 3.2.1 Legacy UI 组件（历史）
 
 不引入第三方 UI 组件库。全局 WXSS 只提供颜色、字号、间距、圆角、按钮、表单、状态、88rpx 触控高度和安全区基础规则；阶段 9 的 13 个业务页面和阶段 10 新增的协议页面各自维护页面级 WXSS，避免所有页面复用同一种卡片堆叠。
 

@@ -59,6 +59,45 @@ function createDatabase() {
 const user = { userId: "user_test", accountStatus: "enabled" };
 
 describe("experience API preference and low-latency contracts", () => {
+  it("rejects a Web file path that is not owned by the trusted anonymous user", async () => {
+    const state = createDatabase();
+    const webUser = {
+      ...user,
+      identityNamespace: "web-anonymous-uid-v1",
+      userId: "user_aaaaaaaaaaaaaaaaaaaaaaaa",
+    };
+    const handler = createExperienceApiHandler({
+      database: state.database,
+      dispatchExperienceJob: async () => ({ ok: true }),
+      accessState: () => "active",
+      now: () => new Date("2026-08-23T12:00:00.000Z"),
+    });
+
+    await expect(handler({
+      event: {
+        action: "resume.parse",
+        payload: {
+          inputType: "images",
+          fileIds: ["cloud://env/temporary/web/user_bbbbbbbbbbbbbbbbbbbbbbbb/resume.jpg"],
+        },
+        requestId: "f1234567-1234-4123-8123-123456789abc",
+      },
+      user: webUser,
+    })).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+
+    await expect(handler({
+      event: {
+        action: "resume.parse",
+        payload: {
+          inputType: "images",
+          fileIds: ["cloud://env/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.jpg"],
+        },
+        requestId: "f2234567-1234-4123-8123-123456789abc",
+      },
+      user: webUser,
+    })).resolves.toMatchObject({ ok: true, data: { resumeId: expect.any(String) } });
+  });
+
   it("accepts preferenceText, saves normalized facts, and returns them", async () => {
     const state = createDatabase();
     state.documents("users").push({ _id: "user_test", recordType: "user", ...user });

@@ -1,0 +1,75 @@
+.viewport {
+  position: relative;
+  width: min(100%, 480px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 102% 6%, rgba(221, 236, 230, 0.9) 0 92px, transparent 93px),
+    radial-gradient(circle at -8% 82%, rgba(221, 236, 230, 0.62) 0 76px, transparent 77px),
+    var(--ivory);
+  box-shadow: 0 0 70px rgba(23, 52, 59, 0.08);
+}
+
+.page {
+  min-height: 100dvh;
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+}
+
+.withTabs {
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+}
+
+.tabs {
+  position: fixed;
+  z-index: 20;
+  right: max(calc((100vw - 480px) / 2), 0px);
+  bottom: 0;
+  left: max(calc((100vw - 480px) / 2), 0px);
+  display: flex;
+  min-height: calc(66px + env(safe-area-inset-bottom));
+  padding: 8px 18px env(safe-area-inset-bottom);
+  border-top: 1px solid rgba(38, 118, 108, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.tab,
+.activeTab {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.activeTab {
+  color: var(--jade);
+}
+
+.loading {
+  display: grid;
+  min-height: 100dvh;
+  place-content: center;
+  justify-items: center;
+  padding: 32px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.mark {
+  color: var(--jade);
+  font-size: 52px;
+}
+
+.retry {
+  min-height: 44px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--jade);
+  color: white;
+}
