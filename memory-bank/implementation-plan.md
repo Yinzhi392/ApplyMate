@@ -14,7 +14,7 @@
 - [x] 编写并提交正式 v3 设计规格。
 - [x] 同步 design、architecture、tech stack、implementation 和 progress 当前口径。
 - [x] 从根 TypeScript build 与主 Vitest 排除 Legacy 小程序。
-- [ ] 重新登录 CloudBase 并只读盘点旧环境、套餐、函数、触发器、托管、身份、CORS、权限、OCR/TokenHub 额度和账单。需要用户在登录界面操作，盘点不得写入。
+- [ ] 完成旧环境全量只读盘点。2026-08-23 已取得环境、套餐、到期、函数、触发器、托管、身份、CORS、存储规则及 CloudBase 当前账期快照；CLI 随后再次失去身份，集合计数/ACL/变量名及 OCR/TokenHub 额度、价格和独立账单仍待补齐。盘点不得写入。
 
 ## V3.1 正式移动 Web
 

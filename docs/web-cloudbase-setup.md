@@ -4,7 +4,7 @@
 
 ## 1. 旧环境只读盘点
 
-CloudBase CLI 当前登录已失效。重新登录后第一轮只允许读取并保存以下快照，不部署、不续费、不创建资源：
+2026-08-23 第一轮只读盘点已经获取部分实时快照，随后 CLI 身份再次失效。重新登录后的后续盘点仍只允许读取，不部署、不续费、不创建资源：
 
 - 环境 ID、地域、来源、套餐、价格、到期日和自动续费。
 - api/worker/cleanup 版本、运行时、超时、环境变量名与触发器。
@@ -15,6 +15,19 @@ CloudBase CLI 当前登录已失效。重新登录后第一轮只允许读取并
 - CloudBase/OCR/TokenHub/存储/流量官方账单快照。
 
 旧环境只作 Legacy/预发布，不迁移 users、OpenID 或测试数据。
+
+### 2026-08-23 Legacy 环境只读快照
+
+- 唯一环境：`applymate-mvp-d0g005nnw103af4c3`，上海、小程序来源、体验版、预付费、状态 NORMAL，到期 2027-02-10。
+- 数据库实例与对象存储在线；存储 ACL 为 PRIVATE，仅创建者和管理员读写，未配置自定义存储规则。
+- api、worker、cleanup 均为 Node.js 20.19、256MB、45 秒、Active，触发器列表均为空。cleanup 因而没有定时运行证据。
+- 静态托管在线，默认首页是 `index.html`，错误页为空；当前不满足 BrowserRouter 刷新回退。托管中仍有旧 `manifest.webmanifest`、`sw.js`、旧大体积 JS 和 source map。
+- 邮箱、匿名、用户名登录均开启；手机登录关闭。该身份面不能用于 v3 生产。
+- CORS 仍含 Legacy 托管域名、平台默认来源和通配项；只有默认 CloudBase 域名，没有正式产品域名或路由。
+- 当前账期 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包与按量费用显示 0；NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。
+- 已看到 Legacy 业务集合 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；尚无 service_config、budget_periods、ai_task_admissions。
+
+此次没有读取用户记录、调用函数、下载存储对象或修改配置。重新登录后只补齐集合计数、索引/数据库 ACL、函数环境变量名，以及腾讯 OCR/TokenHub 独立套餐、限速、余额、到期和账单；只记录变量名，不读取或输出 Secret 值。
 
 ## 2. 新生产环境（独立授权后）
 

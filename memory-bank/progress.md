@@ -76,8 +76,13 @@
 
 ### 云端/人工
 
-- CloudBase CLI 登录已失效；历史部署记录不代表 2026-08-23 的云端状态。
-- 未执行旧环境只读盘点。
+- 2026-08-23 已完成一轮旧 CloudBase 环境元数据只读盘点；盘点中后段 CLI 身份再次失效，集合计数、索引/数据库 ACL、函数环境变量名和 OCR/TokenHub 套餐仍待补齐。
+- 当前只发现 Legacy 环境 `applymate-mvp-d0g005nnw103af4c3`：上海、小程序来源、体验版、预付费、状态正常，到期日 2027-02-10；数据库和存储在线。
+- api/worker/cleanup 均为 Node.js 20.19、256MB、45 秒、Active；三者均没有触发器，因此 cleanup 当前没有定时执行证据。
+- 旧静态托管在线但错误页未设为 `index.html`；仍存在 `manifest.webmanifest`、`sw.js`、旧约 1.125MB JS 和最高约 3.7MB source map。未对这些旧文件做删除或覆盖。
+- 旧身份配置同时启用邮箱、匿名和用户名登录；存储为 PRIVATE/创建者和管理员读写，无自定义存储规则；CORS 仍包含旧域名、平台默认项和通配配置，没有正式产品域名。
+- 当前账期为 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包和按量费用均显示 0；资源点主要来自 NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。该快照不等于 OCR/TokenHub 独立账单。
+- 旧数据库存在 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；不存在 v3 所需 service_config、budget_periods、ai_task_admissions。未读取或导出任何用户记录。
 - 未购买套餐、未创建新生产环境、未创建集合/权限/触发器、未部署。
 - 未购买域名、未配置 HTTPS、未备案。
 - 未配置生产 OCR/TokenHub/密钥或公开注册。
@@ -88,7 +93,7 @@
 
 1. 用固定脱敏 JD 图片完成三规格 A/B。
 2. 收敛剩余 Legacy deploy 双实现、装配存储孤儿清理和账单快照 adapter。
-3. 用户在 CloudBase 登录界面完成登录后，只读盘点旧环境。
+3. 用户在 CloudBase 登录界面完成登录后，补齐旧环境集合计数/ACL/变量名和 OCR/TokenHub 套餐、额度、账单只读快照。
 4. 分别请求新环境/套餐/域名/备案/密钥/部署授权，再按实施计划的固定顺序上线。
 
 ## 授权记录
