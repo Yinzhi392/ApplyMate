@@ -83,7 +83,7 @@
 - api/worker/cleanup 均为 Node.js 20.19、256MB、45 秒、Active；三者均没有触发器，因此 cleanup 当前没有定时执行证据。
 - 旧静态托管在线但错误页未设为 `index.html`；仍存在 `manifest.webmanifest`、`sw.js`、旧约 1.125MB JS 和最高约 3.7MB source map。未对这些旧文件做删除或覆盖。
 - 旧身份配置同时启用邮箱、匿名和用户名登录；存储为 PRIVATE/创建者和管理员读写，无自定义存储规则；CORS 仍包含旧域名、平台默认项和通配配置，没有正式产品域名。
-- 已只读定位本地 Web 截图上传失败：当前安全域名列表没有 `127.0.0.1`/`localhost`，而测试页来源是 `http://127.0.0.1:4173`。CloudBase Web SDK 直传对象存储因此被 CORS 拒绝并包装为 `OPERATION_FAIL [storage]`；尚未取得新增本地安全域名的独立云端配置授权，所以没有修改。
+- 已只读定位本地 Web 截图上传失败：当前安全域名列表没有 `127.0.0.1`/`localhost`，而测试页来源是 `http://127.0.0.1:4173`。CloudBase Web SDK 直传对象存储因此被 CORS 拒绝并包装为 `OPERATION_FAIL [storage]`。产品负责人已单独授权新增 `127.0.0.1`，但旧体验套餐返回 `CreateAuthDomain: 当前套餐无法执行此操作`；安全域名列表未改变，也没有升级、付费或扩大域名范围。
 - 当前账期为 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包和按量费用均显示 0；资源点主要来自 NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。该快照不等于 OCR/TokenHub 独立账单。
 - 旧数据库存在 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；不存在 v3 所需 service_config、budget_periods、ai_task_admissions。未读取或导出任何用户记录。
 - 未购买套餐、未创建新生产环境、未创建集合/权限/触发器、未部署。
