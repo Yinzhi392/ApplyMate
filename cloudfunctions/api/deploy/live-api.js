@@ -10,6 +10,11 @@ const {
 } = require("./cloudbase-document-store");
 const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
 const { createExperienceApiHandler } = require("./experience-api");
+const {
+  assertPublicAction,
+  exportUserPage,
+  loadPublicWebRuntime,
+} = require("./public-web-v3-runtime");
 
 const CURRENT_VERSIONS = Object.freeze({
   userAgreementVersion: "user-2026-08-23",
@@ -40,8 +45,7 @@ const JOB_STATUS_LABELS = Object.freeze({
   failed: "失败",
 });
 const CLIENT_IDENTITY_FIELDS = new Set([
-  "uid", "UID", "openId", "openid", "OPENID", "userId", "customUserId", "identityHash",
-  "email", "emailAddress",
+  "customuserid", "email", "emailaddress", "identityhash", "openid", "ownerid", "uid", "userid",
 ]);
 
 function hashValue(domain, value) {
@@ -104,7 +108,7 @@ function stripClientIdentity(value) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => !CLIENT_IDENTITY_FIELDS.has(key))
+      .filter(([key]) => !CLIENT_IDENTITY_FIELDS.has(key.toLocaleLowerCase("en-US")))
       .map(([key, item]) => [key, stripClientIdentity(item)]),
   );
 }
@@ -241,6 +245,7 @@ function createLiveApiHandler({
   database,
   dispatchExperienceJob = async () => paused(),
   experienceEnabled = false,
+  publicWebV3 = false,
   dispatchReliabilityProbe = async () => undefined,
   readTrustedIdentity,
   readTrustedOpenId,
@@ -264,10 +269,28 @@ function createLiveApiHandler({
     ) {
       return unauthenticated();
     }
+    if (publicWebV3 && trustedIdentity.namespace !== "web-email-uid-v1") {
+      return unauthenticated();
+    }
     if (!event || typeof event !== "object" || Array.isArray(event)) {
       return invalidRequest();
     }
     event = stripClientIdentity(event);
+
+    const publicRuntime = publicWebV3
+      ? await loadPublicWebRuntime(database, now(), experienceEnabled)
+      : null;
+    if (publicRuntime !== null) {
+      try {
+        assertPublicAction(event.action, publicRuntime.access);
+      } catch (error) {
+        return failure(
+          typeof error?.publicCode === "string" ? error.publicCode : "RESOURCE_PAUSED",
+          error instanceof Error ? error.message : "The public Web service is unavailable.",
+          error?.retryable === true,
+        );
+      }
+    }
 
     const users = database.collection("users");
     const invites = database.collection("invites");
@@ -307,6 +330,7 @@ function createLiveApiHandler({
           agreementRequired: state === "agreement_required",
           inviteRequired: state === "invite_required",
           currentVersions: CURRENT_VERSIONS,
+          ...(publicRuntime === null ? {} : { serviceAccess: publicRuntime.access }),
         },
       };
     }
@@ -343,14 +367,35 @@ function createLiveApiHandler({
         userId: user.userId,
         dateKey,
       }, 40);
-      const dailyLimit = 20 + Math.max(0, Number(user.dailyQuotaAdjustments?.[dateKey] || 0));
+      const dailyLimit = publicWebV3
+        ? 20
+        : 20 + Math.max(0, Number(user.dailyQuotaAdjustments?.[dateKey] || 0));
+      const countedSlots = publicWebV3
+        ? usedSlots.filter((slot) => slot.status === "succeeded")
+        : usedSlots;
       return {
         ok: true,
         data: {
           accessState: accessState(user),
-          user: safeUser(user, experienceEnabled, Math.max(0, dailyLimit - usedSlots.length)),
+          ...(publicRuntime === null ? {} : { serviceAccess: publicRuntime.access }),
+          user: safeUser(user, experienceEnabled, Math.max(0, dailyLimit - countedSlots.length)),
         },
       };
+    }
+
+    if (event.action === "user.export") {
+      if (user.accountStatus !== "enabled" || !["active", "agreement_required"].includes(accessState(user))) {
+        return forbidden();
+      }
+      try {
+        return { ok: true, data: await exportUserPage(database, user.userId, event.payload, now()) };
+      } catch (error) {
+        return failure(
+          typeof error?.publicCode === "string" ? error.publicCode : "INTERNAL_ERROR",
+          error instanceof Error ? error.message : "Export failed.",
+          error?.retryable === true,
+        );
+      }
     }
 
     if (event.action === "user.delete") {
@@ -466,12 +511,13 @@ function createLiveApiHandler({
       };
     }
 
-    if (experienceEnabled) {
+    if (experienceEnabled || publicWebV3) {
       const experienceResult = await createExperienceApiHandler({
         database,
         dispatchExperienceJob,
         accessState,
         now,
+        publicRuntime,
       })({ event, user });
       if (experienceResult !== null) {
         return experienceResult;
@@ -883,6 +929,12 @@ function createLiveApiHandler({
             satisfaction: rate(satisfiedApplications.length, ratedApplications.length),
             sevenDayReturn: rate(ordinaryUsers.filter((item) => item.analytics?.returnedDay2To7At).length, ordinaryUsers.filter((item) => item.analytics?.firstGenerationSucceededAt).length),
           },
+          ...(publicRuntime === null
+            ? {}
+            : {
+                budget: publicRuntime.budget,
+                serviceAccess: publicRuntime.access,
+              }),
         },
       };
     }

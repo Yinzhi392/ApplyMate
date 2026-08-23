@@ -2,7 +2,7 @@
   "name": "applymate",
   "version": "0.0.0",
   "private": true,
-  "description": "ApplyMate mobile Web app, Legacy mini program, and CloudBase service",
+  "description": "ApplyMate public mobile Web app and CloudBase service",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20 <25",
@@ -27,6 +27,7 @@
     "web:dev": "vite --config web/vite.config.mts",
     "web:typecheck": "tsc -p web/tsconfig.json --pretty false",
     "web:build": "vite build --config web/vite.config.mts",
+    "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.check.json --pretty false",
     "test:unit": "vitest run tests/unit",
     "test:contract": "vitest run tests/contract",
@@ -35,7 +36,7 @@
     "test": "vitest run",
     "clean": "tsc -b --clean",
     "build": "tsc -b --pretty false && npm run web:build",
-    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build"
+    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build && npm run test:e2e"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "3.7.1",
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@cloudbase/cli": "3.7.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
     "@types/node": "24.13.3",

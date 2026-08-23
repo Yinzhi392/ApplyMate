@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useRef, type PropsWithChildren } from "react";
 
 import { callApi } from "../lib/api";
-import { hasAuthenticatedIdentity } from "../lib/cloudbase";
+import { hasAuthenticatedIdentity } from "../lib/session";
 import type { AuthStatus } from "../lib/models";
 import { createRequestId } from "../lib/request-id";
 

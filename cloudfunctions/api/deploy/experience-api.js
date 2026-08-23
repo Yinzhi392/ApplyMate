@@ -2,6 +2,10 @@
 
 const { createHash } = require("node:crypto");
 const { addIfAbsent, findMany, findOne, updateDocument } = require("./cloudbase-document-store");
+const {
+  releaseGenerationReservation,
+  reserveGenerationTransaction,
+} = require("./public-web-v3-runtime");
 
 const ACTIONS = new Set([
   "analytics.track", "performance.recordPreview", "user.updatePreferences",
@@ -208,6 +212,7 @@ function createExperienceApiHandler({
   dispatchExperienceJob,
   accessState,
   now = () => new Date(),
+  publicRuntime = null,
 }) {
   return async ({ event, user }) => {
     if (!ACTIONS.has(event.action)) return null;
@@ -323,6 +328,44 @@ function createExperienceApiHandler({
       const suffix = hashId("generation-v1", `${user.userId}:${event.requestId}`);
       const jobId = `job_generation_${suffix}`;
       const existing = await findOne(jobs, { recordType: "ai_job", jobId });
+      if (publicRuntime !== null) {
+        const jobDocument = {
+          _id: jobId, recordType: "ai_job", jobId, userId: user.userId,
+          kind: "greeting_generate", status: "queued", statusHistory: [{ status: "queued", enteredAt: timestamp }],
+          input: clone(payload), resumeId: payload.resumeId,
+          processingMetrics: clientPipelineMetrics(payload),
+          claimState: "available", createdAt: timestamp, updatedAt: timestamp,
+        };
+        let reservation;
+        try {
+          reservation = await reserveGenerationTransaction({
+            database,
+            estimatedCostFen: publicRuntime.estimatedAiTaskCostFen,
+            jobDocument,
+            now: now(),
+            userId: user.userId,
+          });
+        } catch (error) {
+          return failure(
+            typeof error?.publicCode === "string" ? error.publicCode : "RESOURCE_PAUSED",
+            error instanceof Error ? error.message : "AI task admission failed.",
+            error?.retryable === true,
+          );
+        }
+        if (reservation.created || (existing?.status === "queued" && existing.claimState === "available")) {
+          const result = await dispatchExperienceJob(jobId);
+          if (!result || result.ok !== true) {
+            const dispatchError = result?.error || {
+              code: "WORKER_DISPATCH_FAILED",
+              message: "AI task could not be queued.",
+              retryable: true,
+            };
+            await releaseGenerationReservation(database, jobId, now(), dispatchError);
+            return result || failure(dispatchError.code, dispatchError.message, dispatchError.retryable === true);
+          }
+        }
+        return { ok: true, data: { jobId } };
+      }
       if (existing === null) {
         const quotaReservationId = await reserveDailyGenerationSlot(
           dailyUsage,

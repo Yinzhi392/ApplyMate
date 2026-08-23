@@ -1,6 +1,7 @@
 import { ApiResponseSchema, type ApiAction } from "../../../shared/src/api-contract";
 
-import { cloudbaseApp, requireAuthenticatedIdentity } from "./cloudbase";
+import { requireCloudbaseApp } from "./cloudbase-app";
+import { requireAuthenticatedIdentity } from "./session";
 
 export class WebApiError extends Error {
   constructor(
@@ -19,10 +20,7 @@ export async function callApi<T>(
   requestId?: string,
 ): Promise<T> {
   await requireAuthenticatedIdentity();
-  if (cloudbaseApp === undefined) {
-    throw new Error("Web 测试环境尚未配置，请联系管理员。");
-  }
-  const response = await cloudbaseApp.callFunction({
+  const response = await (await requireCloudbaseApp()).callFunction({
     name: import.meta.env.VITE_API_FUNCTION_NAME?.trim() || "api",
     data: { action, payload, ...(requestId === undefined ? {} : { requestId }) },
   });

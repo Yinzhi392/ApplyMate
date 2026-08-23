@@ -34,6 +34,7 @@ import type { GenerationWorkflowService } from "./generation-workflow-service.js
 import { InviteService } from "./invite-service.js";
 import type { JobService } from "./job-service.js";
 import type { QuotaService } from "./quota-service.js";
+import type { ServiceAccessSource } from "./service-access-service.js";
 import {
   ResumeConfirmPayloadSchema,
   ResumeIdPayloadSchema,
@@ -47,6 +48,7 @@ import {
   hashTrustedIdentity,
   hashTrustedOpenId,
 } from "./user-service.js";
+import type { UserExportService } from "./user-export-service.js";
 
 const EmptyPayloadSchema = z.object({}).strict();
 const AgreementPayloadSchema = z
@@ -63,6 +65,12 @@ const InviteRevokePayloadSchema = z
   .strict();
 const PreferencePayloadSchema = z
   .object({ preferenceText: z.string() })
+  .strict();
+const UserExportPayloadSchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(500).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  })
   .strict();
 const UserSetEnabledPayloadSchema = z
   .object({
@@ -142,6 +150,8 @@ export interface IdentityAccessApiDependencies {
   feedback?: FeedbackService;
   analytics?: AnalyticsService;
   resourceGate?: ApiEntryDependencies["resourceGate"];
+  serviceAccess?: ServiceAccessSource;
+  userExport?: UserExportService;
   currentVersions: AgreementVersions;
   adminOpenIds: readonly string[];
   now: () => Date;
@@ -270,6 +280,9 @@ export function createIdentityAccessApi(
       agreementRequired: !agreements.hasCurrentAgreements(user),
       inviteRequired: state === "invite_required",
       currentVersions: agreements.currentVersions,
+      ...(dependencies.serviceAccess === undefined
+        ? {}
+        : { serviceAccess: dependencies.serviceAccess.get(dependencies.now()) }),
     });
   });
 
@@ -309,6 +322,9 @@ export function createIdentityAccessApi(
     };
     return success({
         accessState: accessState(user, agreements, isAdmin(user)),
+        ...(dependencies.serviceAccess === undefined
+          ? {}
+          : { serviceAccess: dependencies.serviceAccess.get(dependencies.now()) }),
         user: {
           userId: user.userId,
           accountStatus: user.accountStatus,
@@ -326,6 +342,29 @@ export function createIdentityAccessApi(
         },
     });
   });
+
+  if (dependencies.userExport !== undefined) {
+    registry.register("user.export", async (payload, context) => {
+      const parsed = UserExportPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return invalidRequest();
+      }
+      const user = await currentUser(context);
+      assertEnabled(user, "user.export");
+      agreements.assertActionAgreement(user, "user.export");
+      assertActivated(user);
+      return success(
+        await dependencies.userExport?.getPage(
+          user.userId,
+          {
+            ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+            ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
+          },
+          dependencies.now(),
+        ),
+      );
+    });
+  }
 
   registry.register("admin.inviteCreate", async (payload, context) => {
     if (!EmptyPayloadSchema.safeParse(payload).success) {

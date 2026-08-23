@@ -1,8 +1,8 @@
 # ApplyMate Web v3 正式公开站设计规格
 
-**日期：** 2026-08-23  
-**状态：** 产品负责人已批准，进入实施  
-**目标分支：** `codex/mobile-web-public-v3`  
+**日期：** 2026-08-23
+**状态：** 产品负责人已批准，进入实施
+**目标分支：** `codex/mobile-web-public-v3`
 **Legacy 基线：** `legacy-miniprogram-final` → `b99be7e`
 
 ## 1. 产品决定

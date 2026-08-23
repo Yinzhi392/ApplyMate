@@ -16,6 +16,10 @@ function realAiEnabled() {
   return process.env.APPLYMATE_REAL_AI_ENABLED === "true";
 }
 
+function publicWebV3Enabled() {
+  return process.env.APPLYMATE_PUBLIC_WEB_V3 === "true";
+}
+
 function anonymousFlag(...values) {
   for (const value of values) {
     if (value === true || value === 1 || value === "1" || value === "true") return true;
@@ -33,6 +37,7 @@ exports.main = async (event, context) => {
         runtime: "api",
         state: realAiEnabled() ? "experience_real_ai_live" : "experience_real_ai_paused",
         acceptsUserTraffic: realAiEnabled(),
+        publicWebV3: publicWebV3Enabled(),
         credentialDiagnostic: {
           hasSecretId: hasValue(cloudbaseContext.TENCENTCLOUD_SECRETID),
           hasSecretKey: hasValue(cloudbaseContext.TENCENTCLOUD_SECRETKEY),
@@ -126,6 +131,7 @@ exports.main = async (event, context) => {
   return createLiveApiHandler({
     database: app.database(),
     experienceEnabled: realAiEnabled(),
+    publicWebV3: publicWebV3Enabled(),
     dispatchExperienceJob,
     dispatchReliabilityProbe: async (jobId) => {
       const response = await app.callFunction({

@@ -4,6 +4,7 @@ const { createHash, createHmac } = require("node:crypto");
 const mammoth = require("mammoth");
 const { findOne, updateExactlyOne } = require("./cloudbase-document-store");
 const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
+const { settleBudgetAdmission } = require("./budget-admission");
 const {
   assertDomainTermsSupported,
   assertNamedTermsSupported,
@@ -2302,7 +2303,11 @@ function createExperienceWorker({
         result: { applicationId },
         processingMetrics: application.processingMetrics,
       });
-      if (typeof job.quotaReservationId === "string") {
+      // If billing settlement is temporarily unavailable, keep the reservation
+      // conservative and finish the owned job; cleanup can reconcile it later.
+      const settledPublicBudget = await settleBudgetAdmission(database, job, "succeeded", now())
+        .catch(() => false);
+      if (!settledPublicBudget && typeof job.quotaReservationId === "string") {
         await updateExactlyOne(database.collection("daily_usage").where({
           _id: job.quotaReservationId,
           userId: job.userId,
@@ -2351,7 +2356,10 @@ function createExperienceWorker({
           },
         });
       }
-      if (job.kind === "greeting_generate" && typeof job.quotaReservationId === "string") {
+      const releasedPublicBudget = job.kind === "greeting_generate"
+        ? await settleBudgetAdmission(database, job, "released", now()).catch(() => false)
+        : false;
+      if (!releasedPublicBudget && job.kind === "greeting_generate" && typeof job.quotaReservationId === "string") {
         await database.collection("daily_usage").where({
           _id: job.quotaReservationId,
           userId: job.userId,

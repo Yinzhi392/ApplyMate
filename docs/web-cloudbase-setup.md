@@ -1,42 +1,138 @@
-# ApplyMate Web CloudBase 配置清单
+# ApplyMate Public Web v3 CloudBase 上线清单
 
-本文件只描述部署前检查。本轮没有执行云端部署或修改线上资源。
+本文件是执行手册，不代表任何云端动作已经完成。套餐、环境、域名、备案、密钥、部署和生产删除都需要单独授权；登录、付款、实名、验证码和密码由产品负责人本人操作。
 
-## 1. 身份与域名
+## 1. 旧环境只读盘点
 
-1. 在 CloudBase 身份认证中启用邮箱验证码登录，并使用平台代发；项目不保存 SMTP 凭证。
-2. 将 CloudBase 测试域名加入 Web 安全域名；注册邮箱身份使用长期本地会话。
-3. Web 只调用 `api` 云函数。函数调用规则允许已认证用户调用 `api`，拒绝其他未声明函数的客户端调用。
+CloudBase CLI 当前登录已失效。重新登录后第一轮只允许读取并保存以下快照，不部署、不续费、不创建资源：
 
-## 2. 数据与存储权限
+- 环境 ID、地域、来源、套餐、价格、到期日和自动续费。
+- api/worker/cleanup 版本、运行时、超时、环境变量名与触发器。
+- 静态托管文件、域名、HTTPS、缓存和错误页。
+- 邮箱/匿名/微信认证方式、CORS、函数调用权限、数据库/存储规则。
+- 数据库集合、索引与记录计数；不得导出用户内容。
+- OCR、TokenHub Hy3 的余额/套餐/限速/到期与近期开销。
+- CloudBase/OCR/TokenHub/存储/流量官方账单快照。
 
-- 数据库客户端权限设为拒绝全部读写；业务数据只能由云函数访问。
-- 临时文件路径为 `temporary/web/{internalUserId}/...`。
-- 客户端只允许已登录用户在临时目录上传；读取和覆盖默认拒绝。服务端还会校验文件路径必须属于当前可信身份，不能只依赖客户端规则。
-- `worker` 完成 OCR 后删除原件和临时副本；`cleanup` 定期清理 24 小时草稿、超时任务、到期改写频率槽和待删除账号。
+旧环境只作 Legacy/预发布，不迁移 users、OpenID 或测试数据。
 
-## 3. 环境变量
+## 2. 新生产环境（独立授权后）
 
-前端构建只需要：
+创建独立 CloudBase 环境，初始 AI 关闭。不得复用微信 AppID 或 OpenID。
+
+身份：
+
+- 只启用邮箱验证码注册/登录；关闭匿名。
+- api 函数只允许已认证调用。
+- 生产函数设置 `APPLYMATE_PUBLIC_WEB_V3=true`。
+- 浏览器不得直接读写业务数据库。
+
+集合至少包括：
+
+```text
+users resumes applications ai_jobs daily_usage ai_task_admissions
+feedback audit_logs service_config budget_periods
+```
+
+所有集合的客户端权限设为拒绝。创建用户/状态、任务、application、admission 和预算所需组合索引；具体索引用部署前查询计划验证，不能盲目照搬旧环境。
+
+## 3. 必需配置记录
+
+`service_config/public`：
+
+```json
+{
+  "_id": "public",
+  "recordType": "service_config",
+  "publicLaunchAt": "上线时填写批准的 ISO 时间",
+  "aiClosesAt": "北京时间满 2 个自然月",
+  "dataAccessEndsAt": "北京时间满 6 个自然月",
+  "estimatedAiTaskCostFen": 0,
+  "resourcePaused": true
+}
+```
+
+`estimatedAiTaskCostFen` 必须来自 OCR + Hy3 + 变动云资源的保守单任务估计，不能先填 0 后开放 AI。
+
+当月 `budget_periods/budget_YYYY-MM`：
+
+```json
+{
+  "_id": "budget_YYYY-MM",
+  "recordType": "budget_period",
+  "periodKey": "YYYY-MM",
+  "limitFen": 10000,
+  "warningFen": 8000,
+  "stopFen": 9000,
+  "fixedCostFen": 0,
+  "conservativeSettledFen": 0,
+  "reservedFen": 0,
+  "officialBilledFen": 0,
+  "updatedAt": "ISO 时间"
+}
+```
+
+前三个预算常量必须精确一致。管理员 Web 没有修改它们的动作。
+
+## 4. 环境变量
+
+Web 公开变量：
 
 - `VITE_CLOUDBASE_ENV_ID`
 - `VITE_CLOUDBASE_REGION`
 - `VITE_API_FUNCTION_NAME=api`
+- `VITE_PUBLIC_LAUNCH_AT`
+- `VITE_AI_CLOSES_AT`
+- `VITE_DATA_ACCESS_ENDS_AT`
+- `VITE_JD_IMAGE_PROFILE`
 
-OCR、模型、管理员等密钥只配置在云函数环境变量，不写入 `web/`、构建产物或浏览器。
+函数变量至少包括：
 
-## 4. 构建与托管
+- `APPLYMATE_PUBLIC_WEB_V3=true`
+- `APPLYMATE_REAL_AI_ENABLED=false`（关闭 AI 首次部署）
+- OCR 凭证/地域变量
+- TokenHub endpoint、正式 hy3 模型 ID 和 API key
+- worker 异步派发所需运行时变量
 
-1. 执行 `npm run web:build`，产物位于 `dist/web/`。
-2. 在 CloudBase 静态托管上传该目录。
-3. Web 使用 `HashRouter`，业务路由位于 URL 的 `#` 片段中；CloudBase 静态托管只需稳定返回根目录 `index.html`，不依赖 404 回退配置。
-4. 先使用测试域名，不配置公开注册、自定义域名或自动付费。
+任何 Secret 只进入函数环境变量/受控 Secret 管理，不写仓库、构建产物、聊天或日志。
 
-## 5. 发布前人工门槛
+Web 的三个日期必须与 `service_config/public` 一致。开放注册时才写最终 `publicLaunchAt`；示例 env 日期不是上线承诺。
 
-- 两个注册邮箱身份完成越权测试；同一浏览器关闭后恢复会话，清除浏览器数据后要求重新进行邮箱验证码登录。
-- iOS Safari、Android Chrome、微信内置浏览器通过 320–430px 检查。
-- 连续 10 次真实生成均返回正文，人工质量均分至少 4.2/5，且零虚构、零串台。
-- CloudBase、OCR、模型账单实际费用均为 0 元，所有后付费开关关闭。
+## 5. 构建与静态托管
 
-参考：CloudBase 官方匿名登录、存储安全规则与 React 静态托管文档。生产规则须在控制台逐项核对后再启用。
+1. 执行 `npm ci --ignore-scripts` 与 `npm run check`。
+2. 确认 `dist/web` 无 `.map`、无 manifest、无 Service Worker。
+3. AI 关闭状态部署 api/worker/cleanup 和 `dist/web`。
+4. CloudBase 控制台进入 Static Hosting → Settings → Error Page，把所有 4xx 设置为 `index.html`。
+5. 用静态托管域名逐一验证 `/`、`/login`、`/legal`、`/support`、`/app` 直达和刷新。
+6. DevTools Application 中确认没有活动 Service Worker，Cache Storage 不含 `applymate-shell-*`。
+
+BrowserRouter 回退步骤依据 CloudBase 官方 React SPA 文档：<https://docs.cloudbase.net/recipes/add-hosting-react>。
+
+## 6. 权限、CORS 与存储
+
+- 数据库业务集合：客户端拒绝全部读写。
+- 临时存储路径：`temporary/web/{internalUserId}/...`。
+- 上传规则只允许已登录会话写自己的临时路径；读取默认拒绝。
+- API 仍校验 fileId、bucket、object path、HTTPS URL 和可信 userId，不能只依赖规则。
+- CORS 只允许批准的正式域名和明确的预发布域名，不使用 `*`。
+- cleanup 触发器执行僵死任务、草稿、日志、孤立文件和待删除账号；部署后用合成数据逐项验证。
+
+## 7. 上线门
+
+固定顺序：
+
+1. 旧环境预发布。
+2. 新环境关闭 AI 部署。
+3. 域名、HTTPS 与备案。
+4. 合成探针。
+5. 两邮箱数据库/文件隔离。
+6. 30 次真实生成质量、隐私和 P50/P95。
+7. 专业合规复核及模型/标识/备案公示。
+8. 设置 `resourcePaused=false`、启用真实 AI，最后开放邮箱注册。
+
+任一预算、TokenHub hy3 额度/价格、质量、隐私、域名、备案或合规门失败都停止上线，不自动改模型或提高预算。
+
+## 8. 退休
+
+两个月时验证服务端和 Web 都进入 read_only；六个月进入 retired。最终删除前先调用只读 `retirementInventory`，补充云存储对象清单并逐项核对。当前 `retirementDelete` 永远拒绝，只有收到独立破坏性操作授权后才允许另行设计和实施删除流程。

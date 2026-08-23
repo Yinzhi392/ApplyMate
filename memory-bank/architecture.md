@@ -1,1037 +1,164 @@
-# ApplyMate Architecture Memory
-
-## Web v2.1 当前架构（2026-08-23 已部署，待真实邮箱验收）
-
-微信小程序从提交 `b99be7e` 起冻结为 Legacy。`miniprogram/`、既有体验版云函数和旧数据只读保留；Web 不迁移旧 OpenID 用户或其数据，任何删除仍需单独授权。
-
-### 新增文件职责
+# ApplyMate Public Mobile Web v3 架构
 
-- `web/`：React/Vite 移动端生产客户端，负责路由、邮箱验证码会话、临时文件上传、任务恢复与 PWA 外壳。
-- `web/src/app/`：路由、查询客户端、访问门和全局布局。
-- `web/src/features/`：按登录、简历、岗位、结果、记录、账户和管理员拆分业务页面。
-- `web/src/lib/cloudbase.ts`：CloudBase Web SDK 唯一初始化点；前端只调用邮箱验证码认证、云函数和临时存储。
-- `web/src/lib/email-auth.ts`：邮箱规范化、地址格式和 CloudBase 6 位字母或数字验证码的无副作用校验；不保存邮箱或验证码。
-- `web/src/lib/api.ts`：统一 `{ action, payload, requestId }` API 客户端；不接受身份字段。
-- `web/src/styles/`：移动设计令牌、安全区、玻璃表面和无溢出布局。
-- `web/public/sw.js`：只缓存带版本号的网站外壳；API、CloudBase、文件及用户路由响应全部网络直连且不落缓存。
-- `docs/web-wireframes.md`：八组响应式结构基线和 320–430px 验收规则。
-- `docs/web-cloudbase-setup.md`：测试域名部署、匿名认证、数据库拒绝直连、存储规则和人工验收清单；它不是已部署证明。
-
-### 邮箱登录身份边界
-
-1. 首次登录由 CloudBase 身份服务向邮箱发送验证码：浏览器调用 SDK v3 `signInWithOtp({ email })`，只在当前页面内存中保存其返回的 `verifyOtp`，用户输入验证码后调用 `verifyOtp({ token })` 建立注册用户会话；SDK 使用 `local` 持久化，同一浏览器在会话有效期内自动恢复。刷新页面或更换邮箱后必须重新发送验证码，项目不自建密码、验证码或邮件发送服务。
-2. CloudBase 成功响应的 `error` 可能为 `null` 或 `undefined`，发送和验证只能使用 nullish 判断；禁止使用 `error !== null`，否则验证码实际已送达时仍会被前端误报为发送失败。
-3. 普通云函数的可信运行时上下文以 `WX_OPENID` 表示 Legacy 微信身份、以 `TCB_UUID` 表示 Web 身份。`TCB_UUID` 缺少匿名标记时按注册邮箱处理；运行时明确提供 `isAnonymous=true` 或 `ANONYMOUS` 登录类型时进入 Web 匿名命名空间。两种 Web 命名空间都只在当前协议有效后进入 active，不再要求邀请码；只有 `WX_OPENID` 旧小程序身份保留邀请码状态。`api` 绝不从 event/payload 读取 UID、邮箱或登录类型，`api-entry` 会在任意嵌套对象或数组中递归删除客户端 UID/OpenID/userId/identityHash/email 后再校验请求。
-4. 注册邮箱身份使用 `web-email-uid-v1\0<uid>`、历史匿名身份使用 `web-anonymous-uid-v1\0<uid>`、Legacy OpenID 使用 `applymate-openid-v1\0<openid>` 计算 SHA-256 身份哈希，三个命名空间互不碰撞。业务数据库不保存邮箱明文。
-5. 业务记录只持久化内部 `userId`；仓储的读取、写入和删除都把当前 `userId` 作为必要条件。
-6. 注册邮箱身份和受信 Web 匿名身份都须接受当前协议后才能调用业务动作；`auth.status` 和 `agreement.accept` 是登录后的准入动作。Web 页面不显示、提交或依赖邀请码。Legacy 微信 OpenID 身份继续保留旧邀请码状态，只用于小程序历史兼容。
-7. 云端调用面只允许已认证身份访问 `api`；`worker` 与 `cleanup` 不向浏览器开放。认证能力不能绕过 `api` 直连业务数据库。
-
-### Web 数据与缓存边界
-
-- 浏览器不直连业务数据库；CloudBase 数据库安全规则拒绝客户端直接读写。
-- 文件上传路径由可信 UID 归属的临时前缀和随机 ID 组成；提交给 API 的 fileId 仍需服务端所有权校验。
-- TanStack Query 只保存在内存，不启用持久化；LocalStorage 只由 CloudBase SDK 保存认证会话，不写邮箱、验证码、简历、JD、正文或任务响应。
-- Service Worker 不缓存 HTML 导航或根页面，只缓存公开 manifest、图标和已取得的版本化静态资源；CloudBase、文件、用户路由和非 GET 请求全部绕过缓存。发布新版本时提升缓存版本并主动检查更新，避免旧页面壳继续控制入口。
-
-### 额度与任务
-
-- 新 JD 使用北京时间日期键和 `reserved + succeeded` 事务，默认上限 20；成功正文（包括安全通用版）结算一次，失败/超时释放，重复 requestId 回放原结果。
-- 改写不占新 JD 额度，使用独立的用户级短窗口频率限制。
-- 截图选择后可并行上传但不 OCR；点击生成后才创建任务。最多 3 张并行上传，worker 只在超过上游限制时创建临时副本，不进行第二次模型纠错调用。
-- 管理员写操作只接受 `targetUserId`，避免它被通用身份字段过滤器当作客户端自报身份删除；启停和加额均写审计。Web 管理页不再提供邀请码创建/撤销。首份简历确认率以邮箱账号首次创建后 168 小时内确认首份简历计算。
-- `cleanup` 增加 Web 僵死任务、24 小时草稿、1 小时孤立文件、过期幂等/改写频率槽和账号删除清理；实际定时触发仍需 W9 云端配置与验证。
-
-### 本地验证与部署边界
-
-- `npm run check` 当前覆盖 125 个测试文件、643 项测试、共享/三个云函数/Legacy 小程序五模块构建和 Web 生产构建。
-- `dist/web/` 是唯一 Web 托管产物；前端使用 `HashRouter`，业务地址形如 `/#/resumes`，不依赖 CloudBase 的 SPA 404 回退。所有导航必须从根页面加载最新 HTML，再由片段路由解析页面。
-- Web 私有上传采用“创建者签发、API 约束、worker 消费”的能力传递：浏览器上传后以当前邮箱身份取得短期 HTTPS URL；`api` 将 URL 与同序 `fileId` 进行 bucket/路径/域名严格绑定；`worker` 不假设自己拥有用户文件，只读取该短期 URL，并在终态清除 URL 与原件。禁止用 worker 自己上传的文件作为跨身份读取验收，因为那无法覆盖 CloudBase `PRIVATE` 所有权边界。
-- CloudBase 邮箱验证码使用平台内置代发服务；本地真实邮箱已通过发送与验证登录，且“验证码实际送达却误报失败”的 SDK 响应判断已修复。随后发现普通云函数对 Web 调用者的匿名标记并不稳定：仅靠命名空间推断会让部分已登录用户在协议提交后仍进入 `invite_required`，被前端访问门送回登录页。当前访问规则以客户端类型为边界：`web-email-uid-v1` 与 `web-anonymous-uid-v1` 均在协议有效后 active，只有 `applymate-openid-v1` 保留旧邀请码门；同时使用 HashRouter 和不缓存导航的 Service Worker，避免页面入口看似全部失效。
-
-**版本：** 阶段 10 低延迟信息流框架 v2 / greeting-v8.19-low-latency
-
-**日期：** 2026-08-22
-
-**当前状态：** 产品负责人于 2026-08-22 明确批准低延迟信息流框架 v2。代码已改为选图后最多 3 张原图后台并发上传、`generation.create` 只返回 `jobId`、worker 一次批量取得签名 URL 后并行 OCR、`job.get` 返回本人安全首屏预览。首次生成仍严格一次 Hy3 调用，不生成机械通用兜底；最新批准恢复 350–450 个可见字符、3–4 段、目标称呼、未知 factId、数字来源和隐私格式的本地失败关闭。客户端/服务端管线版本分别为 `jd-submit-v6-background-upload` 与 `greeting-v8.19-low-latency`。新版 `api` 与 `worker` 已部署到固定体验环境并通过只读健康检查；未部署 cleanup、未上传小程序、未创建云资源、未调用真实 OCR/TokenHub。iOS/Android 及 Wi-Fi/移动网络双指标真机计时通过前，10.18 继续未完成。
-
-### 2026-08-22：低延迟信息流框架 v2（api/worker 已部署，待新客户端真机验收）
-
-- 生成页把每张 JD 图建模为 `local / uploading / uploaded / failed`，保存稳定 `localId`、`fileId`、非内容上传耗时和安全错误码。选择原图后立即启动最多 3 张并发上传；成功图片不会因单图失败重传，删除执行尽力云端清理，排序只移动现有引用。上传草稿只在本地保存路径、状态和 fileId，页面恢复后只继续未完成项。
-- `generation.create` 删除 14 次、约 9.75 秒的服务端内联轮询。完成鉴权、幂等任务创建和异步派发后只返回 `{ jobId }`；客户端进入真实任务页密集有限轮询。成功的 `job.get` 以本人 `userId + applicationId` 联查并返回 `resultPreview`，结果页先渲染正文、岗位、公司和模型披露，再后台补拉完整 application。
-- worker 对同一批图片只执行一次 `getTempFileURL({ fileList })`，随后并行调用 OCR 并按用户顺序合并。只有 URL/OCR 传输失败的对应图片才下载原图、用 `sharp` 生成 720×1080/Q80 副本并重试一次；OCR 为空或损坏直接返回可操作错误。原图与副本均不进入 TokenHub。
-- Hy3 仍恰好调用一次。正文在本地检查 350–450 个可见字符、3–4 段、问候、岗位/公司目标、未知事实引用、数字来源和隐私格式；失败明确终止，不调用第二个模型，不生成通用正文。处理记录只保存数字/枚举指标、管线版本和 application 快照，不保存原图、OCR 原文或 Prompt。worker 记录排队、签名/OCR、模型、校验和总耗时；正文显示后客户端异步上报 API 创建、最终 `job.get`、任务到预览及选图到预览耗时，API 核对本人 job/application 关联后才写入两者。
-- 已提交图片在 worker `finally` 中立即尽力删除，删除失败由既有 generation cleanup 语义承接；未提交图片在客户端删除/放弃时尽力清理，1 小时孤立文件规则仍由既有 cleanup 领域服务定义。因为本轮不新增云资源且真实 cleanup 调度仍受限，崩溃后孤立文件的云端定时回收必须在部署前单独核对，不能把本地规则写成已上线能力。
-- 发布硬门为“选图完成到正文首次展示 P50 ≤15 秒、P95 ≤20 秒”和“点击生成到正文首次展示 P50 ≤10 秒、P95 ≤15 秒”；后台上传、API 创建、OCR、模型及结果展示分别以 4/1/2/5.5/1.5 秒子预算诊断。自动测试不替代双端真机计时。
-- 本地完整 `npm run check` 已通过格式、fixture 隔离、敏感信息扫描、严格类型、122 个测试文件共 623 项测试及五模块构建；没有调用真实 OCR 或 TokenHub。
-- 产品负责人单独授权后，CloudBase CLI 3.7.1 于 2026-08-22 只部署 `api` 与 `worker`，两者状态均为 `Deployment completed`；`cleanup` 修改时间保持 2026-08-15，未被触碰。部署后只读健康检查分别耗时 5 ms 和 4 ms，均返回 `experience_real_ai_live / acceptsUserTraffic=true`；worker 只返回模型、OCR 专用凭证与 CloudBase Key 的存在性布尔值，检查未触发 OCR 或模型。
-
-### 历史：2026-08-22 v8.18-direct 首次生成模型正文直出（已被低延迟 v2 的最新批准取代）
-
-- 线上坏文案不是 Prompt 直接生成，而是模型正文被 `unsupported_organization` 拒绝后，由 `buildVerifiedGenericGreeting` 机械拼接。该兜底会暴露事实清单、重复“已确认”并产生无法发送给 HR 的文本，现已从首次生成运行路径和导出中删除。
-- 首次生成仍只调用一次 TokenHub。模型返回可读非空正文后直接保存并展示，不再执行事实映射、机构/数字、证据强度、字数、段落数或跨 JD 术语硬拒绝。Prompt 与三类匹配策略继续负责岗位理解和文案质量。
-- 技术安全检查仅保留空/无法解析输出，以及正文包含邮箱、11 位中国大陆手机号或未替换的敏感遮盖占位符；这些情况明确失败，不生成机械正文。
-- evidence 与 factSnapshot 仅作尽力而为的审计元数据，缺失或覆盖不全不阻断正文。新任务的 `serverPipelineVersion` 固定为 `greeting-v8.18-direct`，`generationMode` 固定为 `model`。
-- 完整 `npm run check` 已通过 122 个测试文件、619 项测试和五模块构建。随后只部署 `worker`；CLI 报告成功，只读健康检查耗时 6 ms 并返回 `experience_real_ai_live / acceptsUserTraffic=true`，凭证诊断完整。本检查未调用 OCR 或模型。v8.17 以下章节保留为历史部署记录，不再代表当前行为。
-
-### 历史：2026-08-22 v8.17 可靠生成与 URL OCR（已被 v8.18-direct 取代）
-
-- 最新 Bad Case 不是 TokenHub 慢：手机端 4MB 强制压缩与上传耗时 22.422 秒；worker 总计 8.516 秒，其中 OCR/输入 1.588 秒、模型 4.812 秒。最终 `unsupported_organization` 来自校验器只查看模型选中的事实，导致正文中来自其他已确认事实的真实学校或公司被误判。
-- 机构、数字、经历和技能仍受严格真实性门保护；区别是机构校验与逐项证据匹配现在可使用全部已确认事实，最终 `factSnapshot` 直接由正文 evidence 引用生成，不再受模型漏选 factId 影响。
-- 首次生成仍最多调用一次 TokenHub。任何结构、长度、证据、数字或机构质量门失败时，立即用已确认事实生成 `verified_generic_fallback`，不再次调用模型，也不向用户返回通用的 `MODEL_INVALID_OUTPUT`。公司、岗位和职责分别安全降级为“贵司”“该岗位”“岗位相关职责与要求”；只有 OCR 无文字、文件损坏、凭证不可用、模型传输失败或免费额度耗尽才允许整单失败。
-- 小程序选择图片时只保存原始本地路径；点击生成后并行直传，不再调用 `wx.compressImage`。worker 优先取得 CloudBase 临时签名 URL 并用 OCR `ImageUrl`；仅当 URL OCR 失败时才用 `sharp@0.35.3` 在云端生成 720×1080、质量 80 的 JPEG 临时副本，OCR 后删除副本，原始临时文件仍由任务 finally 删除。0.34.3 因 2026 年 libvips 高危公告未部署，0.35.3 的生产依赖审计为 0 漏洞。
-- 非内容指标新增原始字节数、手机压缩次数/耗时、上传耗时、OCR 传输方式、云端压缩次数/字节数、OCR/输入、模型、校验、回退与总耗时。客户端版本为 `jd-submit-v5-url-ocr`，worker 版本为 `greeting-v8.17`。
-- 回归覆盖真实机构未被模型选中、无公司/岗位/职责、完全无直接匹配、虚构机构/数字、无效结构与安全回退；目标门禁要求所有可回退校验失败都返回正文，且模型只调用一次。本地 `npm run check` 已通过 122 个测试文件、623 项测试及五模块构建。
-- `api` 与 `worker` 已部署到固定体验环境；CLI 返回部署成功。部署后只读健康检查均返回 `experience_real_ai_live / acceptsUserTraffic=true`，worker 确认 TokenHub、独立 OCR 与 CloudBase 凭证存在。该检查未调用 OCR 或模型；`greeting-v8.17`、`jd-submit-v5-url-ocr` 和真实分段时延须由新建真机任务确认。
-- 微信开发者工具 CLI 已将客户端 `0.10.3` 上传为新的开发版本，包体约 193.3 KB；未提交审核、未公开发布。产品负责人仍需在小程序后台将该开发版本设为体验版，再执行五次新任务验证。
-
-### 历史：2026-08-22 真机真实性误判与分段时延观测（已被低延迟 v2 取代）
-
-- 最近三次真机失败任务的脱敏诊断均指向 `validationGate=jd_field_not_in_current_input`，云端创建到失败分别约 8.6、9.4 和 10.1 秒。问题不在模型超时，而在校准器对模型返回的全部 JD 数组做全量失败关闭：未被核心职能、匹配计划或正文使用的辅助字段也会拖垮任务；此外 `AIAgent`/`AI Agent` 空格漂移和“资本市场”组织误判构成两个可复现边界。
-- `greeting-calibration.js` 先按当前 JD 过滤不可信且未使用的辅助数组字段，再重建 `coreFunctions` 索引；核心职能、证据或正文实际引用的字段仍必须来自当前输入。拉丁专业词使用去空格规范化，“资本市场”不再触发组织名规则。该修复没有降低跨 JD、虚构事实、数字、PII、证据或正文格式门。
-- `generation` 页面选择截图时只保存本地路径并立即返回，不压缩、不上传。用户点击“识别并生成”后，每张图片独立执行 `720px / quality 80` 压缩后立即上传，多张图片管线并发，结果仍按原选择顺序提交；任一失败继续回收同批已上传文件。
-- `api` 在异步派发后执行 14 次有界短轮询，最长约 9.75 秒；常见 8–10 秒任务在首次请求中直接返回 `applicationId`，避免手机任务页额外多轮跨网查询。未在窗口内完成时仍返回 `jobId`，现有任务恢复链路不变。
-- 客户端随 `generation.create` 写入 `clientPipelineVersion=jd-submit-v3` 与 `clientImagePreparationMs`；`api` 只接受有界整数，worker/application/job 只保存图片数、输入/OCR、模型、总耗时和管线版本等非内容指标。由此下一次真机测试可直接区分压缩上传与云端处理，不再用体感反推瓶颈。
-- 新版 `api` 与 `worker` 已于 2026-08-22 部署，只读健康检查均返回 `experience_real_ai_live / acceptsUserTraffic=true`；检查未调用 OCR 或模型。客户端新计时与交互只有重新编译后才生效，在真机计时前不得记为达标。本地完整门禁已通过 121 个测试文件、611 项测试和五模块构建。
-
-### 2026-08-21：v8 worker 部署与三组真实评测失败
-
-- 部署边界严格限定为 `worker`；没有部署 `api`、`cleanup` 或小程序。部署后只读健康检查返回 `experience_real_ai_live / acceptsUserTraffic=true`，并确认模型、OCR 与 CloudBase 凭证存在，不记录凭证值。
-- 调用前控制面确认 Hy3 免费额度 87%、按 Token 计费未启用；OCR 后付费关闭；CloudBase 按量付费关闭且当前周期消耗 0 点；腾讯云本月出账 0.00 元。
-- 战略投资、金融 AI Agent 和 SEO 三条完全合成路线分别只调用一次 Hy3，不重试、不调用评审模型、不保存输入、Prompt、原始响应或正文。总耗时为 4,526、5,100、5,428 ms，中位 5,100 ms。
-- 三次均非网络超时，但模型响应全部未通过 `normalizeGreetingPlan` / `modelGreetingPackage` 组成的 v8 本地结构与真实性边界；按硬失败规则不可计算正文质量分，整组记 0。评测器为保护非内容证据没有持久化具体失败门，因此不能在不新增模型调用的情况下把失败进一步归因到某个子门。
-- 调用后 Hy3 免费额度为 86.6%，按 Token 计费仍未启用。Worker 已部署只证明运行版本更新，不证明生成质量或体验版人工验收通过；新的重试、模型切换或 Prompt 变更必须重新取得产品负责人授权。
-
-### 2026-08-17：JD 生成 v8 证据计划与本地质量校准
-
-- `shared/src/greeting-match-plan.ts` 用 Zod 固定 `strong / partial / low` 匹配模式、`direct / transferable / background` 证据层级和稳定来源引用。岗位理解必须先判断核心职能，再看行业语境，最后处理加分标签，避免“金融”等行业词覆盖真实岗位职责。
-- `cloudfunctions/worker/deploy/greeting-calibration.js` 是生产部署侧的无第三方依赖 CommonJS 校准器，与共享 Schema 保持相同语义。它验证证据成熟度、事实归属、岗位字段归属、跨 JD 污染和正文格式，不增加 npm 依赖，也不负责拼接正文。
-- 首次生成只执行一次 TokenHub 调用，同一响应返回结构化 JD、紧凑匹配计划和 350–450 个可见字符、3–4 段的自然正文。Prompt 固定为 `experience-evidence-planned-v8`，处理模式固定为 `model_evidence_planned`；正文自然包含“您好”，但开头和结尾均不使用固定模板。
-- 失败策略在共享 TypeScript 与部署 CommonJS 两个运行边界一致：岗位理解错误、跨 JD 串台、事实虚构、可迁移能力冒充直接经验、Schema 或正文格式错误均失败关闭并释放额度；不重试模型，也不使用本地正文兜底。这个双实现只解决 CloudBase 部署产物不能直接加载 TypeScript/Zod 模块的跨平台边界，不形成两套产品规则。
-- 三条合成金标准固定为战略投资 `strong`、金融 AI Agent 产品经理 `strong` 和 SEO 经理 `partial`。本地回归同时覆盖岗位误判、无来源数字、跨 JD 术语和错误证据成熟度；不包含真实用户输入、不访问 TokenHub 或云端。
-- v8 本地代码、合成测试与七份文档同步已经完成。旧规则扫描只命中明确标记的历史记录、否定式断言、设计/实施说明及命令本身；干净提交快照的完整 `npm run check` 通过 118 个测试文件、588 项测试和五模块构建。真实模型人工评分、线上时延复验、worker 部署和体验版验收尚未开始，10.18 在这些后续门槛通过前保持未完成。
-
-### 历史：2026-08-15 JD 生成 v7 感知时延、精简结果与亲和表达（已被 v8 取代）
-
-- CloudBase 非内容时间戳证明，用户报告的 24 秒并非全部发生在生成模型：最近真实任务从 `ai_jobs.createdAt` 到 `succeededAt` 为 9,418 ms，worker 中 OCR/输入 1,262 ms、TokenHub 4,565 ms、总处理 6,698 ms；另一份两图任务为 8,904 ms。剩余约 14.6 秒位于小程序图片预处理、上传、API/异步派发、导航和轮询。首次生成路径不调用改写模型。
-- `miniprogram/pages/generation` 在选择图片后立即调用 `prepareOcrImagePaths`，把 720px、质量 80 的预处理移到用户点击“识别并生成”之前；提交只上传已经准备好的副本。该优化降低点击生成后的感知等待，不把它虚构为网络传输或完整选图路径的绝对提速。
-- `miniprogram/pages/result` 不再渲染证据/遗漏/提醒和 AI 改写操作。逐项 evidence 仍由 worker 确定性生成并保存在投递快照中，继续参与事实、数字、岗位和 PII 质量门；这是展示层减法，不改变审计和事实保护。
-- v7 Prompt 固定三段亲和结构：“您好！”与简短事实自我介绍 → 一条主经历链 → 一项辅助优势与“期待得到您的回复！”。`modelGreetingPackage` 只确定性规范这两个固定边界，不补写身份、经历或能力。
-- Hy3 对长度指令仍有稳定少写。Prompt 保持 350–450 字偏置，自动生成硬门使用 230–450 个可见字符和恰好三段，使完整的 230–299 字正文不再因纯长度漂移失败。真实合成 C01/C06/C20 单次调用得到 301/257/268 字，模型耗时 3,418/3,348/3,612 ms，均通过事实、目标称呼、数字和亲和首尾质量门。完整门禁通过 117 个测试文件、441 项测试和五模块构建；v7 worker 已部署，健康检查为 `experience_real_ai_live / acceptsUserTraffic=true`。
-
-### 2026-08-15：JD 生成 v6 长度校准与可观测质量门（已被 v7 取代）
-
-- v5 之后的两个真实失败任务均在模型返回后的 0.2 秒内终止；使用完全合成 C01 复现出相同路径：JSON、三段、事实选择和 JD 提取均有效，但正文只有 192 个可见字符。根因是 Hy3 忽略单一总长度指令，随后被本地 350 字门槛拒绝。
-- v6 Prompt 将目标长度拆为三段预算：110–130、140–170、100–130 个可见字符，并要求逐段自检；这属于对模型稳定少写偏差的校准，不改变事实边界。生成仍为一次 TokenHub 调用，`max_tokens=1300`、温度 0.15、截止 12 秒。
-- 产品质量门统一为 300–450 个可见字符和恰好三段，恢复约 300 字的产品目标。Prompt 继续瞄准至少 350 字，使实测输出落在门槛中部；共享 Schema、结果页、演示 API、生成与改写上下文保持同一范围。
-- `modelGreetingPackage` 的长度、段落、禁用内容、岗位/公司称呼、证据对齐和数字来源失败现在带安全 `validationGate`；失败任务只保存门名称以及长度、数量、布尔值，不保存正文、事实文本、JD、Prompt 或上游响应。长度失败映射为明确的 `GREETING_LENGTH_INVALID` 用户提示。
-- 合成复验 C01、C06、C20 均一次通过，正文为 390/382/377 字，模型耗时为 4,059/4,417/4,314 ms。完整门禁通过 117 个测试文件、439 项测试和五模块构建；v6 worker 已部署且 healthcheck 为 `experience_real_ai_live / acceptsUserTraffic=true`。该证据证明单次模型阶段具备小于 20 秒的余量；真机新任务仍是 10.18 的线上验收门槛。
-
-### 2026-08-15：JD 生成 v5 格式门与感知时延修复（已被 v6 取代）
-
-- CloudBase `ai_jobs` 非内容元数据证明最近四个真实岗位任务的服务端总耗时为 7.61–9.10 秒：OCR 约 1.1–1.4 秒、TokenHub 与解析约 4.9–6.3 秒；模型返回后 0.15–0.18 秒即失败为 `MODEL_INVALID_OUTPUT`。因此“三次约 20 秒后格式失败”的直接根因是服务端旧格式门，页面额外耗时则来自图片双重压缩、上传和稀疏轮询，不是模型达到 16 秒截止。
-- v5 Prompt 只让 Hy3 返回结构化 JD、`selectedFactIds` 和恰好三项 `paragraphs`。worker 使用当前简历事实和 JD 字段在本地选择来源、构建逐项 evidence、执行数字与真实性质量门；模型不再重复 `claimText`、事实 ID、JD ID 和长来源原文，避免同一语义在两个字段中轻微漂移即被拒绝。
-- `selectedFactIds` 只决定事实匹配优先级，服务端仍验证 ID 必须存在，并至少生成一项同时引用事实和 JD 字段的 evidence。公司/岗位检查允许规范化后缀、标点和“贵司／该岗位”降级，不放宽数字、PII、模型自述、Markdown、长度或段落门。
-- 生成请求把 JD 文本上限收紧至 6,000 字、安全事实收紧至 8 条 × 260 字、模型响应上限收紧至 1,000 Tokens，生成调用截止为 12 秒；简历解析和改写保持各自单次调用策略。客户端只进行一次 720px/质量 80 压缩，并在常见 7–9 秒完成区间约每秒查询任务。
-- 回归测试覆盖三段正文无重复 claims、来源 ID 优先、单次图片预处理和密集轮询。完整门禁通过 117 个测试文件、435 项测试和五模块构建。v5 worker 已部署，healthcheck 为 `experience_real_ai_live / acceptsUserTraffic=true` 且 OCR、TokenHub、CloudBase 凭证完整；旧失败任务不会重放，仍需用新任务完成真机端到端验收。
-
-### 2026-08-15：JD 多图时延与岗位匹配返修 v4（历史）
-
-- `miniprogram/services/cloud-storage.ts` 把图片预处理和上传拆成两个并行批次：`wx.compressImage` 使用阶段 0 已验证的 720px/质量 80 配置，单张压缩失败时只回退该原图；上传使用 `Promise.allSettled`，任一失败会删除同批已成功上传的临时文件。
-- `miniprogram/core/job-poller.ts` 固定前密后疏的短任务轮询：0、0.3、0.7、1.2、1.9、2.8、3.8、4.8、6.0 秒可观察任务状态，之后继续有界退避且总窗口不超过 45 秒，避免 worker 已完成但页面额外空等数秒。
-- `cloudfunctions/worker/deploy/experience-worker.js` 对同一任务的图片执行并行下载与 OCR，保持输入顺序拼接识别文字。1–5 张 JD 的等待上限由各张耗时之和变为最慢一张耗时加固定处理开销。
-- 产品负责人案例复核把岗位匹配拆为八类路由：AI 评测/产品、AI 金融研究、AI 商业产品、AI 产品构建、投资研究、融资执行、通用产品和通用岗位。本地先按岗位与事实类型排序，Prompt 只要求一条主证据链和一项次级差异点，避免按简历顺序罗列。
-- JD 模型调用当时仍只有一次，但要求 Hy3 同次返回结构化 JD、路线、匹配、350–450 字三段正文和逐句 claims。三次真机任务证明该重复语义契约会在模型成功返回后被格式门拒绝，现已由上方 v5 的本地 evidence 映射取代。
-- 简历解析曾在无效结构后再次调用 Hy3，这是 40 秒真机反馈的直接放大项；现改为单次调用。v4 的岗位生成采用 16 秒上限；v5 已把岗位生成截止收紧到 12 秒，完整路径小于 20 秒仍须实测。
-- 校验失败时不再调用第二次模型，也不再使用包含机械套话的本地渲染器；任务失败并释放额度。该选择优先保证真实性和品牌质量，避免把格式成功误当作内容合格。
-- application 的 `processingMetrics` 只保存图片数、输入/OCR耗时、模型耗时、总耗时和 `renderMode=model_case_calibrated`，用于区分网络/OCR与模型瓶颈；不保存文件、OCR 原文、Prompt 或用户正文。旧 `model_draft|deterministic_fallback` 仅属于历史任务。
-- 本轮不改变 API action、数据访问边界、额度、付费开关或体验版分发范围。新版 `worker` 已于 2026-08-15 从 `cloudfunctions/worker/deploy` 单独部署；部署后只读健康检查返回 `experience_real_ai_live / acceptsUserTraffic=true`，既有模型、OCR 专用凭证和 CloudBase API Key 配置均保留。真实连续计时与人工验收完成前 10.18 仍为进行中。
-
-### 2026-08-15：真实 AI 数据边界与云端闭环修复
-
-- `api`、`worker` 与 `cleanup` 初始化 `@cloudbase/js-sdk` 时显式传入受限 `CLOUDBASE_APIKEY`，不再依赖 Node 环境下不完整的隐式身份发现。
-- OCR 只能读取 worker 的 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY`、可选 `APPLYMATE_OCR_SESSION_TOKEN` 与区域；它不得复用 CloudBase 运行时临时身份。长期密钥对没有 SessionToken 是合法配置。
-- CloudBase JS SDK 对嵌套结构化 profile 的更新在当前环境会出现无有效更新数且不持久化。数据库兼容层因此把 profile 以 JSON 字符串保存；API 的任务查询、简历列表和确认入口，以及 generation worker 在业务边界解码为对象。客户端契约与事实质量门不变。
-- TokenHub 简历解析适配器容忍常见包装对象和省略的空数组，严格归一为 ResumeProfile；该简历专属路径在首次无效 JSON 后，只允许通过同一 provider、同一 `callModel` 入口携带纠错 Prompt 再尝试一次，第二次失败继续释放额度并返回安全错误。它不适用于 v8 岗位生成或改写。
-- 真实云端合成验证已覆盖“简历图片 → OCR → TokenHub → 待核对 → 确认简历 → JD 图片 → OCR → TokenHub → 开场白”。简历任务耗时 5,469 ms；岗位任务耗时 4,003 ms，正文 293 字、证据 3 条且模型披露完整。
-- 体验版使用真实 AI；“体验版”仅限制微信分发范围。旧终态失败任务受幂等保护不会自动重放，重新验证必须上传新文件。
-- 修复后的完整门禁通过 115 个测试文件、421 项测试和五模块构建；测试覆盖 OCR 独立身份、三函数显式数据库身份、profile JSON 编解码边界及 TokenHub 输出归一。
-- 最终交付回归还锁定上传指南必须明确 `experience_real_ai_live / acceptsUserTraffic=true`，并要求旧管理员初始化记录显式标为历史状态，防止文档再次把体验版误导为 demo 或受限安全门。
-
-### 2026-08-14：真机解析超时修复
-
-- 真机“上传后一直转圈再失败”的根因不是体验版能力限制，而是 `cloudfunctions/api/deploy/index.js` 曾通过 CloudBase SDK 同步调用 `worker`；OCR 与 TokenHub 被包含在外层 `api` 的等待时间内，违背“API 立即返回 jobId”的既定架构。
-- `cloudfunctions/api/deploy/scf-async-invoker.js` 使用运行时临时凭证和 TC3 签名调用腾讯 SCF `Invoke`，固定 `InvocationType=Event`、函数名 `worker`、当前 namespace，并以 8 秒为派发接受截止。凭证、请求正文、RequestId 和用户内容均不写日志。
-- `api` 在任务持久化后只等待 SCF 接受异步事件；同一 requestId 若曾在派发阶段失败，可对仍为 queued/available 的同一任务安全重派。worker 继续用原子 claim 防止重复 OCR 或模型调用。
-- `cloudfunctions/worker/deploy/experience-worker.js` 增加真实 `generation.rewrite` 分支和安全中文错误映射；任务详情只暴露稳定错误码、可理解说明与 retryable，不回传上游响应或内部异常文本。
-- “我的”页管理员入口不再使用具有原生内部排版的 `button`，改为与同组状态行一致的全宽 `view + Flex`，使标题和右侧入口与上方两行共用左右基线。
-- 2026-08-14 已重新部署 `api`、`worker`。healthcheck 显示两者均为 `experience_real_ai_live`；worker 的非敏感诊断确认 TokenHub Key 与 OCR 三项运行时临时凭证存在。真实内容冒烟仍需从小程序体验端完成。
-- 最终本地门禁通过 114 个测试文件、413 项测试和五模块构建；敏感扫描通过，未把任何云端凭证或用户内容写入仓库。
-
-### 2026-08-13：体验版真实 AI 边界纠正
-
-- “微信体验版”只描述微信分发范围和体验成员人数限制，不等同于本地 demo。开发者和体验成员默认使用 `cloudbase_experience`，只有显式 `demo` 启动参数或本地开关才进入合成演示模式。
-- `miniprogram/services/cloud-storage.ts` 将简历和 JD 文件上传到用户会话使用的 `temporary/` 云路径；页面不再把本地路径伪装为 `demo:` 文件标识。
-- `cloudfunctions/api/deploy/experience-api.js` 在可信身份、协议和邀请码门禁后创建真实简历解析或开场白任务；`cloudfunctions/worker/deploy/experience-worker.js` 负责下载临时文件、调用腾讯 OCR、遮盖敏感信息、调用 TokenHub Hy3、保存结果并清理原文件。
-- `APPLYMATE_REAL_AI_ENABLED=true` 必须同时配置在 `api` 和 `worker`。关闭或缺失时继续失败关闭；OCR 或 TokenHub 免费额度不足时也不得自动启用付费。
-- 结果页保存真实模型快照并展示 AI 标识。真实能力只面向开发者/体验成员；普通账号删除、提交审核和公开发布仍不在本次范围内。
-- 该提交的原始本地门禁为 112 个测试文件、408 项测试和五模块构建；其“尚未部署”状态已被 2026-08-14 的异步派发修复及云端重部署取代。
-- 下文关于 `acceptsUserTraffic=false`、默认 demo 和“真实 AI 关闭”的记录属于此前受限部署的历史基线，已由本节取代，不再描述当前体验版目标。
+**版本：** 3.0
+**日期：** 2026-08-23
+**产品基线：** `memory-bank/design-document.md`
+**正式规格：** `docs/superpowers/specs/2026-08-23-mobile-web-public-v3-design.md`
 
-### 2026-08-13：发布前零费用复核
-
-- 产品负责人在合成可靠性、超时回收和八集合删除演练之后重新核对控制台：CloudBase 实际费用 0 元，腾讯云账单 0 元，OCR 后付费关闭，TokenHub 按 Token 计费关闭。
-- CloudBase 数据库、云函数、存储和流量仍统一受免费体验环境资源点约束；OCR 与 TokenHub 免费额度不足或状态过期时必须在创建任务前失败关闭。
-- 10.12 证明当时受限测试体验版和合成调用保持零费用；本轮另行授权开发者/体验成员真实 AI，但仍不允许开启任何付费兜底。
-- 10.13 是本地可复现发布门禁：格式、锁定样本隔离、敏感扫描、类型、全部测试和五模块构建必须同时通过。仓库没有远程 CI，因此架构记录不得把本地结果描述为云端 CI。
-- `docs/phase-10/test-release-report.md` 汇总测试体验版候选的证据、风险豁免和关闭能力；产品负责人明确批准前，它不产生上传、审核或发布授权。
-- 10.14 原批准已被产品负责人本轮纠正：体验版允许真实 AI，`api` 与 `worker` 应报告 `experience_real_ai_live / acceptsUserTraffic=true`；普通账号删除和付费兜底继续关闭。该批准不等于微信审核或公开发布授权。
-- 10.15 固化受限体验版里程碑。`docs/phase-10/experience-version-upload-guide.md` 只描述“开发者工具上传 → 后台设为体验版 → 添加体验成员”的人工路径，并明确禁止进入审核版本或正式版本。开发者工具本地配置仍由本机管理，不进入 Git。
-
-### 2026-08-13：测试体验版与真机豁免边界
-
-- 产品负责人明确跳过本轮 iOS/Android 真机测试。10.9 以风险豁免关闭，文档和后续发布报告不得将其表述为设备验证通过；公开发布或扩大体验范围前必须补齐。
-- 10.10 只依据开发者工具与自动化证据完成：弱网错误可理解、页面和任务可恢复、写请求沿用稳定 requestId、重复提交/worker 幂等且额度不重复结算。该结论不替代真实移动网络和系统切后台行为。
-- 产品目标锁定为测试体验版，不购买或启用微信正式发布服务，不提交正式审核、不升级主体、不转 H5。10.11 据此完成；公开发布仍需重新复核个人主体类目、专业合规和双端真机。
-
-### 2026-08-13：合成账号删除演练
-
-- `admin.syntheticDeletionProbeCreate` 只允许启用、激活的管理员创建确定性探针；八个集合中的记录必须同时带 `recordType=synthetic_deletion_probe`、精确 `deletionProbeId` 与 `syntheticTest=true`，重复 requestId 不重复写入。
-- `synthetic-account-deletion.js` 只接受 `delete_probe_<24 hex>`，并在每个集合用上述三项固定条件删除。任意普通账号 ID、普通 action 或缺失标记均返回暂停，不存在按客户端 userId 删除的入口。
-- 云端首次演练八个集合各删除 1 条且残留均为 0；连续重放均删除 0。匿名指标恰好 1 条，不保存 userId 或 deletionProbeId；针对 CloudBase `add` 唯一语义增加查询与重复归并，避免重放重复计数。
-- 本地完整门禁为 110 个测试文件、402 项测试和五模块构建。该证据完成 10.8，但只证明生产等价合成数据的物理删除和幂等边界，不开放真实用户删除或 AI 业务流量。
-
-### 2026-08-13：合成可靠性探针部署
-
-- `live-api.js` 的 `admin.reliabilityProbeCreate` 只允许已启用、已激活的管理员创建 `success` 或 `stale` 两类合成任务。任务 ID 由管理员、requestId 和场景确定性派生，任务和额度记录均带 `syntheticTest=true`，重复请求不重复写入。
-- `cloudfunctions/worker/deploy/reliability-worker.js` 只接受严格的 `job_probe_<24 hex>`；它通过乐观仓储执行领取和状态流转，并只结算 `reliability_probe_usage`。其他任务 ID 在初始化数据库前即返回 `RESOURCE_PAUSED`。
-- `cloudfunctions/cleanup/deploy/reliability-cleanup.js` 只扫描 `kind=reliability_probe` 且 `syntheticTest=true` 的任务；仅超过 10 分钟的非终态任务可转失败并释放合成预留。它不包含用户数据删除或通用任务回收入口。
-- 三个部署入口继续报告 `acceptsUserTraffic=false`。本地完整门禁为 110 个测试文件、398 项测试和五模块构建；云端 healthcheck 均通过。三函数绑定相同轮换后 Key 后，成功探针完成 worker 状态机并结算合成额度；cleanup 扫描 2 条合成任务、精确回收 1 条 11 分钟 stale 探针，终态为 `failed/TASK_TIMEOUT`。该证据完成 10.7，但不开放普通任务或 10.8 删除。
-
-### 历史：2026-08-13 端到端、安全与删除测试边界（已被后续真实体验链路取代）
+本文只描述当前主线。此前小程序和 Web v2 架构由 Git 历史与 `legacy-miniprogram-final` 标签保存，不再作为实现依据。
 
-- 本地完整生成链、额度并发与释放、前后台状态重建、删除确认、全关联清理、跨用户保护和匿名聚合均由确定性测试通过；完整门禁为 109 个测试文件、394 项测试和五模块构建，生产依赖审计为 0 漏洞。
-- 云端受限 `api` 对负载伪造身份的 `auth.status`、越权 `job.get`、伪造 `user.delete` 和未授权 `generation.create` 均在可信身份入口返回 `UNAUTHENTICATED`。负载中的 OpenID/userId 不参与授权，拒绝发生在仓储访问之前。
-- 当前唯一真实身份是唯一管理员。生产 `cleanup` 和 CloudBase 多集合删除适配器未部署，因此禁止用该身份做不可恢复删除，也禁止把内存仓储 cleanup 结果描述为云端删除通过。
-- 当时完成 10.7/10.8 仍需部署可靠性探针和 cleanup；“客户端默认演示 API”仅描述该历史切片。当前开发者/体验成员客户端默认使用 `cloudbase_experience`，显式 demo 只用于离线合成测试。
+## 1. 系统视图
 
-### 2026-08-11：CloudBase 安全门禁部署
+```text
+mobile browser
+  ├─ public routes / /login /legal /support
+  └─ authenticated /app/*
+         │
+         ├─ AuthSessionPort ───────── CloudBase email OTP
+         ├─ TemporaryUploadPort ───── CloudBase temporary storage
+         └─ BusinessApiPort ───────── api cloud function
+                                           │
+                         ┌─────────────────┼─────────────────┐
+                         │                 │                 │
+                    CloudBase DB      async SCF worker   cleanup timer
+                         │                 │                 │
+                         │           Tencent OCR            │
+                         │           local masking          │
+                         │           TokenHub hy3           │
+                         └─────────────────┴─────────────────┘
+```
 
-- 根目录 `cloudbaserc.json` 是唯一部署清单：三个 Event 函数使用 Node.js 20，`api` 固定 10 秒，`worker` 与 `cleanup` 固定 45 秒。它只声明函数目录、超时和说明，不包含凭证、模型 ID 或用户数据。
-- 三个 `cloudfunctions/*/deploy/index.js` 是零依赖部署入口。它们只接受无敏感内容的 `{ healthcheck: true }`；任何 action 返回 `RESOURCE_PAUSED`，不导入业务服务，不访问 CloudBase 数据库/存储，也不调用 OCR 或 TokenHub。
-- 该显式安全门禁把“已验证 CloudBase 运行时”与“尚未实现生产仓储”分开：未来真实适配器完成前，客户端仍强制使用 `miniprogram/services/demo-api.ts`。本次部署验证不得用作任何真实用户处理、数据删除或发布声明。
-- `docs/phase-10/device-and-resilience-acceptance.md` 是 10.7–10.12 的人工证据模板，不属于运行时代码；它把可由自动化验证的领域语义与必须由真机、真实仓储或微信个人主体提供的证据明确分开。
+浏览器不直接访问业务集合。平台细节隔离在认证、临时上传和业务 API 三个 seam 后；页面只依赖小接口。OCR 与 TokenHub 只能由 worker 调用。
 
-### 2026-08-11：真实身份闭环（受限启用）
+## 2. 仓库边界
 
-- `cloudfunctions/api/deploy/live-api.js` 是第一个可持久化的 CloudBase 业务切片：它只用云函数可信 `WX_OPENID` 计算 SHA-256 `identityHash`，只在 `users` 集合保存哈希、内部 userId、访问状态和协议版本/时间。客户端/负载中的 OpenID 永远不读取、不保存。
-- `cloudfunctions/api/deploy/index.js` 在非健康检查时用官方 `@cloudbase/js-sdk@3.7.1` Node 入口创建数据库客户端。`api` 函数仅开放 `auth.status`、`agreement.accept`、`user.get`；任何邀请码、简历、任务、文件、OCR、模型、生成或管理员 action 都返回 `RESOURCE_PAUSED`。`worker`、`cleanup` 保持零依赖安全门禁。
-- `miniprogram/services/cloudbase-api.ts` 提供明确本地开关 `applymate:runtime-mode = cloudbase_identity_test`。默认运行时仍是 `demo`；`app.ts` 只初始化绑定环境，不会自动把用户切到真实身份模式。`docs/phase-10/cloudbase-identity-test.md` 定义真机/开发者工具的验证和恢复步骤。
-- 该切片的作用是证明受信身份与协议状态可跨进程保存，而不是上线 MVP。未实现的真实仓储、邀请码、额度、异步任务、文件与删除演练仍不得声明完成。
-- 产品负责人已在绑定 AppID 的小程序完成该受限闭环验证，并确认无问题。验收只证明上述三项身份 action 和失败关闭边界；不得据此推断邀请码、文件、OCR、模型或删除演练已经可用。
+- `web/`：正式 React/Vite 移动 Web。使用 BrowserRouter、路由级懒加载、CSS Modules 和内存查询缓存。
+- `shared/`：请求 Schema、服务阶段、错误码、事实、简历/JD、脱敏和复制标识等无平台契约。
+- `cloudfunctions/api/src/`：严格 TypeScript 领域服务。身份、服务阶段、预算 admission、导出等规则在此定义和测试。
+- `cloudfunctions/api/deploy/`：CloudBase CommonJS 装配与旧环境兼容适配。`index.js` 只初始化 SDK、读取可信身份并装配 handler；`APPLYMATE_PUBLIC_WEB_V3=true` 才启用公开站身份与动作门。
+- `cloudfunctions/worker/`：OCR、解析、Hy3、质量/隐私门、结果保存、文件删除和预算结算。
+- `cloudfunctions/cleanup/`：僵死任务、admission 释放、草稿、日志、账号删除和退休清单。
+- `miniprogram/`：Legacy 源码归档。根 tsconfig 与 Vitest 主线排除其构建和测试。
 
-### 2026-08-13：邀请码与管理员初始化（受限部署）
+`cloudfunctions/*/deploy` 仍保留旧环境兼容代码；公开模式通过专用小模块和契约测试收窄动作。后续改动不得把新业务规则再次写入 `index.js`，并应逐步让 deploy 适配直接装配编译后的 TypeScript 模块。
 
-- `live-api.js` 新增受限的 `admin.bootstrap`：仅已同意协议的可信微信身份可携带一次性令牌调用；云函数只比较环境变量中的令牌哈希，且先以 `audit_logs` 的唯一启动记录占位。首次成功者的 `users.roles` 获得 `admin`；之后只有同一身份可以修复中断写入，任何其他身份一律拒绝。原始令牌、OpenID 和令牌哈希均不写入集合、日志或仓库。
-- `admin.inviteCreate`、`admin.inviteRevoke`、`invite.activate` 已在本地实现：邀请码只保存域隔离 SHA-256 哈希；创建由管理员和 UUID 请求标识确定性派生、可安全回放；激活以 `active → claimed → consumed → 用户激活` 的可恢复状态机占用，避免并发将同一邀请码激活给不同用户。失败码保持统一，并沿用每身份 15 分钟 5 次失败、锁定 15 分钟的规则。
-- 本地测试覆盖可信身份、一次性初始化、哈希存储、唯一领取者、缺失身份和其他业务失败关闭；该切片当时的完整 `npm run check` 通过 107 个测试文件、382 项测试和五模块构建。后续 10.C8 已成功联网复跑 `npm audit --omit=dev --audit-level=high`，生产依赖为 0 个已知漏洞。
-- 产品负责人通过腾讯云账号完成 CloudBase CLI 网页授权；未启用 key 登录，也未提供永久云密钥。`api` 已于 2026-08-13 12:07:38 完成部署，Node.js 20、10 秒超时、依赖自动安装；无数据 healthcheck 返回 `invite_live_limited`，耗时 4 ms。函数环境变量仍为 `None`，所以 `admin.bootstrap` 当前失败关闭，尚未创建管理员、邀请码或业务数据。
-- 2026-08-13 的真实初始化尝试在微信平台进入云函数前被拒绝：环境重建后未与当前小程序建立调用关联，扫码认证又因当前微信不是任何正式小程序的管理员而终止。请求没有使用启动令牌，临时哈希随后以空 JSON 配置从 `api` 删除，名称与值均已验证为空。
-- 产品负责人随后注册正式小程序并完成账号关联与既有环境转换。开发者工具中的正式 AppID `wx1883d1aeb40ede10` 调用 `{ healthcheck: true }` 已得到受限 `api` 的成功响应；该证据只解除微信到 CloudBase 的可达性阻断，不代表管理员初始化、邀请码消费、真实业务仓储或 AI 流量已启用。
-- 普通云函数运行时的原临时凭证被文档数据库拒绝后，`api` 改为使用 CloudBase 控制台托管的服务端 API Key 注入。运行代码只读取 `CLOUDBASE_APIKEY`，Key 本体不进入代码、Git、客户端或日志；当前 Key 有 180 天有效期，必须在到期前轮换。该凭证只解决服务器访问数据库，不改变 action 白名单。
-- 产品负责人授权后，首位可信测试身份在 `users` 中被初始化为 `active` 且具有 `admin` 角色，并保存当前协议版本与时间。真实 `auth.status` 已验证管理员状态。因初始化目标已经完成，临时启动哈希被设置为不可能与 SHA-256 结果匹配的禁用值；`admin.bootstrap` 不再作为当前操作路径。邀请码仍须单独完成创建、消费、幂等与审计验证。
-- 首个真实邀请码已由该管理员创建。创建响应将确定性明文仅交给当前调用者，数据库只保存带域哈希；同 requestId 重放返回同一 inviteId/明文且不新增记录。`audit_logs` 只产生一条不含明文的创建审计。一次性消费、第二身份拒绝和激活后的访问状态仍须用另一个可信微信身份验证。
-- 第二身份真机测试通过显式启动参数 `applymateRuntime=cloudbase_identity_test` 进入受限 CloudBase 适配器。`app.ts` 只在该参数精确匹配时写入本机运行模式并在页面加载前重建客户端；无参数启动仍是 demo。微信开发者工具本地配置提供“第二身份邀请码验证”编译条件且不纳入 Git。该入口不扩大服务端 action 白名单，也不开放文件、任务、OCR 或模型。
-- 产品负责人没有可用的第二个微信身份并明确要求跳过真实消费验证。一次手机成功反馈经只读数据库聚合证实来自演示适配器：云端仍只有管理员用户，邀请码仍为 active。该门槛记录为产品豁免而非技术通过；未来新增体验成员时必须补测一次消费和已消费邀请码对其他身份的拒绝。
+## 3. Web 客户端
 
-### 2026-08-13：生产任务仓储本地预备
+### 3.1 路由与渲染
 
-- `cloudfunctions/api/deploy/cloudbase-document-store.js` 统一封装 CloudBase 响应校验、单条读取、确定性新增、更新和“恰好更新一条”原子结果。数据库错误、畸形响应和非重复写失败均向上抛出，不能被幂等逻辑隐藏。
-- `cloudfunctions/api/deploy/cloudbase-job-repository.js` 是 `ai_jobs` 的首个生产仓储适配器：存储层增加 `recordType` 与显式 `claimState`，领域层不暴露这些字段；任务领取使用 `jobId + status + updatedAt + claimState` 条件更新，确保并发时只有一个 worker 获得任务；状态迁移以 `status + updatedAt` 乐观锁保护。
-- 两个模块已由 8 项专项测试覆盖；本地 `live-api.js` 进一步接入只读 `job.get`，只允许已激活用户读取本人任务，并移除 `claimedBy/claimedAt` 等 worker 内部字段。三个专项文件共同通过 15 项测试、类型、格式与差异检查。该版本尚未部署；任务创建、简历仓储、额度事务、异步派发、10 分钟回收和真实 AI 链路仍是后续门槛。
-- 产品负责人随后单独授权只部署 `api`。部署于 2026-08-13 16:32 完成，函数保持 Node.js 20、10 秒超时和 `invite_live_limited / acceptsUserTraffic=false`；健康检查 5 ms，`worker` 与 `cleanup` 未部署。CloudBase CLI 的详情命令意外在本地输出中回显了服务端环境变量值；该值未写入仓库且敏感扫描通过，但现有 API Key 必须轮换后才可继续验证 `job.get`，以后禁止使用会输出环境变量值的详情命令作为常规证据。
-- 产品负责人授权轮换后，使用腾讯云官方 `CreateApiKey` / `DeleteApiKey` 接口创建 `applymate-api-runtime-20260813-v2`，在 CloudBase 函数配置中把 `CLOUDBASE_APIKEY` 注入切换到新 Key，并在页面重载后确认选择持久化。旧 Key 随后被吊销；`DescribeApiKeyList` 的脱敏结果只剩新 Key。吊销后的 `api` healthcheck 用时 5 ms，继续返回 `invite_live_limited / acceptsUserTraffic=false` 且 `hasCloudBaseApiKey=true`。Key 明文只在创建进程内出现一次，未写入文件、仓库或对话输出。
-
-阶段 0.11R 的最小诊断工具已完成 72 次代表性调用和 30 次全量复验，仅处理锁定合成样本。所有候选与全量结果均以字段准确率、10 秒中位时延、45 秒单次上限和实际零费用为硬门槛；`jpeg-720-q80` 是速度最快且通过全量复验的未来临时副本规则。
+`web/src/app/AppRouter.tsx` 定义公开路由和 `/app/*`。公共首页、协议与支持页不等待 CloudBase SDK；登录或业务路由才动态加载认证模块。读写路由在 read_only/retired 阶段由客户端守卫，同时服务端再次强制执行。
 
-**权威来源：** [`design-document.md`](./design-document.md)、[`tech-stack.md`](./tech-stack.md)、[`implementation-plan.md`](./implementation-plan.md)
+CloudBase 静态托管必须在控制台设置“4xx 错误页 → `/index.html`”，否则 BrowserRouter 的直达/刷新会失败。该配置属于生产环境创建后的独立部署步骤，仓库不能假装已配置。
 
-## 1. 当前架构基线
+### 3.2 平台 seam
 
-ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定为三个普通云函数：
+- `web/src/lib/cloudbase-app.ts`：延迟加载 SDK 并创建单例 app。
+- `web/src/lib/session.ts`：邮箱 OTP、会话检查和退出登录。
+- `web/src/lib/temporary-upload.ts`：临时上传/删除及 `TemporaryUploadPort`。
+- `web/src/lib/api.ts`：唯一业务函数调用入口。
 
-- `api`：读取可信 OpenID，执行协议、邀请码、权限和输入校验，创建/查询异步任务，处理轻量数据操作。
-- `worker`：执行文件文字提取、腾讯 OCR、敏感信息遮盖和 Hy3 文本生成。v8 首次生成在一次模型调用中取得结构化 JD、匹配/证据计划与正文，再由共享 Schema 和部署校准器执行质量门；失败不重试，也不使用本地正文兜底。v8.15 已部署，仍待新客户端真机复验。
-- `cleanup`：回收超时任务、残留文件、过期草稿/幂等记录，并完成账号物理删除。
+兼容文件 `web/src/lib/cloudbase.ts` 只做 re-export，不包含平台业务逻辑。
 
-数据使用 CloudBase 文档数据库，原文件仅临时存入 CloudBase 云存储。运行时不得增加视觉模型、独立服务器、外部队列、Web 框架或付费服务，除非产品负责人另行修订设计并明确批准。
+### 3.3 性能
 
-阶段 9 为了在零外部资源条件下验收 UI，引入了严格限定在小程序进程内的演示适配器。页面只依赖 `ApiClient` 接口，不感知演示或未来 CloudBase 调用细节；演示适配器不读取真实文件、不访问网络、不构成生产鉴权或数据持久化实现。
-
-阶段 10.1 增加本地合规内容和展示面：`miniprogram/core/legal-documents.ts` 统一保存三份正文、版本、日期、联系邮箱及纯文本渲染；`pages/legal/` 读取 `user.get` 的同意时间并允许复制全文。登录页始终以 `auth.status.currentVersions` 为提交版本事实来源，使实质版本变化触发重新同意。人工审阅稿位于 `docs/phase-10/`，已获产品负责人用于邀请制体验版的确认，但未经过公开发布所需的专业复核。
-
-阶段 10.2–10.5 建立了模型快照、投递公示和最小分析事件的历史基线。v8 新生成公示固定使用 Prompt `experience-evidence-planned-v8` 与 renderMode `model_evidence_planned`，不再把本地渲染器描述为当前正文来源。资源成本继续固定覆盖 OCR、模型、云函数、存储和流量；真实 v8 公示只有在后续部署和实测后才可写成线上状态。
-
-## 2. 信任与隐私边界
-
-1. 用户身份只来自 CloudBase 运行上下文；客户端提供的 OpenID 无效。
-2. 所有简历图片和 JD 截图只发送给腾讯 OCR。
-3. DOCX、文本型 PDF 和粘贴文本在服务端提取文字；扫描 PDF 要求改传截图。
-4. OCR/提取结果先在本地遮盖手机号、邮箱、证件号和详细地址，再发送给 TokenHub。
-5. TokenHub 只接收脱敏文本，永不接收原图。
-6. AI 与审计日志最长保存 180 天，只保存模型、耗时、Token、成本估算、Prompt 版本、状态和内容哈希；账号删除会提前删除或匿名化用户关联。
-7. 投递历史保存脱敏事实与 JD 快照；删除简历不影响历史，删除账号会删除所有快照。
-
-## 3. 异步数据流
-
-1. 小程序向 `api` 提交写请求和 UUID requestId。
-2. `api` 完成权限、幂等和输入检查并创建 `ai_jobs`；异步派发被接受后只返回 `jobId`，不在 `generation.create` 请求内等待业务结果。
-3. `api` 异步触发 `worker`；`worker` 事务认领任务，避免重复外部调用。
-4. 图片任务进入 OCR；文本任务直接进入解析。所有模型调用前执行脱敏。
-5. JD 包含足够可读职责或要求时直接生成；低置信字段省略并产生提醒，岗位名缺失使用“该岗位”，公司缺失使用“贵司”。内容不足时失败且释放额度，不进入确认页面。
-6. 生成或改写结果经过逐项证据、正文格式、敏感信息和提示注入质量门。
-7. 岗位生成、改写和当前体验路径的简历结构化解析均保持单次模型调用；模型或本地质量门失败即明确结束并释放额度，不自动发起第二次模型调用。
-8. 成功的 `job.get` 返回本人 `resultPreview`，结果页先显示正文再后台补拉完整 application。
-
-## 4. 状态、时限与幂等
-
-任务状态集合仍包含：排队、OCR、解析、等待用户确认、生成、校验、成功、失败。“等待用户确认”只允许简历解析使用；岗位生成必须从解析直接进入生成或失败。不适用状态可跳过，但状态不得倒退，成功和失败为终态。
-
-- 单次 worker 最多运行 45 秒；内部截止早于平台硬上限，以便正常写入失败终态。
-- 创建 10 分钟仍无终态的任务由 cleanup 失败并释放额度。
-- 简历解析后的等待用户确认不预留额度，最多保留 24 小时；岗位任务不得进入该状态。
-- 同一用户、action、requestId 和负载返回同一结果；同 requestId 不同负载返回冲突。
-- 终态幂等映射保留 24 小时。
-- `user.delete` 先签发只保存哈希的 10 分钟确认凭证；有效确认立即禁用并记录最迟 24 小时物理删除时间。cleanup 每次运行立即处理全部待删除账号，不等待截止时间。
-
-历史阶段 6（已被当前体验链路与 v8 取代）曾把平台依赖隔离在端口之后，并为旧 TokenHub 主备尝试设置小于 45 秒的总预算。当前 v8 岗位生成/改写不再执行主备切换或自动纠错；简历解析仅保留同一 provider、同一 `callModel` 的一次纠错 Prompt 重试。cleanup 仍回收 10 分钟僵死任务，并重试 OCR 完成后未删掉的 JD 图片引用。
-
-## 5. 数据与事实模型
-
-集合固定为 `users`、`invites`、`resumes`、`applications`、`ai_jobs`、`daily_usage`、`feedback` 和 `audit_logs`。
-
-每项简历事实和求职偏好具有稳定 `factId`；偏好来源类型为 `preference`。JD 关键字段具有字段 ID。AI 正文中的每项可验证陈述必须映射到一个或多个有效 `factId` 或 JD 字段，不能只提供整篇共用证据。
-
-每日额度以北京时间维护 `reserved`、`succeeded` 和当日临时增加次数。进入实际生成前预留，成功后转计数，失败后释放；v8 生成/改写无自动纠错，简历解析的内部备用尝试不占生成额度。
-
-## 6. 不可违反的运行门槛
-
-- OCR、TokenHub、CloudBase、数据库、存储和流量的实际费用必须为 0 元。
-- 所有资源默认未准备，创建或开通前必须逐项取得授权。
-- 免费额度耗尽即暂停相关 AI 入口，不自动付费、不更换平台。
-- 五类资源状态快照最多有效 24 小时；状态未知、付费兜底开启、实际费用非零或剩余免费单位不足覆盖下一次完整 AI 任务时均失败关闭。OCR/模型独立门禁，云函数/存储/流量分别判定后汇总到计算存储门禁；数据查看和账号删除不依赖 AI 门禁。
-- 30 组样本必须由产品负责人逐组确认后才能评测。
-- 关键字段准确率 ≥90%、文案合规率 ≥95%、30 组零虚构、中位耗时 ≤10 秒。
-- UI 编码前必须确认七个低保真线框。
-- 个人主体类目受限时只允许体验版测试，不升级主体、不转 H5、不正式发布。
-
-## 7. API 基线
+Vite 关闭生产 source map。路由、CloudBase SDK、PDF 解析均动态加载。构建插件从 HTML entry 递归计算静态首屏 JS，gzip 超过 200KB 时直接失败；动态 CloudBase/PDF chunk 不计入首屏，但仍按功能按需下载。
 
-当前已锁定且已由本地 API 组合实现的身份、简历、生成和投递相关动作：
-
-- `agreement.accept`，保存当前协议版本和接受时间
-- `user.updatePreferences`
-- `job.get`，统一查询简历解析与生成任务
-- `resume.parse`，验证输入后创建草稿和 queued 任务并立即返回 `jobId`/`resumeId`
-- `resume.confirm`，重算事实身份、删除原文件并完成解析任务
-- `resume.list`、`resume.setDefault`、`resume.delete`
-- `generation.create`，验证已确认简历和 JD 输入并创建 queued 任务；有界窗口内成功则返回 `applicationId`，否则返回 `jobId`
-- `generation.rewrite`，从本人投递记录快照最新手动正文并立即返回异步 `jobId`
-- `application.list`、`application.get`、`application.update`、`application.delete`
-- `feedback.submit`，为本人单条投递记录创建或覆盖唯一反馈
-- `analytics.track`，只接受 `app_opened` 或剪贴板成功后的 `greeting_copied`，要求 requestId 且不接收正文
-
-`user.get` 返回当前用户安全资料、当日剩余额度与免费资源暂停说明，供首页和“我的”展示；不暴露身份哈希或外部凭证。`user.delete` 已采用申请凭证与确认删除两段式负载；确认后不可由管理员恢复。`admin.stats` 只允许同意当前协议且账号启用的服务端白名单管理员读取，汇总用户、邀请、北京时间当日额度、审计、OCR/模型/云函数/存储/流量五类资源元数据，以及首份简历确认率、生成成功率、复制率、满意率和 7 日回访率的分子/分母/比率。零分母返回 `null`，管理员与合成账号通过明确排除集合移出产品指标。管理员邀请码创建/撤销、用户启停和临时额度写操作均受 requestId 幂等保护并保存审计。`admin.quotaAdjust` 仍只增加当日临时次数，次日北京时间失效。
+JD 图像选择后由 `jd-image.worker.ts` 使用 `createImageBitmap + OffscreenCanvas` 压缩；不支持时退回主线程 Canvas。`jd-image-profile.ts` 只接受固定评测结果选择的候选。`prepareAndUploadJdImages` 并发上限固定 3，最多 5 张。选择只准备/上传，点击生成才调用 `generation.create`。
 
-### 2026-08-09：阶段 10 本地合规、指标与安全
-
-- 生成公示快照属于投递历史数据，保存实际成功模型的提供方、模型名、Model ID、Prompt 版本、运行模式和备案/登记引用；历史缺失统一降级为“生成信息不可用”。
-- `analytics.track` 不建立事件集合。用户记录只保存首次/最近打开、首次复制和首次命中 7 日回访窗口的时间；客户端失败队列最多 20 条，只含事件名和可选 applicationId。
-- 7 日回访按北京时间自然日计算：首次生成成功日为第 1 日，之后第 2–7 日对应偏移 1–6 天。满意率使用每条投递记录当前唯一反馈。
-- 邀请码每身份滚动 15 分钟最多 5 次失败，达到阈值锁定 15 分钟；成功清空状态，幂等回放不重复计数，所有不可用原因共用文案。
-- 正式字段准确率必须恰好 30 组、caseId 唯一且全部经人工确认；成本汇总始终输出五类资源。0.14 已确认正式评测五类资源实际费用为 0 元；发布前仍须执行 10.12 再复核。
-- `scripts/check-sensitive.mjs` 与 fixture 隔离检查共同进入 `npm run check`；微信开发者工具管理的两个本地配置被明确排除，避免覆盖或提交用户本地 AppID 配置。
+历史 Service Worker 和 manifest 已删除。启动时只执行一次旧 worker 注销与旧 shell cache 清理，不注册新 worker。
 
-### 2026-08-10：微信测试号资源边界
+## 4. 身份与 API 边界
 
-- 产品负责人单独授权微信测试资源核对。官方页面确认当前资源为“小程序测试号”，不是已注册的个人主体小程序；其后台只提供开发者 ID、服务器域名等测试能力，不提供主体、服务类目、成员或版本发布管理。
-- `project.config.json` 已由产品负责人配置测试号 AppID。微信开发者工具当前运行查询也使用同一 AppID，不再使用 `touristappid`，并成功生成二维码预览；这只证明开发和真机预览可用。
-- 未点击工具栏“上传”，未提交审核、备案或发布，未开通 CloudBase 或其他付费能力，微信测试资源实际费用为 0 元。0.6 与 10.11 保持未完成，直到正式个人主体小程序可供核对。
-- 产品负责人已说明后台核对截图中的标识符不是实际生产凭证。截图不进入仓库，仓库也不读取、保存或使用截图值；未来真实凭证仍只能通过受保护的服务端配置提供。
+生产入口要求：
 
-### 2026-08-10：CloudBase 免费环境预检边界
+1. `APPLYMATE_PUBLIC_WEB_V3=true`。
+2. 可信身份 namespace 必须是 `web-email-uid-v1`。
+3. 匿名 UID、OpenID 和 SDK fallback 的 Legacy namespace 均拒绝。
+4. 事件中任何大小写组合的 uid、email、openid、userId、ownerId、identityHash 等字段递归删除。
 
-- 产品负责人单独授权 CloudBase 免费环境核对和配置；该授权不扩展至腾讯 OCR、TokenHub、付费套餐、实名认证资料处理或正式发布。
-- 腾讯官方价格文档确认每个云开发账号可创建一个免费体验环境，每月 3000 资源点，单次可续 6 个月、不自动续费；免费环境不能开启按量付费或加购资源包。
-- 产品负责人自行完成腾讯云实名认证、服务角色授权和 0 元体验版购买；项目未读取或处理实名认证资料。
-- 上海环境 `applymate-mvp`（`applymate-mvp-d0gqjkpjzfa062eea`）已创建。控制台显示包年包月体验版、创建时间 2026-08-10 12:37:26、到期时间 2027-02-10 23:59:59，且只提供“升级付费套餐”入口。
-- 新版平台明确显示“SQL 型数据库”“PostgreSQL 管理”和 `#/db/postgres/` 路由，确认环境以 PG 模式运行。官方环境说明确认运行模式由创建时选择决定，创建后不可切换。
-- 套餐能力仅列出 PostgreSQL；文档数据库兼容地址始终停在初始化。资源点为 0/3000、各类用量为 0，按量付费开关当前未启用。产品负责人记忆中选择了“云数据库（默认）”，因此在腾讯云解释该差异前不认定为用户误操作。
-- 当前领域仓储、集合边界、事务语义和删除/清理实现计划均以文档数据库为基础；不能仅把集合名改成 SQL 表名便宣称兼容。改用 PostgreSQL 至少需要重新设计 RLS、事务、迁移、查询、身份和存储元数据边界，并重新测试全部仓储契约。
-- 腾讯云客服确认无法切换数据库，并允许销毁后用另一微信兑换码在同一腾讯云账号重建免费环境。产品负责人准备兑换码并明确授权销毁。
-- 销毁前确认 PostgreSQL 业务表、云函数、云存储桶和资源消耗均为 0，仅有系统 `administrator`；产品负责人完成彻底释放后，环境选择页显示“暂无环境”，旧环境不再存在。
-- 新购买页恢复后选择上海、0 元免费体验版、“云数据库”文档型数据库、免费试用 6 个月，并填写 `applymate-mvp`；兑换码由产品负责人亲自输入，项目未读取或保存。
-- 产品负责人自行输入兑换码后，新环境 `applymate-mvp-d0g005nnw103af4c3` 创建成功。控制台明确显示文档型数据库路由、免费体验版至 2027-02-10、0/3000 点、各类用量 0 和按量付费未开启；0.7 已完成，独立账单仍由 10.12 汇总。
-- 八个固定集合已按设计创建为空，权限统一为 `ADMINONLY`，避免小程序客户端绕过 `api` 直接访问数据。当前未建立索引、写入真实数据或部署函数。
-- 官方 `@cloudbase/node-sdk` 是云函数内调用数据库、存储与函数的推荐方案，但候选版本公开依赖仍包含 `axios@0.27.2`。隔离锁文件生成成功，漏洞数据库审计未完成；按照既有安全门，审计通过前不加入依赖、不实现真实适配器、不部署三个云函数。
+旧环境不设置公开模式变量时继续走 Legacy 兼容路径，便于只读盘点和预发布回归，但不得作为生产配置。
 
-## 8. 决策记录
+公开模式动作 allowlist 不包含邀请码、`generation.rewrite`、管理员加量或小程序动作。服务阶段进一步收窄：
 
-### 2026-08-11：阶段 0.10 五类资源失败关闭
+- active：公开产品完整动作。
+- read_only：状态、列表/详情、复制、导出、协议、分析和账号删除。
+- retired：`auth.status` 与账号删除边界；Web 引导到 `/support`。
 
-- 资源使用日志继续分别记录 OCR、模型、云函数、存储和流量；业务 API 保持 OCR、模型、计算/存储三个依赖门禁，避免把控制面细节扩散到 action 契约。
-- `evaluateZeroCostChecklist` 要求五类快照恰好各一份，并按 24 小时新鲜度、可用状态、后付费关闭、实际费用为零和“剩余免费单位足以覆盖下一任务最大预计用量”生成决定。
-- OCR 与模型决定直接映射到对应门禁；云函数、存储和流量分别判定，任一暂停都会把合并的计算/存储门禁置为不可用。状态缺失、重复、未知、过期或来自未来均失败关闭。
-- 资源门禁仍位于首次幂等执行内部和业务处理器之前；五类阈值测试确认不会创建 AI 任务。`user.get` 和 `user.delete` 不声明 AI 资源依赖，资源暂停时仍保持可用；已经完成的同 requestId 继续安全回放。
-- 当前只完成本地确定性策略和控制台检查表。CloudBase SDK 审计及真实运行时资源采集器完成前，不得把控制台人工数据伪装为实时门禁，也不得开启真实 AI 入口。
+API 响应统一 `{ ok, data }` 或 `{ ok: false, error }`。写动作要求 UUID requestId。所有业务资源按可信内部 userId 过滤。
 
-### 历史：2026-08-11 TokenHub 免费模型与失败关闭通过（候选主备已被 v8 单模型策略取代）
+## 5. 服务配置
 
-- 产品负责人要求继续下一步，按实施计划记录为对 0.9 TokenHub 免费资源核对和配置的单独授权；该授权不包含购买套餐、启用后付费或运行模型评测。
-- 创建腾讯官方服务角色并开通 TokenHub 后，只从 22 个语言模型中领取 `deepseek-v4-flash` 和 `hy3`。两者各 100 万 Tokens、有效期 1 年，控制台到期时间均为 2027-08-11 12:56:04。
-- 启用管理显示两者运行中、已领取、剩余 100%、按 Token 计费未启用；`deepseek-v4-flash-202605` 原厂直供版本保持未领取、未启用。
-- 用量统计没有调用明细，当日账单没有 TokenHub 费用记录且支付汇总为 0 元。未创建 API Key，任何模型文本均未外发。
-- 当时把候选运行时模型记为主模型 `deepseek-v4-flash`、备用模型 `hy3`；该历史候选并非当前策略。v8 岗位生成/改写只使用 Hy3 单次调用，不进行主备切换。
+`service_config/public` 是服务端配置单例，至少包含：
 
-### 历史：2026-08-11 阶段 0.12 TokenHub 冒烟失败关闭（已被后续体验链路与 v8 取代）
+- `publicLaunchAt`
+- `aiClosesAt`
+- `dataAccessEndsAt`
+- `estimatedAiTaskCostFen`
+- `resourcePaused`
 
-- `scripts/phase0-tokenhub-lib.mjs` 负责锁定 30 组、出站遮盖、Prompt/来源注册表、确定性判定和只含哈希的安全记录；`run-phase0-tokenhub-benchmark.mjs` 负责 plan/smoke/full 三种模式、45 秒截止、模型过滤和临时检查点。`.env.phase0.local` 只保存受限 Key，Git 忽略且权限为 `0600`。
-- Key 控制台显示状态启用、只允许 2 个推理服务。全量计划固定为每模型 90 次、悲观 36 万 Token；冒烟失败后 runner 不会自动进入 full。
-- DeepSeek C01 结构化仅 3/6 且 11,056 ms，生成达到 45 秒截止。Hy3 最终结构化 6/6，生成和改写零虚构、Schema/来源 ID 正确，但只有 178/198 个可见字符，生成 10,539 ms，改写另有 1 项 claim 对齐失败。
-- 格式错误不再被误计为虚构：只有命中禁止事实或引用未知来源 ID 才增加虚构数；长度、分段、claim 正文对齐仍独立阻断合规。
-- 控制面当时显示 DeepSeek 剩余 99.8%、Hy3 剩余 99%，两者按 Token 计费仍未启用。当时的主备配置仅是候选，已被 v8 Hy3 单次调用、无写作备用模型的策略取代。
+构建期 Web 变量必须由同一批准日期生成。配置缺失、日期无效、预算期缺失或真实 AI 未启用时，API 保持认证可用但返回 `resource_paused`/只读的 fail-closed 状态。
 
-### 历史：2026-08-11 阶段 0.12 调整后全量通过（250–350 本地渲染基线，已被 v8 取代）
+服务阶段纯规则位于 `shared/src/service-access.ts` 与 `api/src/service-access-service.ts`。服务端是最终裁决者，客户端 banner/守卫只负责体验。
 
-- 产品负责人确认保留 250–350 字和零虚构门槛，改为 Hy3 每组只执行一次六字段结构化与 2–4 个 `factId` 选择；开场白和改写不再调用外部生成模型，由服务端本地确定性渲染。
-- 渲染器仅能使用已验证的选中事实和 JD 字段，并固定返回逐项证据、遗漏要求和提醒。禁止事实只检查候选人事实陈述，不再把“岗位要求 SQL”误判为“候选人自称掌握 SQL”。
-- 调整后 C01 冒烟为字段 6/6、100% 合规、零虚构、2,686 ms 和 813 Token。C01–C30 正式评测共 30 次 Hy3 外部调用与 60 次本地渲染；字段 178/180（98.89%）、文案 60/60 合规、虚构 0、端到端中位 3,410 ms、已知 20,008 Token。
-- C14 两个冲突字段判定失败，但均未进入文案；指标仍高于 90% 字段门槛。控制台复核 Hy3 剩余 96.9%、DeepSeek 剩余 99.8%，两者按 Token 计费未启用。0.12 完成不代替 0.13 外发链路或 0.14/10.12 跨平台账单审计。
-
-### 2026-08-11：阶段 0.13 外发数据边界通过
-
-- 使用完全合成 PNG 对 `GeneralBasicOCR` 发起一次实际请求；API Explorer 的响应逐项检索确认手机号、邮箱、身份证号、护照号和详细地址均被识别。原始图片边界固定为腾讯 OCR，不发送给 TokenHub。
-- OCR 文字必须先经过 `maskProtectedText`；本次五类遮盖全部命中。`inspectOutboundRequest` 在真正发送前检查完整 TokenHub 请求，拒绝图片、Base64、文件字段和受保护文本，随后 `hy3` 最小请求返回 HTTP 200。
-- `phase0-egress-audit.json` 只保存目的地、方法、内容类型、载荷长度与哈希、图片/敏感信息布尔值、模型、耗时和 Token 数；请求体、授权值、OCR/模型响应正文和云端请求标识均不落盘。
-- OCR 免费包调用后已用 34、剩余 44,016，后付费仍关闭；TokenHub 两个模型按 Token 计费仍未启用。该结论只覆盖 API Explorer OCR 输入与本地直接 TokenHub 请求，不代表尚未部署的 CloudBase worker 已通过运行时审计；0.14/10.12 仍须独立完成五平台账单核对。
+## 6. 预算、额度与任务事务
 
-### 2026-08-11：阶段 0.14 五类资源实际费用为零
-
-- 将正式 30 组评测限定为独立成本范围：OCR 32 次（含 2 次重新提取）、Hy3 30 次/20,008 Tokens，云函数、云存储和 CloudBase 流量均为 0。控制面累计余额另列，避免把环境创建操作误算成评测成本。
-- 目录价估算使用保守口径：OCR 按 0.15 元/次；Hy3 因没有输入/输出拆分，全部按 4 元/百万输出 Tokens 计算上界。总目录价上界为 4.880032 元，但免费包和免费 Token 使实际费用为 0 元。
-- CloudBase 当前消耗 1.13/3000 点，其中数据库 49 次调用消耗 0.98 点、环境 API 15 次消耗 0.15 点；云函数调用/GBs、外网流量、存储读写/容量和 CDN 流量均为 0。这些点数来自环境和集合配置，不属于正式评测。
-- 腾讯云实时明细总费用及现金、赠送金、分成金、优惠券支付均为 0 元。机器证据恰好包含 OCR、模型、云函数、存储、流量五类，并由生产成本计算器重算；不保存账号、凭证或用户内容。
-- 0.14 不代替邀请制发布前的 10.12 账单再复核；原 0.11 OCR 时延失败已由后续 0.11R 全量复验解除。阶段 0.15 必须按统一门槛形成停止/继续报告。
-
-### 2026-08-11：阶段 0.15 统一门槛判定为停止
-
-- `phase0-decision-report.json` 将人工样本、OCR/模型字段、文案合规、虚构、文本子管线耗时、OCR 时延、外发隐私和零费用固定为 10 个可机器重算的门槛；只有全部为 `passed` 才能继续。
-- 其中 8 项通过，OCR 中位耗时 19,773.5 ms 超过 10,000 ms，OCR 最大耗时 55,362 ms 超过 45,000 ms worker 上限。`blockingGateIds` 因此固定为这两项，`stage0CanContinue` 与 `nextStageAuthorized` 均为 `false`。
-- 0.12 的 3,410 ms 只覆盖脱敏文本进入 Hy3 后的事实选择和本地渲染，不包含 OCR；架构不得用该子管线指标代表完整图片任务。
-- 停止决策不删除已有本地实现与证据，但真实 AI 入口、CloudBase 生产适配器、三个云函数部署和 0.17/10.12 保持关闭。决策不授权更换平台、开启付费或降低门槛。
-- 正式个人主体类目、CloudBase SDK 安全审计、真实云端运行时和发布前账单复核仍是未完成依赖；它们不覆盖本轮已经失败的 OCR 硬门槛。
-
-### 2026-08-11：阶段 0.11R OCR 时延诊断工具就绪
-
-- `phase0-ocr-latency-lib.mjs` 使用 Node 内置加密与 HTTPS 形成最小 TC3 签名请求，按 DNS、TCP、TLS、上传、服务等待、响应接收和总时延记录非内容指标；不引入 OCR SDK、CloudBase SDK 或第三方网络库。
-- 六个代表样本 C01、C04、C10、C14、C18、C29 分别覆盖清晰文本、表格、低清、标题裁切与旋转裁切；原始 PNG、960×1440 JPEG 质量 85、720×1080 JPEG 质量 80 各重复 4 次，共 72 次。候选胜出条件为 24 次零错误、144 个字段槽位准确率至少 90%、中位不超过 10 秒且每次严格小于 45 秒。
-- `prepare-phase0-ocr-latency-variants.py` 只在固定 `/private/tmp` 子目录生成 30×3 完全合成图片变体。无胜出候选或 30 组全量复验完成后，工具拒绝删除任何其他路径并清理该临时目录。
-- 诊断和全量证据只保存图片哈希、尺寸、字节数、时延、字段计数和错误码，不保存 OCR 原文、请求正文、Base64、RequestId、凭证或用户内容。真实命令必须显式声明已经完成预检；诊断和全量复验前后仍须由产品负责人核对控制台后付费关闭、剩余免费调用数和实际账单为零。
-- 该工具的初始交付不授权 0.17、CloudBase 部署、TokenHub 调用或发布；后续全量复验结果见紧随其后的架构记录。
-
-### 2026-08-11：阶段 0.11R 全量复验解除 OCR 时延阻塞
-
-- 代表性诊断用 72 次完全合成调用比较三种图片变体；原始 PNG、`jpeg-960-q85` 和 `jpeg-720-q80` 均通过候选门槛，其中 `jpeg-720-q80` 的中位为 1,436 ms、P95 为 1,708.25 ms、字段为 144/144、零超时。
-- 30 组顺序全量复验使用该候选，得到字段 180/180、准确率 100%、中位 1,429 ms、P95 1,805.2 ms、最大 1,940 ms、超时 0。产品负责人在调用前后确认 OCR 后付费关闭且实际费用为 0 元；诊断合计 102 次免费调用后，临时合成图片已删除。
-- 0.15 的十项技术门槛因此全部通过，`decision=continue` 且 `stage0CanContinue=true`；当时 `nextStageAuthorized=false`，因此未自行开始 0.17、CloudBase 部署、TokenHub 新调用或发布。该历史状态已由随后的 0.17 批准记录取代。
-
-### 2026-08-11：阶段 0.17 产品负责人批准记录
-
-- 产品负责人在收到 0.11R 的 30 组全量复验、零超时和实际费用 0 元结论后，明确指示“进入下一步”。该指令被严格记录为对 0.17 的批准：确认七个低保真线框和阶段 0 的 `continue` 技术结论。
-- `docs/phase-10/phase0-decision-report.json` 因此将 `nextStageAuthorized` 设为 `true`，并新增 `authorizationScope=phase0.17_approval_record_only`，避免把记录混同为生产授权。
-- 此批准不允许部署 CloudBase 函数、接入真实运行时 OCR/TokenHub、处理真实用户内容、执行 10.6–10.15、开启付费或发布。下一项外部或部署动作仍须由产品负责人单独指定。
-
-### 2026-08-11：阶段 10.6 完整外发链路审计
-
-- 产品负责人随后明确指定 10.6。固定的完全合成图片经实际 TC3 签名请求发送到腾讯 OCR；返回文本只在进程内进入确定性脱敏，再向 Hy3 发出一次最小文本请求。没有部署 CloudBase，也没有处理真实用户文件或身份。
-- 实际 OCR 用时 1,743 ms；五类受保护信息均被检测并遮盖。Hy3 返回 HTTP 200，用时 2,107 ms、126 Tokens。`phase0-egress-audit.json` 仅记录目标、方法、载荷哈希/长度、模型、耗时、Token、边界布尔值和不保存正文的声明。
-- 审计确认图片只进入 OCR；TokenHub 请求没有图片、Base64、fileId、手机号、邮箱、证件号或详细地址。合成临时 PNG、旧 SVG 源和旧 OCR 文本已删除。账单零费用不在本步骤重申，仍由 10.12 逐平台复核。
-- 未来生产实现必须保留用户原图，只发送通过同等质量门的 720×1080、JPEG 质量 80 临时副本至腾讯 OCR，并在 OCR 后删除临时副本与原图；此规则不改变“原图只到 OCR、TokenHub 只收本地脱敏文本”的外发边界。
-
-### 2026-08-11：腾讯 OCR 免费资源与最小调用通过
-
-- 产品负责人单独授权开通腾讯 OCR 免费服务；控制台记录开通时间为 2026-08-11 12:22:33。
-- 设置页明确显示后付费关闭，资源包耗尽后主账号及子账号服务不可用；接口列表的后付费状态均为“未开通”，因此不为连续可用性打开付费兜底。
-- 免费资源包随后自动到账：2026 年 8 月共 45 个包、总额 44,050 次，通用印刷体识别包为 1,000 次；包有效期截至 2026-08-31 23:59:59。
-- 唯一一次外发只包含不含个人信息的 1,200×1,200 合成 PNG。`GeneralBasicOCR` 成功返回中文结果，控制台统计调用接口数 1、调用总量 1、总计费量 1，免费包聚合已用量为 1。
-- 调用后设置页仍显示后付费关闭；2026-08-11 账单明细中的 OCR 记录支付汇总为 0 元。请求 ID、Base64 和完整响应不进入仓库。
-- 0.8 至此完成，但只证明免费资源、失败关闭和最小连通性；OCR 关键字段准确率、外发隐私链路、真实 30 组评测及 10.12 跨平台账单仍是独立门槛。TokenHub 后续已按独立授权完成 0.9。
-
-### 2026-08-11：阶段 0.11 OCR 字段评测
-
-- `scripts/generate-phase0-ocr-fixtures.py` 只从锁定 Markdown 读取合成输入，在 `/private/tmp` 生成确定性 PNG 和 SHA 清单；媒体不属于仓库源文件，也不进入 Git。
-- `scripts/evaluate-phase0-ocr.py` 读取临时 OCR 结果，规范化比较锁定简历/JD 与转写文字；输出只含图片哈希、耗时、字符保留率和六类布尔判定，不保存完整响应、Base64 或 RequestId。
-- 30 组最低源文字字符保留率为 98.89%，字段证据判定为 180/180。该方法证明 OCR 保留了六类字段所依赖的文字以及“缺失/冲突/不可见不得补值”的边界，不证明后续模型能正确理解或生成。
-- 中位耗时 19,773.5 ms、P95 43,474.05 ms、最大 55,362 ms。现有 44 秒内部截止无法可靠容纳最慢 OCR；在调整异步执行/截止设计并重新验证前，真实 OCR worker 继续关闭。
-- 控制台聚合用量为已用 33、剩余 44,017，后付费仍关闭。0.11 完成只代表准确率步骤已执行并如实记录；该步骤完成时，整体阶段 0 仍因时延和尚未执行的 0.12–0.15 而未通过。后续 0.15 已据此形成停止结论。
-
-### 2026-08-11：阶段 0.4 人工真值锁定
-
-- 产品负责人逐组确认 C01–C30；每组显式保存“已确认”、统一版本 `phase0-v1.0` 和确认时间 `2026-08-11T11:59:00+08:00`，避免仅依赖文档级状态推断。
-- C12 将北京混合办公与每周至少到办公室 3 天分别归入地点/方式和到岗/时长真值；C16 将扫描 PDF 改传截图从禁止生成事实移入流程规则；C24 固定 2026-08-11 为评测参考日期并使用尚未开始且相互重叠的项目日期，消除随当前日期漂移的真值。
-- `tests/model-evaluation/fixture-structure.test.ts` 除编号、段落和六类真值外，还锁定每组确认状态、版本与 RFC 3339 北京时间。任一案例退回待确认或缺失元数据都会阻断 `npm run check`。
-- 本步骤没有生成媒体文件，没有调用 OCR、TokenHub 或外部模型，也没有形成准确率、合规率、虚构、耗时或费用结论。
-
-### 2026-08-05：澄清后文档基线
-
-- 将图片运行链路从 TokenHub 视觉模型改为腾讯 OCR；移除 YT-VITA/HY-Vision 主流程。
-- 将同步重任务改为 `api + worker + cleanup` 三函数异步架构。
-- 将证据从整篇列表提升为逐项陈述映射。
-- 固化岗位名、文案长度、复制标识、反馈、协议版本、账号删除和指标口径。
-- 将严格零付费设为阶段 0 停止条件。
-- 当前只更新文档，未开始开发或开通任何外部资源。
-
-### 2026-08-05：阶段 1 本地骨架
-
-- 产品负责人明确允许本地阶段 1 先行，但没有豁免阶段 0.4–0.17；真实服务、模型评测、UI 与阶段 2 仍受原门槛约束。
-- 使用单一根级 npm 包和 TypeScript project references，不引入 monorepo 管理器、Web 框架或打包器。
-- shared、api、worker、cleanup 共用严格 TypeScript 基线；小程序暂时只保留目录说明，等待七个线框获批。
-- 测试固定分为 unit、contract、integration、model-evaluation，避免不同风险层混在同一入口。
-- `wx-server-sdk@4.0.2` 安装后审计发现 5 个高危传递依赖，已从阶段 1 移除；CloudBase 运行 SDK 必须在正式接入前重新验证安全版本或安全替代接入方式，未经确认不得加入。
-- fixture 检查把“合成数据声明”变成机器可验证规则：文本需要固定标识，二进制需要 `synthetic=true` 侧车元数据。
-
-### 2026-08-05：阶段 2 共享契约
-
-- 共享层保持纯 TypeScript + Zod，不引用 CloudBase、OCR、TokenHub、小程序或数据库 SDK；因此全部核心边界可在离线环境验证。
-- 可见字符按 Unicode 字素计数并排除空白，避免组合 emoji 和组合字符被重复计数；孤立代理字符在 API 输入边界拒绝。
-- `factId` 由版本域、来源类型及 NFC/空白归一后的事实文本生成；文本哈希保留完整 SHA-256，文本或来源变化时二者按规则更新。
-- 阶段 2 最初以 0.8 为 JD 等待确认阈值；该交互规则已被 2026-08-06 直接生成决定取代。置信度继续用于决定字段是否可引用，但不得触发 JD 用户确认。
-- 逐项证据同时校验 ID 格式和当前任务注册表归属；AI 正文质量门为硬失败，手动文本复用检测结果但仅产生非阻断警告。
-- API 负载在 Zod 转换前检查原始对象，拒绝原型污染式键、非普通对象、循环/非 JSON 数据、超长内容及无效 Unicode。
-- 当前繁简校验采用保守的常见繁体字符拒绝表，不等同于完整中文转换；阶段 0 模型评测和阶段 6 回归必须继续验证误报/漏报。
-
-### 2026-08-05：阶段 3 身份与准入
-
-- API action 必须显式注册；未知动作和大小写变体拒绝，未预期异常不会暴露路径、堆栈或校验内部信息。
-- 可信 OpenID 只从注入的 CloudBase 上下文端口读取，经带版本域的 SHA-256 生成身份哈希和稳定内部 userId；原 OpenID 不进入用户、邀请或审计记录。
-- 阶段 3 新增 `agreement.accept` 时 API 契约曾为 25 个 action；阶段 9 删除 `generation.confirmJd` 后为 24 个，阶段 10 新增 `analytics.track` 后当前再次为 25 个。协议两类版本以同一时间保存；版本变化会重新阻断业务动作。
-- 阶段 3 只验证写动作必须携带 requestId；请求结果持久幂等、重复负载复用和冲突检测属于阶段 4，当前不得宣称已实现。
-- 管理员白名单只在服务端配置并转换为身份哈希。管理员也必须接受当前协议，但免邀请码，可创建和撤销首批邀请码。
-- 邀请码只保存规范化哈希，默认 7 天有效；消费邀请和激活用户是同一原子仓储操作，因此同码并发只有一次成功。
-- 求职偏好整体替换并复用共享分句/factId 规则；空文本清空，500 个可见字符为硬上限，超限不覆盖旧值。
-- 管理员启停用户时，用户状态和审计记录原子保存。禁用用户只能访问 `auth.status`、`user.get` 与阶段 8 已实现的 `user.delete`；进入待删除状态后管理员不能重新启用。
-- `InMemoryIdentityRepository` 仅是本地可验证适配器；生产 CloudBase 事务实现及真实上下文适配器仍需单独授权，不能据此宣称云端已完成。
-
-### 2026-08-05：阶段 4 任务、幂等与额度
-
-- 任务固定从 `queued` 创建，保存状态历史；worker 在任何实际处理前原子认领，同一任务重复派发只有一次进入处理。
-- `job.get` 复用阶段 3 的协议、激活和用户隔离门禁，只返回任务类型、中文进度、时间及安全结果/错误，不暴露 userId 或 worker 认领信息。
-- 写请求以可信身份哈希、action、requestId 和规范化负载建立幂等映射；完成结果从完成时起保留 24 小时。同 requestId 不同负载冲突，同进程并发重复合并，处理器异常则释放认领。
-- 免费资源门禁位于首次幂等操作内部、业务处理器之前：新请求在资源暂停时不会创建任务或预留额度；已经完成的相同请求仍可直接回放原结果。
-- 每日额度使用固定 UTC+8 日期键，默认 5 次；`reserved` 与 `succeeded` 原子变更，跨日完成回写原预留日。管理员增加次数只作用当日并与不含 OpenID 的审计原子保存。
-- worker 内部截止固定默认 44 秒且拒绝达到平台 45 秒；超时写入唯一失败终态并释放额度，迟到结果不能覆盖。任务按最近状态更新时间连续满 10 分钟仍无终态时由清理服务兜底失败，等待用户确认状态排除；确认后继续会重置该运行窗口。
-- 当前 `InMemoryJobRepository`、`InMemoryIdempotencyRepository` 和 `InMemoryQuotaRepository` 只用于离线验证。真实 CloudBase 事务仓储、异步派发与 cleanup 定时入口仍需外部资源逐项授权。
-
-### 2026-08-05：阶段 5 简历解析与管理
-
-- 临时文件路径只含带版本的内部用户哈希段和随机 fileId；扩展名、MIME、Magic Bytes、所有权、大小、图片数及 PDF 页数均在外发前校验。
-- DOCX 只使用 Mammoth `extractRawText`；文本型 PDF 使用 unpdf，扫描 PDF 明确要求改传截图，不在服务端静默渲染或返回空结果。
-- 图片字节只能经 `TencentOcrAdapter` 进入 OCR provider；OCR/文件提取文字必须通过 `ResumePrivacyGateway` 后才能进入结构化模型。该网关只返回遮盖类型与数量，不返回敏感值。
-- 主模型输出只接受严格 JSON/Schema；无效、截断或错误结构最多调用一次备用模型。事实 ID 和哈希由服务端根据来源类型及规范化文本生成，客户端/模型提供的标识不能在确认时成为权威值。
-- `resume.parse` 只同步创建草稿与任务。worker 清除已处理的粘贴原文并停在等待确认；未确认 profile 由独立访问守卫禁止作为生成证据。
-- `resume.confirm` 是事实进入可信区的边界：重新校验 Schema、重算全部事实身份、拒绝重复事实、删除原文件并完成任务。相同内容重复确认不重复写入。
-- 每用户最多保留三份简历记录。删除默认简历时，按 `confirmedAt/createdAt` 最新优先并以 resumeId 稳定破同分；没有确认简历时默认值为空。
-- cleanup 精确回收满 24 小时的未确认草稿和满 1 小时且不再被任何简历引用的临时文件。真实定时触发、CloudBase 存储删除和事务补偿仍待授权验证。
-
-### 历史：2026-08-05 阶段 6 JD 生成与事实质量门（已被 v8 取代）
-
-- `generation.create` 只接受文本或 1–5 张 JD 图片，并把已确认简历与当前偏好复制为任务快照；简历图片继续独立允许最多 6 张。任务创建时不预留额度，进入真实生成前才预留。
-- JD 图片保持用户顺序，只进入 OCR 端口；提取后立即尝试删除。删除失败的 fileId 只保留为 cleanup 重试引用，不进入 TokenHub 或投递记录。
-- 阶段 6 原实现以 0.8 阈值进入等待并通过 `generation.confirmJd` 继续；阶段 9 已完整移除该动作和等待分支，0.8 现在只决定字段是否可引用。
-- 公司名缺失不是阻断条件，服务端统一提供“贵司”并写入 warning；岗位名、公司称呼、简体中文、250–350 可见字符、2–3 段和逐项证据均为 AI 硬门。
-- 文本模型网关只接收再次遮盖后的 JSON 文本，主/备各最多一次；超时、429、无效输出和提供商失败统一归一。日志契约只有模型、状态、耗时和内容哈希，不含 Prompt 或正文。
-- 第一次质量失败携带脱敏上下文、前一稿和错误码纠错一次；第二次失败释放额度，不写 application。成功只保存被引用的脱敏事实、脱敏 JD、逐项 evidence、warnings 和 omitted requirements。
-- application 快照独立于简历仓储；删除简历不会删除历史。重复 worker、45 秒截止与 10 分钟 cleanup 竞争依赖任务终态和额度结算幂等保证计数不为负。
-- 本地完整链路和页面重建后的 `job.get` 恢复已验证。阶段 6 执行时 30 组草案仍待确认；现已锁定 `phase0-v1.0`，但真实模型准确率、合规率、虚构、耗时和成本仍不得宣称通过。
-
-### 历史：2026-08-06 阶段 7 改写、记录与反馈（旧自动纠错已被 v8 取代）
-
-- application 成为同一投递的唯一最新文案记录；手动正文、状态和备忘只覆盖该记录并刷新更新时间，不新增重复历史版本。列表按更新时间倒序，所有详情、更新、删除和反馈均先执行用户隔离。
-- 手动文本沿用 AI 检测器但始终允许保存/复制，并额外返回真实可见字符数和段落数；超过 AI 输出 Schema 的长手动文本也必须返回实际计数，不能因为解析失败报告为零。
-- `generation.rewrite` 复用 `ai_jobs` 与每日额度，但使用独立 rewrite 仓储保存任务输入快照。创建任务时固定最新正文与 application 版本；完成前版本不一致即冲突失败，避免后台结果覆盖用户后续编辑。
-- 改写 worker 固定走 queued → parsing → generating → validating → terminal，最多纠错一次。成功覆盖 application 正文/证据并只结算一次，质量、模型、并发冲突或超时失败释放额度且保留原文。
-- 三种预设改写指令由服务端固定；自定义内容只是低优先级不可信数据。整个文本模型请求再次统一脱敏，不允许自定义指令覆盖真实性、隐私、简体中文、长度/段落或逐项证据规则。
-- 复制文本由服务端纯规则生成并随详情返回；实际微信剪贴板调用仍属于阶段 9。feedback 以 applicationId 为唯一业务键，覆盖时保留首次创建时间；删除 application 会同时删除其反馈。
-- 当前仍是内存仓储与合成模型替身，无法证明 CloudBase 事务、真实异步派发、TokenHub 改写质量、真机剪贴板或实际计费结果。阶段 8 在产品负责人验证前不得开始。
-
-### 2026-08-06：阶段 8 账号删除、清理与管理员运营
-
-- 删除确认凭证明文只在申请响应中返回，仓储只保存带版本域的 SHA-256；10 分钟精确到期。确认与禁用在同一身份仓储操作内完成，写入 `deletionRequestedAt` 和 24 小时截止时间，管理员不能重新启用删除中账号。
-- 账号 cleanup 以待删除用户为工作清单，先删除所有业务、文件、日志和该身份幂等映射，最后删除身份索引；任一步异常都会保留身份记录，使下次运行可继续。身份删除成功后才按北京时间日期累加匿名删除数，避免重复 cleanup 重复计数。
-- 物理删除覆盖用户、协议/偏好、邀请码关系、简历、任务、生成/改写、投递事实与 JD 快照、反馈、额度/预留、审计、资源日志、临时文件及幂等映射；其他用户记录不受影响。简历单独删除仍保留投递快照。
-- 匿名聚合只保留 `dateKey`、固定指标名和计数，不含 userId、身份哈希、任务 ID 或精确事件时间，因此不能回连个人。
-- 资源日志使用严格运行时 Schema，只允许五类资源的调用数/单位、估算与实际成本、耗时、状态、模型/Prompt 版本和内容哈希；所有日志必须带内部 userId 以便账号删除，不允许原始 Prompt、正文、截图或联系方式字段。
-- 身份审计、额度审计和资源日志只删除严格早于 180 天边界的记录；精确 180 天仍保留。幂等清理由各自 24 小时 `expiresAt` 决定，不受 180 天日志清理影响；未完成任务和匿名聚合不属于该清理范围。
-- 当前清理和统计仍为内存端口验证，不能证明 CloudBase 多集合删除、定时触发、事务补偿、真实账单或生产 24 小时 SLA。阶段 9 在产品负责人验证前不得开始。
-
-### 2026-08-06：阶段 9 微信小程序本地界面
-
-- 原生实现采用 TypeScript、WXML、WXSS 和 app.json 三标签导航，不增加跨端框架或 UI 组件库。全局视觉使用暖白、深蓝灰与低饱和青绿，主触控目标至少 88rpx，并为底部安全区预留空间；13 页均有独立布局和页面级 WXSS，不存在 JD 确认页。
-- 首页只保留当前简历、今日额度和岗位输入主动作，最近投递全部由记录页承载，首页不再请求 `application.list`。
-- JD 与简历图片边界拆为 `MAX_JD_IMAGE_COUNT = 5` 和 `MAX_RESUME_IMAGE_COUNT = 6`。生成页默认截图模式，允许按剩余数量批量追加、删除和长按拖动排序；截图与文字草稿切换后均保留，仅提交当前模式，任一输入或简历变化都会清空旧 requestId。
-- UI 只调用统一 `ApiClient` 的 read/write 接口。当前 app 注入 `createDemoApiClient()`，使协议、邀请码、简历、任务、生成、投递、反馈、删除和管理员契约可完全离线演示；源码完整性测试禁止出现 `wx.cloud`。
-- 任务页把最后 jobId 保存到微信本地存储，使用有界轮询恢复排队、解析、等待确认、生成、校验、成功和失败状态。达到本轮轮询上限后只暂停页面查询，不取消后台任务。
-- PDF/DOCX 和图片在选择后先执行客户端扩展名、数量和字节提示；这些规则只用于及时反馈，未来服务端仍必须重复验证。演示模式只传递 `demo:` 路径标识，不上传或读取用户文件。
-- 结果页首屏只突出正文、复制和保存；投递状态/备忘/反馈使用次级折叠区。逐项证据仍在服务端快照和质量门中保留，但不再向用户展示匹配依据、遗漏与提醒；AI 改写 API 为兼容历史数据保留，当前原生页面不提供入口。手动编辑警告不阻断保存/复制，复制前重新读取服务端组合的 copyText，确保 AI 标识来自可信业务规则。
-- 管理员入口只在 `user.get.isAdmin` 为真时显示，页面加载还会再次请求 `auth.status`，业务 API 仍是最终权限边界。演示普通用户无法通过直接路由取得管理员能力。
-- 阶段 9 自动化只证明页面文件、绑定、纯交互契约和 30 组合成结果映射。微信文件选择器、真实剪贴板、字号放大、前后台切换、iOS/Android 安全区和弱网行为必须由产品负责人完成 9.15 真机验收。
-
-### 2026-08-06：阶段 9 全量视觉返工
-
-- 产品负责人撤销 `0e02e3f` 的视觉完成结论，确认 13 页浏览器交互视觉稿后再重写原生页面；静态预览与生产小程序形成明确门禁，避免“存在样式文件”等同于视觉验收。
-- `docs/phase-9-v2-preview/index.html` 只提供预览外壳和设计方向契约；`styles.css` 保存暖白、深蓝灰、青绿、间距、触控、安全区与响应式规则；`preview.js` 保存 13 页合成内容、状态切换和主要交互。三者均不进入 TypeScript 构建或小程序产物。
-- 组合准入页在同一层级展示邀请码与协议；成功、错误、管理员、协议更新和禁用状态均留在同一页面。原生客户端依次调用 `agreement.accept` 与 `invite.activate`，不改变服务端 `AccessState`。
-- 根目录 `PRODUCT.md` 只记录经现有产品文档确认的持久产品事实；视觉规则仍以 `memory-bank/design-document.md` 和本阶段确认稿为准，不形成新的产品需求来源。
-- `scripts/check-format.mjs` 不再格式化微信开发者工具管理的 `project.config.json` 与 `project.private.config.json`；独立集成测试负责验证 JSON、`touristappid` 与 `miniprogramRoot`，避免本地工具改写阻断源码门禁。
-
-### 2026-08-06：阶段 9 原生候选版验收退回
-
-- 微信开发者工具已从根目录的 `miniprogram/` 加载最新工作区；截图出现仅存在于新 WXML 的组合登录文案，因此不是缓存或目录错误。
-- 原生登录页错误地使用整页垂直居中，并额外加入浏览器确认稿没有的品牌小标题，导致顶部大段空白和旧式信息层级；浏览器稿要求从顶部自然排布并以分隔线区分介绍与表单。
-- 协议勾选与邀请码输入必须共同驱动同一个可测试的提交可用状态；视觉勾选不能与 `actionDisabled` 分离。
-- 该退回项修复后，9.14c 以原生结构/交互契约和完整本地检查作为候选版门槛；开发者工具逐页截图、应用控制台和 iOS/Android 真机行为归入 9.15，仍须产品负责人明确验收。
-
-### 2026-08-06：阶段 9 原生返工候验版
-
-- `miniprogram/pages/login/` 使用自定义导航和顶部安全区布局；介绍与表单以分隔线分区，不再整页垂直居中。协议改由原生 `checkbox-group` 的 change 事件驱动，`miniprogram/core/login-flow.ts` 的纯规则同时校验协议、邀请码和管理员免码，避免视觉勾选与按钮禁用状态分离。
-- `miniprogram/pages/resume-upload/` 顶层只暴露“上传文件／粘贴文字”。上传文件内由文件选择结果自动判断 PDF/DOCX，也可改用最多 6 张图片；四类服务端输入契约保持不变，但用户不需要先理解文件技术分类。
-- 结果页首屏统一为“专属开场白”、复制和保存；阶段 10 v7 已从用户界面移除 AI 改写及证据/遗漏展示。“我的”删除装饰性身份块，改用求职资料、使用情况、隐私与账号三个分组。首页、记录、生成、任务、简历核对和管理员继续沿用已确认的单列分区结构。
-- 全局颜色与 `app.json` 导航颜色统一为暖白 `#f2f4ef`、深蓝灰 `#17343b` 和低饱和青绿 `#26766c`；页面级模式切换、删除、筛选、事实操作和反馈按钮均达到至少 88rpx 触控高度。
-- 阶段 0 样本 C14、C18、C19 已同步“低置信/缺标题/冲突字段省略后直接生成”的产品契约，防止后续模型评测重新引入 JD 确认。
-- 微信开发者工具日志未出现项目 WXML/WXSS/TypeScript 编译错误。截图中的红色计数来自工具自身的 CLI 服务端口、未安装插件清单、`touristappid` 测试库联网和渲染器异常；这些平台事件不替代 9.15 的人工逐页控制台与真机验证。
+集合：
 
-### 2026-08-06：取消 JD 二次确认
-
-- 产品负责人明确要求上传 JD 后直接获得定制开场白，不再重复确认岗位信息。浏览器视觉稿删除 `jd-confirm`，从提交页经任务进度直接到结果页，总页面数由 14 减为 13。
-- 低置信不再等同于阻断：可靠字段参与生成，不可靠字段必须省略并写入结果提醒；岗位名缺失使用“该岗位”，公司缺失使用“贵司”。只有内容不足以识别任何有效职责或要求时才失败并提示重新提交，且不扣额度。
-- 原生路由、共享 action 契约、API 组合、生成准备/执行和测试已完成迁移；JD 内容充足时直接生成，内容不足在额度预留前失败。
-- 首页不读取或展示真实姓名，固定问候文案为“你好，同学”。
-
-### 2026-08-06：轻量简历核对与动态加分项排序
-
-- 简历事实确认继续作为可信事实边界，但不再要求用户逐模块填写或为能力打分；AI 负责提取、归类和排序，用户只对事实执行正确、修改或删除。
-- 首次核对展示三个主要加分项和七类市场基准权重：相关实习/工作 25%、项目与量化成果 25%、专业技能 20%、有事实支撑的个人能力 15%、教育匹配 8%、证书/语言/奖项/领导经历 5%、GPA/均分 2%。这些数值是产品排序先验，不是录用概率。
-- GPA 默认低权重，只在金融、咨询、量化、研究或 JD 明确要求时提高；学历、毕业时间、到岗和地点等硬条件单独核对，不能与加分项混算。
-- 个人能力必须由已确认经历支撑并保留 `factId` 来源，不能由模型生成无证据的主观标签。用户确认一次后，每个 JD 根据岗位字段重新排序事实，不再重复确认简历。
-- 原生 `resume-edit` 已实现轻量核对：展示前三项优势、七类基准权重和低置信事实；用户修改/删除/确认后仍由 `resume.confirm` 建立可信事实边界，后续 JD 不重复确认。
-
-### 2026-08-09：A“克制玻璃”视觉修订
-
-- 微信小程序不具备 Apple SwiftUI Liquid Glass API。本项目只用原生 WXSS 模拟半透明暖白表面、亮色细边、内高光、轻量青绿色阴影和按压反馈，不引入框架、UI 库、`backdrop-filter`、实时模糊或持续动画；不支持半透明效果时仍由实色背景、边框和间距维持层级。
-- `miniprogram/pages/home/` 使用纵向自适应布局，将问候、默认简历和额度合并为玻璃状态区，岗位主入口占满宽度，三步事实流程以 `margin-top: auto` 使用剩余空间，解决头重脚轻。
-- `miniprogram/core/resume-actions.ts` 是三类简历状态菜单的单一映射；列表页只渲染一个添加入口与一个“···”触发器，实际删除仍由页面执行原生二次确认。
-- `miniprogram/core/result-exit.ts` 把“未保存正文先持久化”置于导航之前。结果页保存失败时保持原页；成功后下一岗位清空最近 jobId 并用 `reLaunch` 重建岗位提交页，返回首页使用原生三标签切换，避免连续投递堆积导航栈。
-- `docs/phase-9-v2-preview/` 已同步相同的首页、简历菜单和结果双路径，用合成数据演示且不进入生产构建。9.15 仍是视觉完成与 Git 提交的唯一人工出口。
-
-### 2026-08-09：原生渲染兼容性返工
-
-- 浏览器预览与微信原生 WXSS 是不同渲染环境。阶段 9 从本记录起以微信开发者工具实际呈现为唯一视觉验收基准；浏览器稿只证明结构、文案与设计方向，不再作为无溢出证据。
-- 页面级关键布局禁止依赖 CSS Grid、`minmax()`、`repeat()` 或关键 `@media` 才能成立。分段控件、指标、筛选、图片操作、结果双按钮和管理员统计统一使用可收缩 Flex；共享 `.action-row` 要求子按钮 `min-width: 0`、容器内弹性分配且不得突破页面宽度。
-- `miniprogram/app.wxss` 承担原生材质、操作行、宽度约束和横向溢出保护；各页 `index.wxss` 只保留业务结构。半透明效果降级时仍由实色表面、边框、内高光和间距维持层级，不依赖实时模糊。
-- 集成测试静态拒绝高风险布局，并按 320px、375px、390px 的固定原生几何约束验证结果双按钮仍有可读宽度。该自动化只证明源码边界，13 页截图、控制台和 iOS/Android 仍须 9.15 人工验收。
-
-### 2026-08-09：首页与登录页视觉节奏尝试（登录部分已退回）
-
-- 微信开发者工具初步验收确认大部分页面通过，但首页的 `margin-top: auto` 在实际设备高度上制造了过大的模块间空白；登录介绍与独立表单表面也形成视觉断层。
-- `miniprogram/pages/home/` 现强制岗位入口容器和按钮占满可用宽度，事实流程紧随主入口并以单一纵向玻璃分组呈现；不改变首页数据、主操作或三标签导航。
-- `miniprogram/pages/login/` 在本步骤曾由一个 `login-shell` 包含品牌介绍和准入表单；该结构已在下一条决策中明确退回，不代表当前实现。
-- 首页全宽入口和非推底流程区继续生效；本步骤的单一登录面板契约已由 9.14g 的上下两层契约取代。
-
-### 2026-08-09：登录页上下两层纠正
-
-- 上一轮 `login-shell` 把品牌介绍和表单包进一张大玻璃卡，在微信开发者工具中造成标题靠近菜单、首屏构图生硬和品牌/操作层级混合，因此该登录方案被退回；首页的 9.14f 调整不受影响。
-- `miniprogram/pages/login/index.wxml` 现将品牌图形、标题和说明作为背景层介绍区，把邀请码、协议、错误、弱网提示和登录按钮放进独立 `login-form glass-surface`。成功与禁用状态继续使用原有独立状态面板。
-- `miniprogram/pages/login/index.wxss` 固定 50rpx 标题、品牌图形下 44rpx 留白、介绍区到表单 32rpx 间距、表单 32rpx 内边距和 24rpx 内容间距；按钮占满表单可用宽度，未增加外层容器、模糊、依赖或动画。
-- 页面契约禁止重新出现 `login-shell`，并锁定上述原生几何边界。邀请码、协议、管理员免码、旧协议、成功、禁用、错误恢复和路由行为均未改变。
-
-### 2026-08-09：登录页胶囊避让与动态构图
-
-- 产品负责人截图包含 9.14g 新结构，证明开发者工具加载路径和缓存不是原因；实际缺陷是自定义导航内容仍从静态安全区起排，标题进入右上角胶囊的垂直范围。
-- `miniprogram/core/login-layout.ts` 是登录页顶部几何的单一纯规则：按状态栏高度、窗口宽度与胶囊矩形计算品牌起点，并把 56rpx 品牌图形与 44rpx 标题间距换算为当前设备像素，保证标题低于胶囊至少 16px；胶囊信息无效时使用状态栏保守回退。
-- `miniprogram/pages/login/index.ts` 只在加载时读取微信原生窗口与胶囊信息并写入显示数据；WXML 用动态 `padding-top` 应用结果。登录按钮增加独立可收缩 Flex 行，避免微信原生 button 默认布局使禁用按钮视觉缩窄。
-- 该修复不改变准入 API、状态、路由、额度或隐私边界；原生登录布局测试覆盖 iPhone 刘海屏、320px Android 与无胶囊回退。
-- 自动检查通过后必须清除微信开发者工具 compile 缓存并从仓库根目录重新打开项目；缓存清理只能保证最新源码被重新编译，最终视觉仍以开发者工具模拟器和真机截图为准。
-
-### 2026-08-09：9.15 开发者工具原生取证
-
-- `docs/phase-9-native-review/README.md` 是 9.15 的设备验收索引；同目录保存 13 页原生 WebView 截图，以及 iPhone 5 320px 和 Nexus 5 的兼容性截图。截图只包含合成/空态演示数据，不含真实简历、JD、账号或密钥。
-- 逐页取证通过临时设置 `miniprogram/app.json` 的 `entryPagePath` 启动目标页，取证结束后已移除该字段；13 页注册顺序、三标签导航和业务路由没有变化。
-- 干净控制台编译后，项目文件来源的编译及运行时错误为零。工具显示的 5 条错误均为灰度基础库内部 `webapi_getwxaasyncsecinfo:fail`，堆栈只指向 `WAServiceMainContext.js`；警告来自灰度基础库和 `touristappid` 下的模拟 API。该分类必须保留，不能通过修改业务代码或隐藏控制台计数伪造归零。
-- 模拟器检查能证明原生 WXSS 在 320px、360px 和 390px 基准宽度下没有已观察到的横向溢出，但不能证明真实键盘、系统文件选择器、相册多选、长按排序、剪贴板、前后台和弱网行为。iOS/Android 真机记录仍是 9.15 与阶段 9 提交的最后门槛。
-
-### 2026-08-09：真机视觉反馈定向修订
-
-- 登录页保持“背景介绍 + 独立表单卡”两层结构，但两层外增加无视觉表面的 `login-content` Flex 容器，在胶囊安全起点以下的剩余高度中整体居中；内容超高时容器自然扩展，不引入固定屏高或全页玻璃卡。
-- “本地验证邀请码”不得渲染到登录 WXML。`APPLYMATE` 只属于当前演示适配器、README 和测试，正式邀请码仍必须由服务端管理员能力创建和校验；使用真实微信 AppID进行预览不会把本地演示运行时变成生产鉴权。
-- 核对页的三类高频事实标签使用系统 Emoji 作为扫读锚点，操作按钮强制等宽、双向居中和至少 88rpx 触控高度；“我的”标题及操作入口使用少量系统 Emoji，不引入图标包或网络资源。
-- `project.config.json` 属于产品负责人本地开发者工具配置。语义测试允许 `touristappid` 或格式合法的微信 AppID，以兼容模拟器和真机预览；测试继续锁定 `miniprogramRoot`、TypeScript 插件和源码零 `wx.cloud`，不得把真实 AppID误写成已接入 CloudBase。
-
-### 2026-08-09：首页与“我的”真机对齐修订
-
-- 首页状态区不再让原生文字按钮参与普通左右 Flex 分配；`home-manage` 固定在状态区右上操作位，标题区域为其预留宽度，副标题通过单行规则保持“准备好后，直接提交一个岗位。”完整呈现。
-- 微信真机对 `button` 子项排版可能与浏览器预览不同。“我的”四个可操作按钮因此各自增加占满按钮宽度的 `menu-row-content`，在其内部明确使用图标固定宽度、正文 `flex: 1 1 0%` 和右侧操作自动外推，避免整组内容被原生按钮居中。
-- 协议与隐私使用 🔒，删除账号使用 🗑️；两项与简历、偏好共享同一左右基线，删除仍沿用原有二次确认逻辑。使用情况为只读数据，不添加图标或新交互。
-
-### 2026-08-09：确认稿与原生触控容器
-
-- 产品负责人在改代码前确认了两张干净视觉稿：四个资料/账号入口的内容组贴左、操作贴右；首页管理入口贴右且问候为“你好，同学 👋”。确认稿只用于锁定几何关系，不进入生产构建。
-- 真机截图证明，即使原生 `button` 内存在 `width: 100%` 的 Flex 子容器，微信仍可能把整组内容向中间收拢。首页管理入口与“我的”四个入口因此改用带 `bindtap`、`aria-role`、`aria-label` 和 `hover-class` 的 `view`，业务处理器和至少 88rpx 触控高度保持不变。
-- 首页管理入口由状态卡相对定位上下文直接控制 `right: 34rpx`；“我的”仍由 `menu-row-content` 占满行宽，左右位置不再经过原生按钮匿名盒。测试禁止这些入口退回 `button`。
-
-### 2026-08-09：阶段 10.1 协议草案候验
-
-- 三份协议内容使用纯 TypeScript 结构化章节作为小程序单一代码源，避免页面、登录版本与人工审阅稿各自维护版本常量。Markdown 草案仍用于人工逐条批注，一致性测试锁定标题、版本、邮箱和章节。
-- 原生协议页是阶段 10 新增的第 14 个生产路由，不改变三标签导航。页面可以在未激活状态下读取正文；同意记录读取失败只影响时间提示，不阻断正文查看或复制。
-- `auth.status.currentVersions` 是登录同意的运行时事实来源；代码中的当前版本只用于首次渲染和本地演示回退。演示 API 会拒绝旧版本，确保本地验证能复现协议变更后的重新同意。
-- 草案明确区分本地演示和拟启用真实链路。真实模型、备案信息、CloudBase、OCR 与 TokenHub 尚未获逐项授权，不得因页面已存在而视为已接入。
-
-## 9. 实际构建与检查图
-
-根级 TypeScript 配置引用 shared、三个云函数和 miniprogram。`npm run typecheck` 对全部源代码与测试执行无输出严格检查；`npm run build` 编译五个模块，生成物进入 `dist/` 并被 Git 忽略。微信开发者工具同时使用 TypeScript 编译插件构建 `miniprogram/` 源码。
-
-`npm run check` 按顺序执行：格式检查 → fixture 隔离检查 → 敏感信息扫描 → TypeScript 检查 → 全部 Vitest → 五模块构建。任一步失败都会保留非零退出码并停止后续命令。加入 0.11R 全量证据检查后，当前为 104 个测试文件、371 项测试。微信开发者工具会按自身格式改写 `project.config.json` 和 `project.private.config.json`，因此格式检查明确跳过这两个本地配置；独立集成测试验证其 JSON 可解析、AppID 为 `touristappid` 或合法微信 AppID，并锁定 `miniprogramRoot`。两文件仍属于产品负责人本地配置，本次不覆盖、不提交。真实外部凭证只存在 Git 忽略且权限受限的本地环境文件中，环境检查不输出密钥值。
-
-## 10. 仓库文件职责
-
-以下清单描述阶段 10.1 候验时的项目源文件；`node_modules/` 与 `dist/` 是可重建产物，不属于架构源文件。
-
-### 根目录
-
-- `AGENTS.md`：贡献者约束、目录规范、测试要求以及写代码前必须阅读的记忆文档。
-- `.gitignore`：排除依赖、构建、环境密钥、覆盖率和本地工作区产物。
-- `.env.example`：只列外部资源变量和默认关闭的能力开关，不保存真实值。
-- `package.json`：锁定直接依赖和 format、fixture、sensitive、env、typecheck、test、build、check 命令。
-- `package-lock.json`：锁定完整依赖树，保证 `npm ci` 可重复安装。
-- `project.config.json`：微信开发者工具管理的本地项目配置；必须保持小程序根目录和 TypeScript 编译设置有效，但其中 AppID 由产品负责人本地维护，不纳入阶段提交。
-- `tsconfig.base.json`：shared 与三个云函数共用的严格 TypeScript 规则。
-- `tsconfig.json`：构建入口，通过 project references 连接四个可编译模块。
-- `tsconfig.check.json`：对全部 TypeScript 源文件和测试执行无输出类型检查。
-- `vitest.config.mjs`：统一 Vitest 的 Node 环境、测试匹配范围和超时。
-
-### 工具脚本
-
-- `scripts/check-format.mjs`：检查 LF、文件末尾换行、尾随空白、BOM 和 JSON 两空格格式。
-- `scripts/check-fixtures.mjs`：拒绝未声明合成来源的文本 fixture，并要求二进制侧车元数据。
-- `scripts/check-sensitive.mjs`、`scripts/sensitive-scan-lib.mjs`：离线扫描密钥、OpenID 样式值、未声明个人信息、原文生产日志和生产导出；开发者工具本地配置与扫描器测试向量有明确窄范围排除。
-- `scripts/check-env.mjs`：列出缺失环境变量；不读取或输出密钥值。
-- `scripts/generate-phase0-ocr-fixtures.py`：从锁定样本文字在临时目录确定性渲染 30 张合成 OCR PNG，并生成不含内容的哈希清单。
-- `scripts/evaluate-phase0-ocr.py`：把临时 OCR 转写同锁定源文字做证据保留率评估，生成无原文的字段判定与时延报告。
-- `scripts/phase0-ocr-latency-lib.mjs`：阶段 0.11R 的固定样本／变体计划、TC3 签名、分段请求时延、非内容证据、候选选择和临时目录安全边界。
-- `scripts/prepare-phase0-ocr-latency-variants.py`：仅在固定临时目录从 30 张锁定合成 PNG 创建三种 OCR 诊断变体和安全清单。
-- `scripts/run-phase0-ocr-latency-diagnostic.mjs`：执行离线计划展示、72 次诊断、条件式 30 组复验或临时清理；真实调用只在明确命令下发生。
-- `scripts/configure-tokenhub-key.mjs`：在产品负责人自行输入密钥后，只把必要变量写入权限 `0600` 且 Git 忽略的 `.env.phase0.local`，不回显密钥。
-- `scripts/configure-tencent-ocr-credentials.mjs`：在产品负责人于私有终端输入腾讯云 API 凭证后，只追加或更新 OCR 所需变量，保留既有 TokenHub 配置并将本地环境文件设为 `0600`。
-- `scripts/phase0-tokenhub-lib.mjs`：加载 30 组锁定样本，完成 PII 遮盖、Hy3 结构化 Prompt、字段判定、本地确定性生成/改写、事实证据检查和只含哈希的安全记录。
-- `scripts/run-phase0-tokenhub-benchmark.mjs`：执行 plan/smoke/full 三种模式；正式调整方案每组只调用一次 Hy3，两次文案操作均在本地完成，并支持从临时安全检查点继续。
-- `scripts/phase0-egress-audit-lib.mjs`：校验 OCR/TokenHub 固定 HTTPS 目的地，检查图片与受保护文本边界，并把完整外发请求收敛为不含正文和凭证的安全哈希证据。
-- `scripts/run-phase0-egress-audit.mjs`：读取临时合成图片和 OCR 文字，先完成五类本地遮盖，再执行一次最小 Hy3 请求并生成阶段 0.13 安全证据。
-
-### 产品与服务骨架
-
-- `miniprogram/README.md`：说明本地导入方式、演示邀请码、阶段 9 验收路径和未授权能力边界。
-- `miniprogram/app.json`：注册 14 个页面、三标签导航和全局窗口样式。
-- `miniprogram/app.ts`：创建小程序实例，把单一演示运行时注入 globalData，并在启动时最佳努力记录不含内容的 `app_opened`。
-- `miniprogram/app.wxss`：定义暖白/深蓝灰/青绿与克制玻璃变量、基础表单/状态/按钮、可收缩操作行、宽度边界、横向溢出保护、按压反馈、88rpx 触控高度和安全区规则；页面专属布局留在各页 `index.wxss`。
-- `miniprogram/sitemap.json`：禁止邀请制内测页面进入微信搜索索引。
-- `miniprogram/tsconfig.json`：小程序独立严格 TypeScript 构建配置。
-- `miniprogram/core/routes.ts`：页面顺序、三标签清单和标签路由判断的单一来源。
-- `miniprogram/core/presenters.ts`：把登录准入、首页简历/额度/资源状态转换成稳定显示模型。
-- `miniprogram/core/login-flow.ts`：组合协议接受与邀请码激活顺序，并保留协议成功、邀请码失败的可恢复状态。
-- `miniprogram/core/login-layout.ts`：根据状态栏、窗口宽度和微信胶囊矩形计算登录页品牌与标题顶部位置，提供无胶囊信息的保守回退。
-- `miniprogram/core/resume-review.ts`：将简历事实转换为前三项优势、七类市场权重和待核对/已核对分组。
-- `miniprogram/core/resume-actions.ts`：根据待确认、非默认和默认三类简历状态生成原生操作菜单，避免模板散落权限判断。
-- `miniprogram/core/input-rules.ts`：客户端文档边界、简历/JD 独立图片上限、生成双模式草稿、追加/删除/重排、requestId 重置、偏好字数和分句预览纯规则。
-- `miniprogram/core/job-poller.ts`：有限退避轮询、终态/简历等待确认返回、可恢复暂停错误及按任务类型区分的进度显示。
-- `miniprogram/core/result-presenter.ts`：把脱敏事实/JD 快照与逐项证据转换成结果页标签，并处理“贵司”和警告文案。
-- `miniprogram/core/result-exit.ts`：保证结果页未保存正文先持久化，成功后才执行下一岗位或首页导航，保存失败不离页。
-- `miniprogram/core/analytics.ts`：限制客户端只有打开/复制两类事件，并维护最多 20 条、不含正文的本地失败重试队列。
-- `miniprogram/core/generation-disclosure.ts`：把服务端模型快照转换成演示、真实或历史不可用的安全展示文本。
-- `miniprogram/services/api-client.ts`：统一客户端 action、读写、UUID requestId、网络异常和 API 错误归一。
-- `miniprogram/services/demo-api.ts`：离线进程内演示协议、简历、任务、生成、模型公示、最小分析事件、记录、反馈、删除和管理员契约；禁止作为生产仓储或鉴权。
-- `miniprogram/services/runtime.ts`：持有演示 API、演示邀请码、最后 jobId 和最小分析事件重试接口。
-- `miniprogram/services/page-utils.ts`：集中处理提示、错误消息和常用导航。
-- `miniprogram/core/legal-documents.ts`：用户协议、隐私政策和 AI 服务说明的结构化单一代码源，固定版本、生效日期、联系邮箱及复制纯文本规则。
-- `miniprogram/pages/login/index.{json,wxml,ts,wxss}`：以背景层品牌介绍和独立紧凑表单卡组成上下两层登录页，内容组在胶囊安全区以下视觉居中且不渲染演示邀请码，并覆盖错误恢复、成功、管理员免码、旧协议和禁用/删除状态。
-- `miniprogram/pages/home/index.{json,wxml,ts,wxss}`：连续呈现玻璃状态区、默认简历、今日额度、“你好，同学 👋”、基于可触控 view 的固定右上管理入口、单行准备说明、完整宽度 JD 入口和纵向事实流程，不读取或展示最近记录。
-- `miniprogram/pages/resumes/index.{json,wxml,ts,wxss}`：三份简历状态卡片、单一添加入口、等待确认恢复、原生操作菜单、默认切换和二次确认删除。
-- `miniprogram/pages/resume-upload/index.{json,wxml,ts}`：PDF、DOCX、图片和文本选择及上传前边界提示。
-- `miniprogram/pages/resume-edit/index.{json,wxml,ts,wxss}`：一次性个人资料核对、前三项优势、七类权重、三类语义 Emoji、低置信纠错、等宽事实操作和简历确认。
-- `miniprogram/pages/preferences/index.{json,wxml,ts}`：500 字偏好、分句预览、保存和清空。
-- `miniprogram/pages/generation/index.{json,wxml,ts,wxss}`：默认简历选择、最多 5 张 JD 截图批量追加/删除/长按拖动、文字双草稿、请求去重和任务创建。
-- `miniprogram/pages/job/index.{json,wxml,ts,wxss}`：jobId 恢复、按简历/首次生成/改写区分进度、弱网暂停和下一流程路由。
-- `miniprogram/pages/result/index.{json,wxml,ts,wxss}`：正文首屏、显著 AI 标识与模型公示、次级投递操作折叠、手动编辑、复制成功事件、离开前保存，以及清栈下一岗位/返回首页双路径；证据/遗漏和 AI 改写不在当前用户界面出现。
-- `miniprogram/pages/records/index.{json,wxml,ts,wxss}`：承接全部最近投递，提供未投递/已投递筛选、空态和详情导航。
-- `miniprogram/pages/application-detail/index.{json,wxml,ts}`：投递正文/备忘快照、结果编辑入口和单条删除。
-- `miniprogram/pages/mine/index.{json,wxml,ts,wxss}`：以四个可触控 view 和满宽三段 Flex 对齐简历、偏好、协议与删除语义图标入口，并保留管理员隐藏入口和账号删除二次确认。
-- `miniprogram/pages/admin/index.{json,wxml,ts}`：二次管理员鉴权、统计、邀请码、用户启停和当日额度操作。
-- `miniprogram/pages/legal/index.{json,wxml,ts,wxss}`：第 14 个原生页面，切换三份协议、展示版本/生效日期/同意时间并复制全文；同意记录失败不阻断正文。
-- `docs/phase-10/`：三份邀请制内测人工审阅稿和确认清单；产品负责人已确认邀请制版本，公开发布前仍须专业复核。
-- `shared/README.md`：说明共享 Schema、类型、错误码、状态机和纯规则边界。
-- `shared/tsconfig.json`：共享模块的独立构建配置。
-- `shared/src/index.ts`：共享模块唯一公共导出入口。
-- `shared/src/beijing-date.ts`：供 api 与 cleanup 共用的固定 UTC+8 北京日期键，避免云函数模块反向依赖。
-- `shared/src/text.ts`：Unicode 字素级可见字符、非空段落和 Unicode 合法性规则。
-- `shared/src/limits.ts`：文件、页数、文本、简历、事实及 AI 正文的统一边界常量。
-- `shared/src/masking.ts`：手机号、邮箱、身份证、护照式证件号和详细地址的本地遮盖及位置元数据。
-- `shared/src/facts.ts`：事实来源、文本归一、SHA-256 哈希和稳定 `factId`。
-- `shared/src/preferences.ts`：求职偏好分句、去重、500 字限制和 preference 事实生成。
-- `shared/src/resume-schema.ts`：严格 `ResumeProfile` 及各类简历事实 Zod Schema。
-- `shared/src/job-description.ts`：JD 字段 Schema、重复 ID、0.8 可用阈值、低置信省略、“该岗位/贵司”回退和内容充足性判断。
-- `shared/src/evidence.ts`：逐项陈述/来源 Schema 及当前事实、JD 注册表归属校验。
-- `shared/src/job-status.ts`：八状态常量、中文展示名和固定转换图。
-- `shared/src/api-contract.ts`：25 个 action、读写 requestId 规则、安全负载、统一响应和错误码；新增 `analytics.track`，不包含 JD 确认动作。
-- `shared/src/generation-disclosure.ts`：生成模型运行元数据与投递快照 Schema、演示快照和历史不可用展示规则。
-- `shared/src/model-evaluation.ts`：30 组人工确认门槛与字段级准确率确定性计算器。
-- `shared/src/greeting.ts`：AI 正文硬质量门及手动编辑非阻断警告。
-- `shared/src/greeting-match-plan.ts`：v8 结构化匹配计划的 Zod 单一来源，定义匹配模式、证据层级、事实/JD 引用和成熟度约束。
-- `shared/src/copy-text.ts`：复制正文与指定 AI 标识的确定性组合。
-- `cloudfunctions/api/README.md`：限定 api 只负责身份、验证、任务和轻量读写。
-- `cloudfunctions/api/tsconfig.json`：api 的独立构建配置，并引用 shared。
-- `cloudfunctions/api/src/index.ts`：api 领域模块的公共导出入口，不实例化 CloudBase 或外部服务。
-- `cloudfunctions/api/src/action-registry.ts`：显式 action 注册、调度和安全错误归一。
-- `cloudfunctions/api/src/api-entry.ts`：统一请求校验、客户端身份字段移除、可信上下文 OpenID 读取、写请求幂等编排和首次执行资源门禁。
-- `cloudfunctions/api/src/domain-error.ts`：允许安全返回的领域错误类型。
-- `cloudfunctions/api/src/account-deletion-service.ts`：10 分钟二次确认凭证、哈希保存、立即禁用与 24 小时删除截止语义。
-- `cloudfunctions/api/src/admin-stats-service.ts`：组合身份、邀请、当日额度、审计、五类资源元数据和五项去重产品指标的管理员统计视图。
-- `cloudfunctions/api/src/analytics-service.ts`：验证复制记录所有权，只在用户记录保存最小参与时间，并按北京时间第 2–7 日标记回访。
-- `cloudfunctions/api/src/product-metrics-service.ts`：按唯一用户、任务和投递记录计算五项分子/分母/比率，并剔除显式排除账号。
-- `cloudfunctions/api/src/application-domain.ts`：投递记录、最新手动正文、状态/备忘、手动警告、脱敏事实/JD 快照、逐项证据和生成模型公示快照的数据类型。
-- `cloudfunctions/api/src/application-repository.ts`：application 仓储端口及按用户列表、详情、版本条件保存、删除和按 job 补偿的内存实现。
-- `cloudfunctions/api/src/application-service.ts`：投递记录用户隔离、筛选排序、手动正文测量/警告、复制组合、状态/备忘更新和关联数据删除。
-- `cloudfunctions/api/src/feedback-domain.ts`：满意/需改进、可选说明和首次/最新时间的数据类型。
-- `cloudfunctions/api/src/feedback-repository.ts`：以 applicationId 为唯一业务键的反馈仓储端口和覆盖式内存实现。
-- `cloudfunctions/api/src/feedback-service.ts`：反馈所有权、500 字边界、创建/覆盖/清空和详情读取规则。
-- `cloudfunctions/api/src/generation-domain.ts`：生成创建请求 Schema、任务输入快照和不含 JD 等待确认的生成领域状态。
-- `cloudfunctions/api/src/generation-repository.ts`：生成记录仓储端口及状态条件写入、job 查询和残留文件扫描的内存实现。
-- `cloudfunctions/api/src/jd-input-validation-service.ts`：JD 文本的 Unicode/20,000 字门禁及有序图片所有权/文件门禁组合。
-- `cloudfunctions/api/src/generation-workflow-service.ts`：`generation.create` 的确认简历访问、输入快照、任务创建、异步派发和派发失败图片补偿。
-- `cloudfunctions/api/src/generation-preparation-service.ts`：认领初始生成任务、OCR/解析状态、有序提取、图片删除、低置信省略、内容不足失败和 44 秒准备截止。
-- `cloudfunctions/api/src/generation-execution-service.ts`：单一总截止、v8 单次生成且无自动纠错、确定性质量门、application 快照和终态额度结算；旧纠错接口只保留历史兼容语义。
-- `cloudfunctions/api/src/generation-rewrite-domain.ts`：四类改写输入 Schema、最新正文/application 版本快照和 rewrite 任务状态。
-- `cloudfunctions/api/src/generation-rewrite-repository.ts`：rewrite 任务仓储端口及内存实现。
-- `cloudfunctions/api/src/generation-rewrite-workflow-service.ts`：`generation.rewrite` 的本人记录读取、最新正文快照、任务创建和异步派发。
-- `cloudfunctions/api/src/generation-rewrite-execution-service.ts`：改写认领、额度、44 秒截止、v8 单次改写且无自动纠错、逐项质量门、版本条件覆盖和终态结算。
-- `cloudfunctions/api/src/identity-domain.ts`：用户、协议、邀请码、最小参与时间、邀请码失败状态和管理员审计记录的数据类型。
-- `cloudfunctions/api/src/identity-repository.ts`：身份领域仓储端口及支持删除确认、邀请码失败限流、待删除扫描、身份清除、管理员统计和审计保留的本地原子实现。
-- `cloudfunctions/api/src/user-service.ts`：身份哈希、首次用户创建、禁用访问规则和偏好更新。
-- `cloudfunctions/api/src/agreement-service.ts`：协议版本接受、当前版本判断和业务动作门禁。
-- `cloudfunctions/api/src/invite-service.ts`：邀请码规范化哈希、7 天有效期、创建和原子消费。
-- `cloudfunctions/api/src/identity-api.ts`：组合身份、协议、邀请、偏好、额度/资源状态、任务、投递、删除和管理员运营 action 的本地 API。
-- `cloudfunctions/api/src/job-domain.ts`：任务种类、状态历史、认领信息、安全结果和错误的数据类型。
-- `cloudfunctions/api/src/job-repository.ts`：任务仓储端口及支持原子创建、认领、转换和超时扫描的内存实现。
-- `cloudfunctions/api/src/job-service.ts`：任务创建、用户隔离查询、状态转换及幂等终态写入规则。
-- `cloudfunctions/api/src/job-dispatch-service.ts`：API 只派发 jobId 的端口、创建派发服务和 worker 认领协调器。
-- `cloudfunctions/api/src/idempotency-domain.ts`：pending/completed 幂等记录和原子认领结果类型。
-- `cloudfunctions/api/src/idempotency-repository.ts`：幂等仓储端口及支持回放、冲突、放弃和 24 小时清理的内存实现。
-- `cloudfunctions/api/src/idempotency-service.ts`：规范化负载哈希、身份/action/requestId 键哈希和同进程重复请求合并。
-- `cloudfunctions/api/src/quota-domain.ts`：北京时间日期键、默认每日 5 次、预留/用量/临时调整审计类型。
-- `cloudfunctions/api/src/quota-repository.ts`：额度仓储端口及原子预留、结算、临时增加与审计的内存实现。
-- `cloudfunctions/api/src/quota-service.ts`：额度预留、成功、释放、当日查询和管理员临时增加规则。
-- `cloudfunctions/api/src/operations-domain.ts`：五类资源日志的严格元数据 Schema 与聚合输出类型，拒绝未声明原文字段。
-- `cloudfunctions/api/src/operations-repository.ts`：资源调用元数据写入、北京时间日汇总、账号删除和 180 天清理的内存仓储。
-- `cloudfunctions/api/src/resource-gate-service.ts`：OCR、模型、计算/存储三类零付费资源可用性门禁。
-- `cloudfunctions/api/src/zero-cost-resource-policy.ts`：要求 OCR、模型、云函数、存储和流量五类状态快照齐全，按 24 小时新鲜度、付费状态、实际费用和下一任务用量阈值生成失败关闭决定，再映射到业务门禁。
-- `cloudfunctions/api/src/temporary-file-domain.ts`：临时文件的所有者、内部存储键、原名、MIME、字节和上传时间记录。
-- `cloudfunctions/api/src/temporary-file-repository.ts`：临时文件仓储端口及支持到期扫描的本地内存实现。
-- `cloudfunctions/api/src/temporary-file-service.ts`：不暴露 OpenID/原名的隔离路径、所有权读取/删除和到期文件查询。
-- `cloudfunctions/api/src/resume-file-validation-service.ts`：PDF、DOCX、JPEG、PNG、WebP 的扩展名/MIME/Magic Bytes 和文件数/大小门禁。
-- `cloudfunctions/api/src/resume-text-validation-service.ts`：粘贴简历的非空、Unicode 与 20,000 可见字符门禁。
-- `cloudfunctions/api/src/resume-domain.ts`：解析/确认请求 Schema、草稿/确认状态和简历记录类型。
-- `cloudfunctions/api/src/resume-repository.ts`：简历仓储端口及支持三份上限、确认状态条件写入、默认原子切换/重选、过期扫描的内存实现。
-- `cloudfunctions/api/src/resume-workflow-service.ts`：`resume.parse` 的输入校验、草稿/任务创建、三份限制和异步派发编排。
-- `cloudfunctions/api/src/validated-temporary-file-adapter.ts`：把所有权和文件门禁后的临时文件以最小字节接口交给 worker/OCR。
-- `cloudfunctions/api/src/resume-parse-execution-service.ts`：认领解析任务、44 秒截止、状态推进、等待确认结果和安全失败写入。
-- `cloudfunctions/api/src/resume-access-service.ts`：只允许已确认简历成为后续生成事实来源的访问守卫。
-- `cloudfunctions/api/src/resume-confirmation-service.ts`：确认 Schema、重算事实身份、拒绝重复事实、删除原文件和完成任务。
-- `cloudfunctions/api/src/resume-management-service.ts`：当前用户的安全列表、默认切换、删除、文件清理和默认重选。
-- `cloudfunctions/api/src/worker-execution-service.ts`：44 秒默认内部截止、取消信号、唯一终态和额度结算。
-- `cloudfunctions/api/src/stale-job-cleanup-service.ts`：创建满 10 分钟的非终态任务回收和额度释放规则。
-- `cloudfunctions/worker/README.md`：限定 worker 负责 OCR、脱敏、文本模型和质量门，并说明外部实现仍为替身。
-- `cloudfunctions/worker/tsconfig.json`：worker 的独立构建配置，并引用 shared。
-- `cloudfunctions/worker/src/index.ts`：worker 领域模块的公共导出入口，不实例化外部提供商。
-- `cloudfunctions/worker/src/resume-processing-error.ts`：文件、OCR、模型和提取文本的稳定处理错误码。
-- `cloudfunctions/worker/src/docx-text-extractor.ts`：使用 Mammoth 输出 DOCX 纯文本并归一损坏/空文档错误。
-- `cloudfunctions/worker/src/pdf-text-extractor.ts`：使用 unpdf 检查 10 页上限、提取文本并识别扫描/加密/损坏 PDF。
-- `cloudfunctions/worker/src/tencent-ocr-adapter.ts`：只接受验证图片的 OCR provider 端口、置信门槛、调用元数据和错误归一。
-- `cloudfunctions/worker/src/resume-privacy-gateway.ts`：模型外发前唯一脱敏网关，只暴露遮盖后文本及无值摘要。
-- `cloudfunctions/worker/src/resume-structure-parser.ts`：严格结构化模型输出、一次备用切换及稳定 ResumeProfile 事实生成。
-- `cloudfunctions/worker/src/resume-parse-pipeline.ts`：按输入类型提取有序文本、复用文本边界并串接隐私网关和结构化解析。
-- `cloudfunctions/worker/src/generation-processing-error.ts`：JD/生成模型输出的稳定处理错误码与重试语义。
-- `cloudfunctions/worker/src/jd-structure-parser.ts`：历史 JD 独立解析器及其 provider 备用兼容路径；v8 生产岗位生成不通过该路径切换写作模型。
-- `cloudfunctions/worker/src/jd-parse-pipeline.ts`：按顺序 OCR 或接收粘贴 JD，统一文字边界、本地遮盖和结构化解析。
-- `cloudfunctions/worker/src/greeting-model-gateway.ts`：旧文本模型网关兼容层、单次超时、429/失败/无效输出归一及无正文哈希日志；v8 生产写作只使用 Hy3 单次调用。
-- `cloudfunctions/worker/src/greeting-generation-pipeline.ts`：历史兼容管线；旧纠错上下文仅供负向回归，v8 生产生成不得发起第二次模型请求。
-- `cloudfunctions/worker/src/greeting-rewrite-pipeline.ts`：把固定改写模式、低优先级自定义指令、最新正文和快照转换为再次脱敏的文本模型请求。
-- `cloudfunctions/worker/deploy/greeting-calibration.js`：无第三方运行时依赖的 CommonJS 生产校准器，在 CloudBase 部署产物中执行 v8 匹配模式、证据成熟度、来源、跨 JD 和正文硬门。
-- `cloudfunctions/worker/deploy/experience-worker.js`：真实体验 worker；用 `experience-evidence-planned-v8` 在一次模型调用中取得 JD、证据计划和正文，并以 `model_evidence_planned` 保存处理快照。v8.15 JD 辅助字段过滤、分段耗时与 Prompt 原文约束已部署，需用重新编译的客户端真机复验。
-- `cloudfunctions/cleanup/README.md`：限定 cleanup 负责超时、文件、过期数据和账号删除，并说明当前无真实调度。
-- `cloudfunctions/cleanup/tsconfig.json`：cleanup 的独立构建配置，并引用 shared。
-- `cloudfunctions/cleanup/src/index.ts`：cleanup 领域模块公共导出入口，不创建定时器或云连接。
-- `cloudfunctions/cleanup/src/resume-cleanup-service.ts`：24 小时草稿与 1 小时孤立文件的精确、幂等回收规则。
-- `cloudfunctions/cleanup/src/generation-file-cleanup-service.ts`：对 OCR 后仍残留的 JD fileId 重试所有权删除，只清除已删除引用。
-- `cloudfunctions/cleanup/src/account-deletion-cleanup-service.ts`：按待删除身份幂等清空全部可关联数据，并在身份删除后累加不可回连的匿名日指标。
-- `cloudfunctions/cleanup/src/operational-log-cleanup-service.ts`：执行严格 180 天日志保留及独立的 24 小时幂等过期清理。
-- `docs/README.md`：规定线框、评测、隐私、安全、成本和发布证据的存放范围。
-
-### 测试与样本
-
-- `tests/unit/health.test.ts`：证明纯规则单元测试分组可独立运行。
-- `tests/unit/text.test.ts`：验证通用字素计数、空白排除和段落工具；其中 250/350 是历史边界回归，当前 v8 生成规则另测 350–450/3–4 段。
-- `tests/unit/limits.test.ts`：验证所有 MVP 上限的下界、精确上限和越界。
-- `tests/unit/masking.test.ts`：验证五类敏感信息命中、分隔符、边界和误报。
-- `tests/unit/facts.test.ts`：验证事实来源、归一稳定性、变化与无碰撞样本。
-- `tests/unit/preferences.test.ts`：验证偏好分句、去重、来源和 500 字边界。
-- `tests/unit/resume-schema.test.ts`：验证合法简历和缺 ID、超长、未知字段拒绝。
-- `tests/unit/job-description.test.ts`：验证岗位/公司规则、低置信和字段 ID 唯一性。
-- `tests/unit/evidence.test.ts`：验证无来源、错误/未知 ID 和多来源陈述。
-- `tests/unit/job-status.test.ts`：穷举验证全部 64 个状态组合。
-- `tests/unit/api-contract.test.ts`：验证 action、requestId、负载、响应和错误码。
-- `tests/unit/greeting-quality.test.ts`：验证 AI 正文格式、简体、证据、数字、隐私和 Unicode 硬门。
-- `tests/unit/manual-edit.test.ts`：验证手动警告与 AI 硬失败分离。
-- `tests/unit/copy-text.test.ts`：验证 AI 标识位置和正文独立计数。
-- `tests/unit/adversarial.test.ts`：验证提示注入、原型污染、超长输入和无效 Unicode。
-- `tests/unit/action-registry.test.ts`：验证显式 action、大小写、领域错误和未知异常的安全响应。
-- `tests/unit/trusted-identity.test.ts`：验证只信任上下文 OpenID，并移除客户端伪造身份。
-- `tests/unit/user-lifecycle.test.ts`：验证并发首次创建、身份隔离、哈希存储和禁用访问边界。
-- `tests/unit/agreement-service.test.ts`：验证协议版本、同意时间、旧版本和业务门禁。
-- `tests/unit/identity-status.test.ts`：验证六类准入状态及个人资料安全字段。
-- `tests/unit/invite-service.test.ts`：验证邀请码哈希、过期、撤销、重复使用和并发消费。
-- `tests/unit/admin-bootstrap.test.ts`：验证管理员协议门槛、首批邀请码创建/撤销和用户激活。
-- `tests/unit/user-preferences-api.test.ts`：验证偏好新增、替换、清空、factId 和 500 字边界。
-- `tests/unit/admin-user-status.test.ts`：验证白名单管理员启停、伪造拒绝和原子审计。
-- `tests/unit/job-service.test.ts`：验证任务创建、并发认领、固定状态转换、唯一终态和跨用户隐藏。
-- `tests/unit/idempotency-service.test.ts`：验证规范化负载、并发合并、冲突、失败重试及完成后 24 小时保留。
-- `tests/unit/api-idempotency.test.ts`：验证 API 重复写回放且不会再次更新时间。
-- `tests/unit/job-get-api.test.ts`：验证 8 个任务状态的安全中文响应、成功结果和跨用户隐藏。
-- `tests/unit/beijing-quota-date.test.ts`：验证固定 UTC+8 日期键及北京时间零点边界。
-- `tests/unit/quota-service.test.ts`：验证并发 5 次上限、成功/释放幂等结算及跨日归属。
-- `tests/unit/admin-quota-adjust.test.ts`：验证管理员当日临时额度、次日失效、审计和幂等回放。
-- `tests/unit/job-dispatch.test.ts`：验证 API 提前返回及重复派发只处理一次。
-- `tests/unit/worker-deadline.test.ts`：验证 44 秒内部截止、失败释放、迟到结果隔离和正常成功。
-- `tests/unit/stale-job-cleanup.test.ts`：验证 10 分钟精确回收、重复清理和等待确认排除。
-- `tests/unit/resource-gate.test.ts`：验证五类资源逐项达到阈值时均暂停 AI 工作，状态未知/付费/非零费用/过期快照失败关闭，数据访问保留及完成请求回放。
-- `tests/unit/temporary-file-service.test.ts`：验证隔离路径、同名唯一、所有权隐藏和删除。
-- `tests/unit/resume-file-validation.test.ts`：验证五类文件签名、10MB/6 张边界、伪类型、GIF 和损坏输入。
-- `tests/unit/resume-text-validation.test.ts`：验证空文本、20,000 字精确边界和 Unicode 合法性。
-- `tests/unit/docx-text-extractor.test.ts`：用真实 Mammoth fixture 验证段落、表格、损坏和外部内容。
-- `tests/unit/pdf-text-extractor.test.ts`：用合成 PDF 验证 1/10/11 页、扫描、加密与损坏分支。
-- `tests/unit/resume-structure-parser.test.ts`：验证稳定事实、严格输出、一次备用切换和双失败语义。
-- `tests/unit/resume-parse-pipeline.test.ts`：验证四类提取路由、图片顺序、统一文本边界和模型前脱敏。
-- `tests/unit/jd-input-validation.test.ts`：验证 JD 图片顺序/所有权/损坏门禁和提示式文本的 20,000 字边界。
-- `tests/unit/jd-structure-parser.test.ts`：验证中英文、缺公司/岗位、重复字段冲突和一次备用解析。
-- `tests/unit/greeting-model-gateway.test.ts`：验证旧网关兼容行为和日志无原文；主备次数属于历史/测试兼容，不是 v8 生产生成策略。
-- `tests/unit/greeting-calibration.test.ts`：验证共享 Schema 与生产 CommonJS 校准器的模式、成熟度、来源和正文规则一致。
-- `tests/unit/operations-logging.test.ts`：验证资源日志拒绝原文字段，并按五类资源汇总调用、失败和成本元数据。
-- `tests/unit/miniprogram-routing.test.ts`：锁定 13 个业务页面加 1 个协议页面的顺序、三标签路由与无 JD 确认页边界。
-- `tests/unit/miniprogram-login-flow.test.ts`：验证组合登录顺序、协议失败恢复、邀请码必填和管理员免码。
-- `tests/unit/miniprogram-login-layout.test.ts`：验证登录标题按真实微信胶囊位置避让、窄屏与无胶囊信息回退，以及页面动态顶部绑定和全宽登录按钮。
-- `tests/unit/miniprogram-resume-review.test.ts`：验证前三项优势、七类权重与低置信事实分组。
-- `tests/unit/miniprogram-access-home.test.ts`：验证登录六态显示规则与首页无简历、额度耗尽、资源暂停，并锁定首页不承载最近记录。
-- `tests/unit/miniprogram-api-client.test.ts`：验证客户端读写 requestId、网络异常、失败响应、异常响应归一和弱网错误分类。
-- `tests/unit/miniprogram-inputs.test.ts`：验证客户端 PDF/DOCX、简历 6 张、JD 5 张、双模式草稿、追加/删除/重排、requestId 重置和偏好预览规则。
-- `tests/unit/generation-image-limit.test.ts`：验证服务端 generation.create 接受 5 张 JD 截图并拒绝第 6 张，同时简历解析仍接受 6 张。
-- `tests/unit/miniprogram-job-poller.test.ts`：验证有界退避、等待确认、成功终态和轮询暂停恢复。
-- `tests/unit/miniprogram-result-presenter.test.ts`：验证事实/JD 证据标签、“贵司”提醒和未知来源安全回退。
-- `tests/unit/miniprogram-legal-documents.test.ts`：锁定协议版本、联系邮箱、AI 标识、供应商/保留期披露，并校验人工审阅稿章节与小程序内容源一致。
-- `tests/unit/miniprogram-analytics.test.ts`：验证失败事件仅以事件名/applicationId 入队，并在后续网络恢复时先重试。
-- `tests/unit/product-metrics-service.test.ts`：验证五项指标的去重、管理员/合成账号排除和零分母 `null`。
-- `tests/unit/model-evaluation-calculators.test.ts`：验证 30 组人工确认门槛、字段级准确率及五类资源成本汇总。
-- `tests/unit/sensitive-scan.test.ts`：验证密钥、OpenID 样式值和原文生产导出被拒绝，项目邮箱与合成 fixture 可通过。
-- `tests/contract/health.test.ts`：证明外部提供商契约测试分组可在无真实服务时运行。
-- `tests/contract/tencent-ocr-adapter.test.ts`：验证 OCR 成功元数据、所有权、低置信、超时、429 和资源暂停。
-- `tests/contract/resume-privacy-chain.test.ts`：捕获 OCR/模型请求，证明原图只到 OCR 且五类敏感值不进入模型。
-- `tests/contract/greeting-privacy-chain.test.ts`：捕获首次/纠错文本请求，证明受保护值、图片和 fileId 不进入模型。
-- `tests/contract/greeting-rewrite-pipeline.test.ts`：验证三种预设指令、自定义指令优先级和改写正文/事实/指令的统一脱敏。
-- `tests/model-evaluation/greeting-calibration-gold-cases.test.ts`：用三条合成金标准验证战略投资强匹配、金融 AI Agent 强匹配和 SEO 部分匹配，并以单故障样本锁定四类硬失败。
-- `tests/integration/health.test.ts`：证明本地集成测试不依赖云资源。
-- `tests/integration/identity-access.test.ts`：验证管理员启动、同码并发、跨用户隔离、协议变化和账号禁用的完整本地链路。
-- `tests/integration/analytics-track.test.ts`：验证两类严格事件、requestId、复制所有权、最小用户字段和无正文持久化。
-- `tests/integration/invite-rate-limit.test.ts`：验证 15 分钟五次失败、15 分钟锁定、幂等回放不重复计数及统一错误文案。
-- `tests/integration/task-infrastructure.test.ts`：验证重复创建、恢复查询、后台完成、额度结算、跨日并发、45 秒上限和 10 分钟回收的完整本地链路。
-- `tests/integration/resume-parse-api.test.ts`：验证四种解析入口、立即返回、幂等合并和协议/激活门禁。
-- `tests/integration/resume-parse-worker.test.ts`：验证认领、OCR/解析状态、job.get 可编辑结果、安全失败和确认守卫。
-- `tests/integration/resume-confirm.test.ts`：验证修改后事实重算、原文件删除、默认、任务完成、重复确认和跨用户拒绝。
-- `tests/integration/resume-management.test.ts`：验证列表隔离、默认切换/重选、删除和三份上限。
-- `tests/integration/resume-cleanup.test.ts`：验证 24 小时草稿、1 小时孤立文件、引用保护和重复清理。
-- `tests/integration/resume-input-closure.test.ts`：用真实提取器与本地外部替身验证四类输入的解析—确认—默认完整闭环。
-- `tests/integration/generation-create-api.test.ts`：验证已确认简历、立即返回、资源暂停、幂等和派发失败图片补偿。
-- `tests/integration/generation-preparation.test.ts`：验证有序 OCR、遮盖、立即删除、低置信省略、岗位/公司回退、直接生成和内容不足安全失败。
-- `tests/integration/generation-quality-execution.test.ts`：验证“贵司”、格式/证据质量门、v8 无第二次模型调用、总截止和快照；旧纠错分支只作历史兼容负向回归。
-- `tests/integration/generation-file-cleanup.test.ts`：验证 post-OCR 残留文件重试和引用清除。
-- `tests/integration/generation-quota-race.test.ts`：验证重复 worker 与 10 分钟 cleanup 竞争下唯一终态和额度非负。
-- `tests/integration/generation-full-chain.test.ts`：验证创建、解析、生成、快照、删除原简历和页面重建恢复的完整本地闭环。
-- `tests/integration/application-management.test.ts`：验证投递筛选排序、跨用户隐藏、手动警告、状态/备忘、复制组合和删除。
-- `tests/integration/application-feedback.test.ts`：验证每条记录一条可覆盖反馈、500 字边界、清空、隔离和级联删除。
-- `tests/integration/generation-rewrite.test.ts`：验证最新正文快照、异步幂等、v8 单次改写且无自动纠错、硬质量门、模型错误、额度和失败不覆盖。
-- `tests/integration/account-deletion-confirmation.test.ts`：验证无凭证、10 分钟过期、有效确认、幂等回放、立即禁用和不可恢复。
-- `tests/integration/account-deletion-cleanup.test.ts`：验证简历与账号删除差异、全数据清除、跨用户保护、匿名聚合不可回连及重复 cleanup。
-- `tests/integration/admin-operations.test.ts`：验证四类管理员写操作的审计/幂等、可信白名单边界和统计输出。
-- `tests/integration/log-retention-cleanup.test.ts`：验证 180 天精确边界、账号关联日志清理和未完成任务/匿名指标/有效幂等保护。
-- `tests/integration/miniprogram-demo-api.test.ts`：仅在显式离线 demo 适配器中走通协议/邀请码、简历/偏好、JD 直接生成、改写/复制/反馈和账号删除；不代表当前体验版默认运行模式。
-- `tests/integration/miniprogram-page-contracts.test.ts`：锁定 14 个生产路由、三标签、协议页、动态版本读取、核心中文文案、加载/弱网/重试/AI 标识和可见破折号约束。
-- `tests/integration/miniprogram-result-fixtures.test.ts`：把阶段 0 的 30 个编号样本映射为结果视图，验证逐项来源与公司回退不缺失。
-- `tests/integration/miniprogram-ui-integrity.test.ts`：检查每个路由的配置/模板/控制器、WXML 处理器绑定、触控/安全区、零 wx.cloud 边界，并拒绝页面级 Grid/`minmax()`/`repeat()`/关键 `@media`，验证共享操作行及 320px、375px、390px 宽度边界。
-- `tests/model-evaluation/fixture-structure.test.ts`：机器检查 30 组样本编号、必需段落、六类字段真值及统一人工确认元数据。
-- `tests/model-evaluation/ocr-phase0-evaluation.test.ts`：验证 OCR 评测恰好覆盖 30×6 字段、可被正式计算器接受、无响应原文且如实保留时延失败。
-- `tests/model-evaluation/ocr-latency-diagnostic.test.ts`：验证 72/102 调用预算、TC3 签名不泄露密钥、候选排序/45 秒失败关闭和临时目录安全边界。
-- `tests/model-evaluation/egress-audit.test.ts`：验证 OCR 只能携带图片、TokenHub 不能携带图片或五类受保护文本，并锁定安全证据不得保存正文或凭证。
-- `tests/model-evaluation/phase0-resource-cost-audit.test.ts`：要求 0.14 证据恰好覆盖五类资源、实际费用全部为零，并用生产成本计算器重算估算/实际总额。
-- `tests/model-evaluation/phase0-decision-report.test.ts`：重算 0.15 的十项门槛，锁定两项 OCR 时延阻塞和失败关闭结论，并确认报告不保存用户内容或凭证。
-- `docs/phase-10/phase0-decision-report.md`：阶段 0.15 人工可读的统一继续／停止报告，解释文本子管线与完整 OCR 图片链路的耗时口径。
-- `docs/phase-10/phase0-decision-report.json`：阶段 0.15 机器可读门槛、阻塞项、未完成发布依赖和授权状态，不保存原文或凭证。
-- `tests/fixtures/README.md`：描述评测样本格式、覆盖矩阵、锁定版本和人工确认记录。
-- `tests/fixtures/phase-0-cases.md`：保存 30 组完全虚构且经产品负责人逐组确认的 `phase0-v1.0` 字段级真值。
-
-### 记忆库
-
-- `memory-bank/design-document.md`：产品需求和系统边界的最高优先级基线。
-- `memory-bank/tech-stack.md`：实现设计目标的技术选择与不采用项。
-- `memory-bank/implementation-plan.md`：按阶段、步骤和验证项驱动开发。
-- `memory-bank/progress.md`：记录真实完成状态、验证证据、例外授权和阻塞。
-- `memory-bank/architecture.md`：记录实际架构、文件职责、数据流和关键决策演变。
-
-## 历史：2026-08-15 体验版长期偏好契约与服务端合并查询（2026-08-21 已取代）
-
-- `miniprogram/pages/preferences/index.ts` 与共享 API 契约固定使用 `preferenceText`。`cloudfunctions/api/deploy/experience-api.js` 不再接受历史误字段 `text`，而是执行 NFC 归一化、500 可见字符门禁、按句/换行拆分和稳定 `factId`/`factHash` 生成，将 `preferenceText` 与 `preferenceFacts` 同步写入 `users`。
-- `cloudfunctions/worker/deploy/experience-worker.js` 在岗位生成前读取当前用户的 `preferenceFacts`，与已确认简历事实按 `factId` 去重。长期偏好因此继续受事实来源和反虚构校验保护，不是自由 Prompt 附加文本。
-- 当时 `miniprogram/pages/generation/index.ts` 把 `jpeg-720-q80` 副本在选图阶段直接并行上传；2026-08-21 已按产品确认改为选图只保存本地路径，点击生成后才并行执行单图压缩与上传。
-- 当时 `generation.create` 使用 16 次、750ms 的服务端终态合并窗口；2026-08-21 曾临时移除。2026-08-22 根据真实云端 8–10 秒处理证据改为 14 次有界短轮询，最长约 9.75 秒，以在同一请求直接合并常见成功终态；超出窗口仍返回 `jobId`，OCR 和模型始终在异步 worker 内执行。
-- `tests/unit/experience-api-preferences-and-latency.test.ts` 是部署路径的行为回归：要求 `preferenceText` 按共享契约保存且生成事实，并验证 worker 在合并窗口内完成时 `generation.create` 直接返回 `applicationId`。
-
-## 2026-08-22：greeting-v8.16 真机失败与图片时延修复
-
-- 真机任务证据显示，失败分别来自 `job_title_not_in_current_input`、`jd_field_not_in_current_input` 和模型返回的 `directFactIds` 结构异常；这些问题属于 JD 抽取字段或模型计划结构不稳定，不等于候选人正文事实虚构。
-- `greeting-calibration.js` 改为 JD 字段逐项降级：只有能在本次 OCR 原文中回溯的岗位、公司、职责、技能和领域词才进入生成上下文；不可信字段被省略，岗位/公司使用“该岗位/贵司”，不再让单个字段拖垮整次任务。候选人事实、数字、PII 与跨 JD 污染仍保持失败关闭。
-- `experience-worker.js` 在进入严格质量门前，使用同一套段落—事实贡献度算法修复缺失、空值或未知的事实 ID；只能恢复正文实际引用且存在于已确认简历/偏好中的事实，不能新增事实。
-- 真机两次客户端图片准备分别约 18.5 秒和 16.6 秒，而服务端总耗时约 7.9 秒和 8.9 秒。`jd-submit-v4` 因此对不超过 4 MiB 的已测量手机截图跳过重复压缩，较大或未测量图片仍走 720px/质量 80；选图仍立即返回，所有准备、上传和生成从用户点击主按钮后并发开始。
-- `processingMetrics.clientPipelineVersion` 与 `serverPipelineVersion` 分别固定为 `jd-submit-v4` 和 `greeting-v8.16`，用于区分真机复验是否命中新链路。
-
-## Web 简历解析的韧性边界（2026-08-23）
-
-- `cloudfunctions/worker/deploy/experience-worker.js` 的简历链路先完成文件读取与隐私遮盖，再调用文本模型整理分类。模型请求或结构化输出异常时，使用同一份已脱敏文字生成 `verified_text_fallback` 草稿，交给用户核对；不把未经用户确认的草稿用于岗位生成。
-- 文件本身损坏、无法从云存储读取或解析器无法处理时仍失败关闭，并返回 `FILE_PROCESSING_FAILED` 等可行动错误；OCR 完全无文字、凭证缺失等原有安全门不放宽。
-- `web/src/features/jobs/job-progress.ts` 是 Web 任务阶段文案的单一映射点，区分 `resume_parse` 与开场白生成。简历的 `awaiting_user_confirmation` 是可导航终态，岗位生成的成功终态仍为 `succeeded`。
-
-## Web 上传文档读取路径（2026-08-23）
-
-- `cloudfunctions/worker/deploy/experience-worker.js` 对图片、PDF 和 DOCX 统一批量申请 CloudBase 短期签名 HTTPS 地址。图片地址直接交给 OCR；PDF/DOCX 通过原生 `fetch` 读取字节后分别交给 `unpdf` 和 Mammoth。
-- CloudBase SDK 的旧 `downloadFile` 仅作为签名 URL 不可用时的兼容回退，且必须显式检查 `fileContent` 存在且非空。生产路径不得再假设 `downloadFile` 一定返回可供 `Buffer.from` 使用的内容。
-- `tests/unit/experience-worker-document-download.test.ts` 是该边界的回归测试：当旧 SDK 下载明确失败但签名地址正常时，PDF 必须解析成功且不得调用旧接口。
-- 真实云端合成探针只用于部署验证，完成后立即删除探针文件和临时入口；正式 worker 不保留可由客户端触发的存储诊断接口。
-
-## Web 文本型 PDF 本地提取边界（2026-08-23）
-
-- 连续三个真实邮箱用户任务均在 OCR/模型调用前报告“上传文件读取失败”，证明浏览器创建者 URL、受限 API 和 worker 之间的私有存储交接仍不可靠；此前 worker 自建合成文件闭环不能代表真实用户上传闭环。
-- `web/src/lib/resume-document.ts` 现在是 Web 简历文件提交的单一准备入口。单份文本型 PDF 由浏览器按需加载 `unpdf`、仅在内存中提取文字，并直接以现有 `inputType: text` 契约提交；不上传 PDF、不写 LocalStorage，也不改变服务端脱敏、结构化解析和用户核对流程。
-- 扫描 PDF、加密/损坏 PDF、DOCX 和图片仍进入 CloudBase 临时文件链路及既有 OCR/解析兜底。浏览器本地提取失败不得伪装成成功，也不得阻断这些原有输入方式。
-- `tests/unit/web-resume-local-extraction.test.ts` 锁定两条行为：可选文字 PDF 不得调用上传函数；扫描 PDF 必须回退到原上传契约。`unpdf` 通过动态导入只在用户选择 PDF 并提交时加载，避免增加登录和首页首屏负担。
+- `budget_periods`：每月固定一条 `budget_YYYY-MM`。
+- `ai_task_admissions`：每个 AI 任务一条 admission。
+- `daily_usage`：每个生成任务的成功额度槽。
+- `ai_jobs`：任务及幂等 jobId。
+
+不可变预算常量：limit 10,000 分、warning 8,000 分、stop 9,000 分。暴露额为：
+
+```text
+fixedCostFen + max(conservativeSettledFen, officialBilledFen) + reservedFen
+```
+
+公开生产的 `generation.create` 使用 CloudBase `runTransaction`：
+
+1. 以确定性 jobId 检查幂等重放。
+2. 检查同用户非终态任务最多 1 个。
+3. 检查滚动 10 分钟创建最多 3 次。
+4. 检查北京时间当日 `succeeded` 少于 20。
+5. 检查固定预算常量和新预留后的 stop 线。
+6. 同一事务更新 budget，并创建 admission、成功额度槽和 queued job。
+
+派发失败由 API 事务释放。worker 成功把 admission 转为 `succeeded`，从 reserved 移到保守结算，并把额度槽转为 succeeded；失败转 `released` 并删除额度槽。cleanup 对创建 10 分钟仍非终态的任务进行同样的幂等释放。事务冲突由 SDK 重试；admission 已非 reserved 时直接返回，保证 worker/cleanup 竞争只有一个结算者。
+
+如果 worker 成功写入结果后暂时无法更新预算，保留 reservation 是安全的保守失败：不会超支，只可能提前暂停；cleanup/运营核对必须修复后才重新开放 AI。
+
+## 7. 数据与生命周期
+
+当前业务集合至少包括：
+
+```text
+users resumes applications ai_jobs daily_usage ai_task_admissions
+feedback audit_logs service_config budget_periods
+```
+
+生产新环境不导入旧 users、OpenID 或测试数据。所有集合客户端规则为拒绝读写，只有云函数服务身份访问。
+
+worker `finally` 删除处理过的临时输入，并移除 job 中仅处理时需要的临时访问 URL。严格 TypeScript cleanup 服务覆盖 1 小时孤立文件、24 小时简历草稿与 180 天日志；部署 cleanup 还处理 10 分钟僵死任务、待删除账号和退休清单。
+
+`retirementInventory` 只返回集合计数、存储仍需独立盘点和 `deletionAuthorized: false`。`retirementDelete` 在部署入口固定返回 `DESTRUCTIVE_AUTHORIZATION_REQUIRED`；仓库当前没有生产全量删除实现。
+
+## 8. 用户导出
+
+`user.export` 以 cursor/limit 分页，最大 200。服务端只读取当前 userId 的 users、resumes、applications、ai_jobs、feedback，并递归删除身份和删除确认材料。版本固定 `applymate-user-export-v1`。浏览器逐页取得记录、在本地生成 JSON Blob 和下载，不上传导出文件。
+
+## 9. OCR、模型与隐私
+
+- 腾讯 OCR 只接收经所有权、MIME、Magic Bytes、大小和数量校验的临时文件。
+- TokenHub 只接收本地脱敏文本，固定 `hy3`，不自动 fallback。
+- Prompt、OCR 原文、简历原文、生成正文、密钥和临时 URL 不写运行日志。
+- application 保存事实快照、JD 快照、证据与显式生成标识；复制文本由确定性规则附加 AI 标识。
+- 质量或隐私硬门失败时任务失败并释放额度/预算。
+
+## 10. 构建、测试与部署边界
+
+本地主门禁：`npm run check`。它覆盖格式、fixture、敏感信息、严格类型、Web 类型、Vitest、四模块构建与 Web 生产构建。小程序测试文件保留但从主 Vitest 配置排除。
+
+生产部署前还必须完成浏览器 E2E、三类真机、CloudBase 环境只读盘点、两邮箱隔离、30 次真实质量/时延验收和专业合规复核。本地通过不等于云端已配置或已上线。
+
+`cloudbaserc.json` 当前仍指向 Legacy 环境，只能用于旧环境预发布且不得在未授权时执行。新生产环境 ID、数据库集合、权限、触发器、托管、域名、环境变量和预算初始记录都必须在单独授权后配置；不得把新生产环境 ID 提前提交到仓库。

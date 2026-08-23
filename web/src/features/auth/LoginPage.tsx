@@ -7,7 +7,7 @@ import {
   requestEmailVerification,
   signInWithEmailCode,
   type EmailOtpChallenge,
-} from "../../lib/cloudbase";
+} from "../../lib/session";
 import { isValidEmail, isValidEmailCode, normalizeEmail } from "../../lib/email-auth";
 import type { AuthStatus } from "../../lib/models";
 import { createRequestId } from "../../lib/request-id";

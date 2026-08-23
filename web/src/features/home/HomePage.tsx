@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
 import type { ResumeListItem } from "../../lib/models";
 import { Header, PrimaryLink, Surface } from "../../ui/ui";
+import { ServiceBanner } from "../../ui/ServiceBanner";
 import styles from "../Feature.module.css";
 
 interface UserView {
@@ -11,16 +13,20 @@ interface UserView {
 }
 
 export function HomePage(): React.JSX.Element {
+  const auth = useAuth();
   const user = useQuery({ queryKey: ["user.get"], queryFn: () => callApi<UserView>("user.get", {}) });
   const resumes = useQuery({
     queryKey: ["resume.list"],
     queryFn: () => callApi<{ resumes: ResumeListItem[] }>("resume.list", {}),
   });
   const defaultResume = resumes.data?.resumes.find((resume) => resume.isDefault);
-  const canGenerate = defaultResume?.status === "confirmed" && (user.data?.user.remainingQuota ?? 0) > 0;
+  const aiAvailable = auth.status?.serviceAccess === undefined ||
+    (auth.status.serviceAccess.phase === "active" && auth.status.serviceAccess.aiAvailability === "available");
+  const canGenerate = aiAvailable && defaultResume?.status === "confirmed" && (user.data?.user.remainingQuota ?? 0) > 0;
   return (
     <div className={styles.stack}>
       <Header eyebrow="APPLYMATE" title="你好，同学 👋" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
       <Surface>
         <div className={styles.compactStack}>
           <div className={styles.split}>
@@ -33,16 +39,18 @@ export function HomePage(): React.JSX.Element {
               <p className={styles.value}>{user.data?.user.remainingQuota ?? "—"} / 20</p>
             </div>
           </div>
-          <Link className={styles.rowAction} to="/resumes">管理简历 →</Link>
+          <Link className={styles.rowAction} to="/app/resumes">管理简历 →</Link>
         </div>
       </Surface>
       {canGenerate ? (
-        <Link className={styles.heroAction} to="/jobs/new">
+        <Link className={styles.heroAction} to="/app/jobs/new">
           <strong>提交岗位信息</strong>
           <span>添加最多 5 张截图，或直接粘贴岗位文字</span>
         </Link>
+      ) : !aiAvailable ? (
+        <PrimaryLink to="/app/records">查看已有记录</PrimaryLink>
       ) : (
-        <PrimaryLink to="/resumes/new">先添加一份简历</PrimaryLink>
+        <PrimaryLink to="/app/resumes/new">先添加一份简历</PrimaryLink>
       )}
       {user.data?.user.resourcePauseReason ? <p className={styles.intro}>{user.data.user.resourcePauseReason}，相关入口已暂停。</p> : null}
       <Surface>

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createWebMaintenanceCleanup } = require("../../cloudfunctions/cleanup/deploy/web-maintenance-cleanup.js") as {
+const { createRetirementInventory, createWebMaintenanceCleanup } = require("../../cloudfunctions/cleanup/deploy/web-maintenance-cleanup.js") as {
+  createRetirementInventory(input: { database: Database; now(): Date }):
+    (event: unknown) => Promise<Record<string, unknown>>;
   createWebMaintenanceCleanup(input: { database: Database; now(): Date }):
     (event: unknown) => Promise<Record<string, unknown>>;
 };
@@ -62,6 +64,13 @@ describe("Web maintenance cleanup", () => {
       accountStatus: "disabled", deletionStatus: "pending",
     });
     state.documents("resumes").push({ _id: "resume_delete", userId: "user_delete" });
+    state.documents("resumes").push({
+      _id: "resume_draft", recordType: "resume", userId: "user_keep",
+      status: "awaiting_confirmation", createdAt: "2026-08-20T01:00:00.000Z",
+    });
+    state.documents("audit_logs").push({
+      _id: "audit_old", createdAt: "2026-01-01T00:00:00.000Z",
+    });
     state.documents("ai_jobs").push({
       _id: "job_stale", recordType: "ai_job", jobId: "job_stale", userId: "user_keep",
       status: "queued", quotaReservationId: "quota_stale", createdAt: "2026-08-22T01:00:00.000Z",
@@ -76,11 +85,40 @@ describe("Web maintenance cleanup", () => {
     });
     await expect(cleanup({ webMaintenanceCleanup: true })).resolves.toEqual({
       ok: true,
-      data: { releasedQuotaReservations: 1, deletedAccounts: 1, deletedRewriteSlots: 1 },
+      data: {
+        releasedQuotaReservations: 1,
+        deletedAccounts: 1,
+        deletedRewriteSlots: 1,
+        deletedDrafts: 1,
+        deletedLogs: 1,
+      },
     });
     expect(state.documents("ai_jobs")[0]).toMatchObject({ status: "failed", error: { code: "TASK_TIMEOUT" } });
     expect(state.documents("daily_usage")).toHaveLength(0);
     expect(state.documents("users")).toHaveLength(0);
     expect(state.documents("resumes")).toHaveLength(0);
+  });
+
+  it("returns a retirement deletion inventory without deleting anything", async () => {
+    const state = createDatabase();
+    state.documents("service_config").push({
+      _id: "public",
+      dataAccessEndsAt: "2027-03-01T00:00:00.000+08:00",
+    });
+    state.documents("users").push({ _id: "user_keep", userId: "user_keep" });
+    const inventory = createRetirementInventory({
+      database: state.database,
+      now: () => new Date("2027-03-02T00:00:00.000Z"),
+    });
+    await expect(inventory({ retirementInventory: true })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        retired: true,
+        deletionAuthorized: false,
+        storageObjects: "REQUIRES_SEPARATE_STORAGE_INVENTORY",
+        collections: { users: 1, service_config: 1 },
+      },
+    });
+    expect(state.documents("users")).toHaveLength(1);
   });
 });

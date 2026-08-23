@@ -5,11 +5,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ResumeProfile } from "../../../../shared/src/resume-schema";
 import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
-import { uploadWithConcurrency } from "../../lib/cloudbase";
+import { uploadWithConcurrency } from "../../lib/temporary-upload";
 import type { ResumeListItem } from "../../lib/models";
 import { prepareResumeFilePayload } from "../../lib/resume-document";
 import { createRequestId } from "../../lib/request-id";
 import { EmptyState, ErrorNotice, Header, PrimaryButton, PrimaryLink, SecondaryButton, Surface } from "../../ui/ui";
+import { ActionSheet, ConfirmDialog } from "../../ui/Dialog";
+import { ServiceBanner } from "../../ui/ServiceBanner";
 import styles from "../Feature.module.css";
 
 function useResumeList() {
@@ -24,36 +26,30 @@ function resumeTitle(resume: ResumeListItem): string {
 }
 
 export function ResumeListPage(): React.JSX.Element {
+  const auth = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const resumes = useResumeList();
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<ResumeListItem>();
+  const [deleteTarget, setDeleteTarget] = useState<ResumeListItem>();
   const mutate = useMutation({
     mutationFn: ({ action, resumeId }: { action: "resume.delete" | "resume.setDefault"; resumeId: string }) =>
       callApi(action, { resumeId }, createRequestId()),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["resume.list"] }),
     onError: (cause) => setError(cause instanceof Error ? cause.message : "操作失败。"),
   });
-  function openActions(resume: ResumeListItem): void {
-    const choices = [
-      ...(resume.status === "awaiting_confirmation" ? ["继续核对"] : []),
-      ...(!resume.isDefault && resume.status === "confirmed" ? ["设为默认"] : []),
-      "删除",
-    ];
-    const selected = window.prompt(`请选择操作：${choices.join(" / ")}`, choices[0]);
-    if (selected === "继续核对") window.location.assign(`/resumes/${resume.resumeId}/review`);
-    if (selected === "设为默认") mutate.mutate({ action: "resume.setDefault", resumeId: resume.resumeId });
-    if (selected === "删除" && window.confirm("删除后不可恢复，历史投递记录仍会保留。确认删除？")) {
-      mutate.mutate({ action: "resume.delete", resumeId: resume.resumeId });
-    }
-  }
   const list = resumes.data?.resumes ?? [];
+  const canCreate = auth.status?.serviceAccess?.phase !== "read_only" &&
+    auth.status?.serviceAccess?.phase !== "retired";
   return (
     <div className={styles.stack}>
-      <Header action={list.length < 3 ? <Link className={styles.rowAction} to="/resumes/new">添加</Link> : null} eyebrow="事实来源" title="我的简历" />
+      <Header action={list.length < 3 && canCreate ? <Link className={styles.rowAction} to="/app/resumes/new">添加</Link> : null} eyebrow="事实来源" title="我的简历" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
       <p className={styles.intro}>最多保存 3 份。只有你核对并确认的事实才会参与生成。</p>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
       {list.length === 0 ? (
-        <Surface><EmptyState action={<PrimaryLink to="/resumes/new">添加一份简历</PrimaryLink>} detail="支持 PDF、DOCX、图片或文字。" title="还没有简历" /></Surface>
+        <Surface><EmptyState action={canCreate ? <PrimaryLink to="/app/resumes/new">添加一份简历</PrimaryLink> : undefined} detail={canCreate ? "支持 PDF、DOCX、图片或文字。" : "当前服务期只保留已有数据访问。"} title="还没有简历" /></Surface>
       ) : (
         <div className={styles.compactStack}>
           {list.map((resume) => (
@@ -64,11 +60,41 @@ export function ResumeListPage(): React.JSX.Element {
                   <strong>{resumeTitle(resume)} {resume.isDefault ? <span className={styles.pill}>默认</span> : null}</strong>
                   <span>{resume.status === "confirmed" ? "已确认" : resume.status === "awaiting_confirmation" ? "等待核对" : "处理中"}</span>
                 </div>
-                <button aria-label={`管理 ${resumeTitle(resume)}`} className={styles.rowAction} onClick={() => openActions(resume)} type="button">•••</button>
+                <button aria-label={`管理 ${resumeTitle(resume)}`} className={styles.rowAction} onClick={() => setSelected(resume)} type="button">•••</button>
               </div>
             </Surface>
           ))}
         </div>
+      )}
+      {selected === undefined ? null : (
+        <ActionSheet
+          actions={[
+            ...(selected.status === "awaiting_confirmation" && canCreate
+              ? [{ label: "继续核对", onSelect: () => navigate(`/app/resumes/${selected.resumeId}/review`) }]
+              : []),
+            ...(!selected.isDefault && selected.status === "confirmed" && canCreate
+              ? [{ label: "设为默认", onSelect: () => mutate.mutate({ action: "resume.setDefault", resumeId: selected.resumeId }) }]
+              : []),
+            ...(canCreate
+              ? [{ destructive: true as const, label: "删除", onSelect: () => setDeleteTarget(selected) }]
+              : []),
+          ]}
+          onClose={() => setSelected(undefined)}
+          title={resumeTitle(selected)}
+        />
+      )}
+      {deleteTarget === undefined ? null : (
+        <ConfirmDialog
+          confirmLabel="确认删除"
+          destructive
+          detail="删除后不可恢复；已经保存的历史投递记录仍会保留。"
+          onCancel={() => setDeleteTarget(undefined)}
+          onConfirm={() => {
+            mutate.mutate({ action: "resume.delete", resumeId: deleteTarget.resumeId });
+            setDeleteTarget(undefined);
+          }}
+          title={`删除${resumeTitle(deleteTarget)}？`}
+        />
       )}
     </div>
   );
@@ -98,7 +124,7 @@ export function ResumeNewPage(): React.JSX.Element {
         );
       }
       const created = await callApi<{ jobId: string; resumeId: string }>("resume.parse", payload, createRequestId());
-      navigate(`/jobs/${created.jobId}?kind=resume&resumeId=${created.resumeId}`);
+      navigate(`/app/jobs/${created.jobId}?kind=resume&resumeId=${created.resumeId}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "简历提交失败，请重试。");
     } finally {
@@ -170,7 +196,7 @@ export function ResumeReviewPage(): React.JSX.Element {
     setError("");
     try {
       await callApi("resume.confirm", { resumeId: id, profile: { ...current, confirmed: true } }, createRequestId());
-      navigate("/resumes", { replace: true });
+      navigate("/app/resumes", { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败，请重试。");
     } finally { setBusy(false); }

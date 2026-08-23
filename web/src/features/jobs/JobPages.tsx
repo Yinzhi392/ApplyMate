@@ -4,10 +4,15 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 
 import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
-import { uploadWithConcurrency, type TemporaryUpload } from "../../lib/cloudbase";
+import {
+  prepareAndUploadJdImages,
+  type PreparedJdUpload,
+} from "../../lib/jd-image-preparation";
+import { cloudbaseTemporaryUploadPort } from "../../lib/temporary-upload";
 import type { JobView, ResumeListItem } from "../../lib/models";
 import { createRequestId } from "../../lib/request-id";
 import { ErrorNotice, Header, PrimaryButton, SecondaryButton, Surface } from "../../ui/ui";
+import { ServiceBanner } from "../../ui/ServiceBanner";
 import styles from "../Feature.module.css";
 import { createJobProgressContent } from "./job-progress";
 
@@ -21,7 +26,7 @@ export function JobCreatePage(): React.JSX.Element {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const uploadPromise = useRef<Promise<TemporaryUpload[]> | null>(null);
+  const uploadPromise = useRef<Promise<PreparedJdUpload[]> | null>(null);
   const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
   useEffect(() => () => previews.forEach(({ url }) => URL.revokeObjectURL(url)), [previews]);
   const resumes = useQuery({ queryKey: ["resume.list"], queryFn: () => callApi<{ resumes: ResumeListItem[] }>("resume.list", {}) });
@@ -29,11 +34,17 @@ export function JobCreatePage(): React.JSX.Element {
 
   function chooseFiles(nextFiles: File[]): void {
     const limited = nextFiles.slice(0, 5);
+    const previousUpload = uploadPromise.current;
+    if (previousUpload !== null) {
+      void previousUpload
+        .then((uploads) => cloudbaseTemporaryUploadPort.delete(uploads.map(({ fileId }) => fileId)))
+        .catch(() => undefined);
+    }
     setFiles(limited);
     setError(nextFiles.length > 5 ? "最多添加 5 张岗位截图。" : "");
     uploadPromise.current = limited.length === 0
       ? null
-      : uploadWithConcurrency(limited, auth.status?.userId ?? "", 3);
+      : prepareAndUploadJdImages(limited, auth.status?.userId ?? "", cloudbaseTemporaryUploadPort, 3);
   }
   async function submit(): Promise<void> {
     if (defaultResume === undefined) {
@@ -55,15 +66,18 @@ export function JobCreatePage(): React.JSX.Element {
             fileAccessUrls: uploads.map(({ accessUrl }) => accessUrl),
           };
       const created = await callApi<{ jobId: string }>("generation.create", payload, createRequestId());
-      navigate(`/jobs/${created.jobId}?kind=generation`, { replace: true });
+      navigate(`/app/jobs/${created.jobId}?kind=generation`, { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "岗位提交失败，请重试。");
     } finally { setBusy(false); }
   }
-  const ready = defaultResume !== undefined && (mode === "text" ? text.trim().length > 20 : files.length > 0);
+  const aiAvailable = auth.status?.serviceAccess === undefined ||
+    (auth.status.serviceAccess.phase === "active" && auth.status.serviceAccess.aiAvailability === "available");
+  const ready = aiAvailable && defaultResume !== undefined && (mode === "text" ? text.trim().length > 20 : files.length > 0);
   return (
     <div className={styles.stack}>
       <Header eyebrow="新岗位" title="提交岗位信息" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
       <p className={styles.intro}>选择图片后会在后台安全上传，但只有你点击生成后才开始 OCR 和模型处理。</p>
       <div className={styles.tabs}>
         <button className={mode === "images" ? styles.activeTab : styles.tab} onClick={() => setMode("images")} type="button">岗位截图</button>
@@ -115,10 +129,10 @@ export function JobProgressPage(): React.JSX.Element {
     const result = job.result ?? {};
     if (kind === "resume" || job.kind === "resume_parse") {
       const resumeId = String(result.resumeId ?? params.get("resumeId") ?? "");
-      navigate(`/resumes/${resumeId}/review`, { replace: true });
+      navigate(`/app/resumes/${resumeId}/review`, { replace: true });
     } else {
       const applicationId = String(result.applicationId ?? job.applicationId ?? "");
-      navigate(`/results/${applicationId}`, { replace: true });
+      navigate(`/app/results/${applicationId}`, { replace: true });
     }
   }, [job, navigate, params]);
   const kind = params.get("kind") ?? job?.kind;
@@ -139,7 +153,7 @@ export function JobProgressPage(): React.JSX.Element {
       </Surface>
       {job?.status === "failed" ? <ErrorNotice>{job.error?.message ?? "处理失败，且本次不会扣除额度。"}</ErrorNotice> : null}
       {query.error === null ? null : <ErrorNotice>{query.error.message}</ErrorNotice>}
-      {job?.status === "failed" ? <SecondaryButton onClick={() => navigate("/jobs/new", { replace: true })}>重新提交</SecondaryButton> : null}
+      {job?.status === "failed" ? <SecondaryButton onClick={() => navigate("/app/jobs/new", { replace: true })}>重新提交</SecondaryButton> : null}
     </div>
   );
 }

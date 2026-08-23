@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 
 import styles from "./PageFrame.module.css";
 
-const tabRoutes = ["/", "/records", "/account"];
+const tabRoutes = ["/app", "/app/records", "/app/account"];
 
 export function PageFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
   const location = useLocation();
@@ -12,9 +12,9 @@ export function PageFrame({ children }: { children: React.ReactNode }): React.JS
       <main className={`${styles.page} ${showTabs ? styles.withTabs : ""}`}>{children}</main>
       {showTabs ? (
         <nav aria-label="主要导航" className={styles.tabs}>
-          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} end to="/">首页</NavLink>
-          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} to="/records">记录</NavLink>
-          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} to="/account">我的</NavLink>
+          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} end to="/app">首页</NavLink>
+          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} to="/app/records">记录</NavLink>
+          <NavLink className={({ isActive }) => isActive ? styles.activeTab : styles.tab} to="/app/account">我的</NavLink>
         </nav>
       ) : null}
     </div>

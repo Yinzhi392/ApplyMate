@@ -31,9 +31,10 @@ describe("trusted CloudBase identity boundary", () => {
           userId: "user_forged",
           filters: {
             uid: "nested_forged_uid",
+            OWNERID: "nested_forged_owner",
             keep: "safe-filter",
           },
-          rows: [{ identityHash: "nested_forged_hash", keep: "safe-row" }],
+          rows: [{ IdentityHash: "nested_forged_hash", EMAILADDRESS: "forged@example.com", keep: "safe-row" }],
         },
         openId: "wx_forged_envelope",
       }),

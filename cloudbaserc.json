@@ -9,7 +9,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/api/deploy",
-      "description": "ApplyMate experience runtime. Auth, resume and greeting workflows use real OCR and AI behind a zero-cost fail-closed gate.",
+      "description": "ApplyMate Legacy/pre-release API. Public Web v3 stays fail-closed unless explicitly configured in a separately authorized production environment.",
       "installDependency": true
     },
     {
@@ -18,7 +18,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/worker/deploy",
-      "description": "ApplyMate experience worker. Handles synthetic probes plus real resume and greeting tasks when explicitly enabled.",
+      "description": "ApplyMate Legacy/pre-release worker. Public Web v3 uses fixed hy3 plus budget admission only when explicitly enabled.",
       "installDependency": true
     },
     {
@@ -27,7 +27,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/cleanup/deploy",
-      "description": "ApplyMate cleanup reliability-probe runtime. Only synthetic timeout recovery is enabled; user deletion remains paused.",
+      "description": "ApplyMate Legacy/pre-release cleanup for timeouts, lifecycle cleanup and non-destructive retirement inventory.",
       "installDependency": true
     }
   ]

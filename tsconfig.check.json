@@ -11,7 +11,12 @@
   "include": [
     "shared/src/**/*.ts",
     "cloudfunctions/*/src/**/*.ts",
-    "miniprogram/**/*.ts",
     "tests/**/*.test.ts"
+  ],
+  "exclude": [
+    "tests/unit/miniprogram-*.test.ts",
+    "tests/unit/cloud-storage-performance.test.ts",
+    "tests/integration/miniprogram-*.test.ts",
+    "tests/integration/phase-9-visual-preview.test.ts"
   ]
 }

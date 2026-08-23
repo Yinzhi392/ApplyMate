@@ -12,17 +12,17 @@ import type {
   FreeResource,
   ResourceGateService,
 } from "./resource-gate-service.js";
+import type { ServiceAccessService } from "./service-access-service.js";
 
 const CLIENT_IDENTITY_FIELDS = new Set([
-  "OPENID",
-  "openid",
-  "openId",
-  "userId",
-  "uid",
-  "customUserId",
-  "identityHash",
+  "customuserid",
   "email",
-  "emailAddress",
+  "emailaddress",
+  "identityhash",
+  "openid",
+  "ownerid",
+  "uid",
+  "userid",
 ]);
 
 export interface CloudBaseContextSnapshot {
@@ -41,6 +41,7 @@ export interface CloudBaseContextSnapshot {
 
 export interface ApiEntryDependencies {
   registry: ActionRegistry;
+  identityMode?: "legacy_compatible" | "email_only";
   readCloudBaseContext: () =>
     | CloudBaseContextSnapshot
     | Promise<CloudBaseContextSnapshot>;
@@ -62,6 +63,10 @@ export interface ApiEntryDependencies {
       payload: Record<string, unknown>,
     ) => readonly FreeResource[];
   };
+  serviceGate?: {
+    service: ServiceAccessService;
+    now: () => Date;
+  };
 }
 
 function stripClientIdentityFields(value: unknown): unknown {
@@ -74,7 +79,7 @@ function stripClientIdentityFields(value: unknown): unknown {
 
   const result: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
-    if (!CLIENT_IDENTITY_FIELDS.has(key)) {
+    if (!CLIENT_IDENTITY_FIELDS.has(key.toLocaleLowerCase("en-US"))) {
       result[key] = stripClientIdentityFields(child);
     }
   }
@@ -155,8 +160,25 @@ export function createApiEntry(
           },
         };
       }
+      if (
+        dependencies.identityMode === "email_only" &&
+        trustedIdentity.namespace !== "web-email-uid-v1"
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "UNAUTHENTICATED",
+            message: "A verified email account is required.",
+            retryable: false,
+          },
+        };
+      }
       const trustedOpenId = trustedIdentity.value;
       const dispatch = () => {
+        dependencies.serviceGate?.service.assertActionAvailable(
+          parsed.data.action,
+          dependencies.serviceGate.now(),
+        );
         if (dependencies.resourceGate !== undefined) {
           dependencies.resourceGate.service.assertAvailable(
             dependencies.resourceGate.resolveRequirements(

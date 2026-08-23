@@ -1,3 +1,5 @@
+import type { ServiceAccess } from "../../../shared/src/service-access";
+
 export interface AuthStatus {
   accessState: "agreement_required" | "invite_required" | "active" | "disabled";
   accountStatus: "enabled" | "disabled";
@@ -8,6 +10,7 @@ export interface AuthStatus {
   };
   inviteRequired: boolean;
   isAdmin: boolean;
+  serviceAccess?: ServiceAccess;
   userId: string;
 }
 

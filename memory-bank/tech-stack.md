@@ -1,332 +1,99 @@
-# 《投了吗》ApplyMate 技术栈选型
-
-**版本：** Web MVP v2.0
+# ApplyMate Public Mobile Web v3 技术栈
 
 **日期：** 2026-08-23
+**依据：** `memory-bank/design-document.md`
+**原则：** 移动优先、平台可替换、严格预算、隐私最小化、无 PWA
 
-**依据：** [`design-document.md`](./design-document.md)
+## 1. 选型总览
 
-**文档关系：** 设计文档定义产品规则，本文定义实现选择；如有冲突，以设计文档为准。
-
-**选型目标：** 简单、健壮、适合 30–100 人移动 Web 邮箱登录测试，并严格保持实际费用为零。微信小程序栈自 2026-08-22 起冻结为 Legacy。
-
-## 1. 最终推荐
-
-Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
-
-> **React + Vite + TypeScript + React Router + TanStack Query + Zod + CSS Modules + CloudBase Web SDK/PWA + `api + worker + cleanup`**
-
-| 层级 | 技术 | 职责 |
+| 层 | 技术 | 用途 |
 |---|---|---|
-| 客户端 | React、Vite、TypeScript、React Router、TanStack Query、CSS Modules | 邮箱验证码登录、文件选择、任务恢复、编辑、复制和记录 |
-| 服务端 | 3 个 CloudBase 普通云函数、Node.js、TypeScript | API、异步重任务、清理与数据删除 |
-| 数据 | CloudBase 文档数据库 | 用户、简历、任务、投递、额度、反馈和审计 |
-| 文件 | CloudBase 云存储 | 只保存待处理的临时原文件和截图 |
-| 图片文字识别 | 腾讯 OCR | 处理全部简历图片和 JD 截图 |
-| 文本 AI | TokenHub OpenAI 兼容 API | Hy3 一次完成 JD 结构化、证据计划与开场白正文；首次生成可读正文直接展示，不进行事实/格式硬拒绝，不使用本地正文回退 |
-| 校验 | Zod + 确定性规则 | 入参、隐私和非空正文硬门；模型格式不完整不再整单失败 |
-| 文档解析 | Mammoth、unpdf | DOCX 与文本型 PDF 的本地文字提取 |
-| 测试 | Vitest + Testing Library + 脱敏 fixtures + 移动浏览器清单 | 单元、契约、集成、质量、安全、PWA 和设备验收 |
+| Web | React 19、Vite 8、TypeScript、React Router 7 | 移动站、BrowserRouter、路由懒加载 |
+| 状态 | TanStack Query | API 内存缓存、任务轮询与恢复 |
+| 样式 | CSS Modules、系统字体 | 现有暖白/墨蓝灰/青绿色视觉语言 |
+| 校验 | Zod + 纯 TypeScript 规则 | API、简历、JD、服务阶段和错误契约 |
+| 认证 | CloudBase Web SDK 邮箱 OTP | 开放注册和可信邮箱 UID |
+| API | CloudBase Node 普通云函数 `api` | 身份、Schema、事务、任务与轻量读取 |
+| Worker | CloudBase Node 普通云函数 `worker` | OCR、脱敏、Hy3、质量门、结果与文件清理 |
+| Cleanup | CloudBase Node 普通云函数 `cleanup` | 超时释放、草稿、日志、账号和退休清单 |
+| 数据 | CloudBase 文档数据库 | 用户、任务、预算、简历和投递记录 |
+| 临时文件 | CloudBase 云存储 | 用户隔离的短生命周期上传 |
+| OCR | 腾讯 OCR | 简历图片与 JD 截图 |
+| 模型 | TokenHub `hy3` | JD 结构化、证据选择与开场白生成 |
+| 文档 | Mammoth、unpdf | DOCX 与文本型 PDF 提取 |
+| 测试 | Vitest、Testing Library、jsdom | 单元、契约、集成与恶意输入 |
 
-不 fork 现有开源项目，不引入 ORM、工作流框架、独立服务器、消息队列或客户端 API Key。PWA 只缓存带版本号的静态外壳，不配置 API、文件或页面数据运行时缓存。
+不采用 PWA、Service Worker、manifest、HashRouter、ORM、独立 API 服务器、消息队列、客户端密钥或备用生成模型。
 
-### 1.1 Web 运行边界
+## 2. Web 实现规则
 
-- `web/` 是唯一新增生产客户端；`miniprogram/` 保留为 Legacy，不参与 Web 构建和发布。
-- CloudBase Web SDK 使用 `local` 持久化邮箱登录会话；浏览器不直接访问业务数据库，所有业务动作都通过 `api`。
-- CloudBase 环境 ID 通过 Vite 环境变量提供，密钥只存在云函数环境变量；前端仓库不得包含 SecretId、SecretKey 或模型 API Key。
-- Web 构建产物部署到 CloudBase 静态托管测试域名；自定义域名、备案和公开发布不属于本阶段。
-- 设计系统使用本地系统字体、暖白 `#F4F6F1`、墨蓝灰 `#17343B`、低饱和青绿 `#26766C`、薄荷雾 `#DDECE6`、暖棕 `#B97845` 与白色 `#FFFFFF`，不加载第三方字体或视觉脚本。
+- `BrowserRouter` 的公开路由为 `/`、`/login`、`/legal`、`/support`，业务路由统一 `/app/*`。
+- CloudBase SDK、PDF 解析和各业务页均按需加载。
+- Vite 生产 source map 关闭；自定义门禁要求 HTML entry 的静态主 JS gzip 不超过 200KB。
+- 电脑端仍使用最大约 480px 的居中移动画布，不增加桌面信息架构。
+- 可触控目标、底部操作菜单和 `<dialog>` 确认框替代原生 `prompt/confirm`。
+- 启动只注销历史 Service Worker 并清理旧 shell cache；绝不注册新 worker。
 
-## 2. 选择理由
+## 3. 平台 seam
 
-### 2.1 简单
+页面不得直接 import CloudBase SDK：
 
-- 产品只面向移动浏览器和微信内置浏览器；邮件验证码由 CloudBase 身份服务和已配置 SMTP 发送，项目不自建密码、验证码或找回系统。
-- 前后端统一 TypeScript，数据库保存 JSON 文档，无需 Python 服务或 SQL ORM。
-- Web 只调用 `api` 云函数，服务端从认证上下文读取可信邮箱账号 UID；邮箱明文不进入业务 API 或业务数据库。
-- 只有 `api`、`worker`、`cleanup` 三个部署单元，职责固定。
+- `AuthSessionPort`：邮箱验证码、当前会话、退出。
+- `TemporaryUploadPort`：用户隔离的上传与删除。
+- `BusinessApiPort`：统一 action 请求、错误转换和 requestId。
 
-### 2.2 健壮
+OCR 与 TokenHub 通过 worker adapter 暴露给领域服务。模型 ID、URL、重试、超时与凭证只存在 provider adapter/环境变量中。
 
-- 耗时 OCR/模型始终由 `worker` 异步执行；`api` 创建任务后只做有界终态查询，常见岗位成功任务返回 `applicationId`，慢任务返回 `jobId`。
-- 所有不可信请求和结构化数据均经运行时 Schema 检查；首次开场白只检查可读非空输出与联系方式/遮盖占位符隐私风险，不执行事实或文案格式硬拒绝。
-- 额度预留、任务认领和幂等状态使用数据库事务。
-- OCR 与文本模型隔离：原图不会进入 TokenHub，降低二次外发范围。
-- 任务有 45 秒执行上限、10 分钟回收线和 24 小时幂等窗口。
+## 4. 图片准备
 
-### 2.3 符合零付费约束
+浏览器使用 Web Worker、`createImageBitmap` 与 `OffscreenCanvas`；不支持时退回主线程 Canvas。最多 5 张 JD 图、并发准备/上传 3 张。正式 profile 只能来自固定 A/B：
 
-“低成本”不等于“允许少量扣费”。本项目的运行门槛是 OCR、TokenHub、云函数、数据库、存储和流量的实际账单均为 0 元：
+- 720/Q80
+- 1080/Q78
+- 1440/Q75
 
-- 开通前确认免费额度、到期时间、地域和调用限制。
-- 关闭自动后付费、自动扩容和任何会产生账单的选项。
-- 记录各资源剩余额度；到达安全阈值时暂停相应入口。
-- 免费额度不能满足阶段 0 验证时立即停止，不启用付费、不换平台。
+机械选择要求关键字段保留率至少 99%、无关键字段回归，然后取字节最小；无候选通过则 1440/Q75。
 
-腾讯 OCR 公开计费页当前提供每月免费资源包信息，但具体可用量仍须以开通当日控制台为准。[腾讯 OCR 价格说明](https://buy.cloud.tencent.com/price/ocr)
+## 5. 服务端与事务
 
-## 3. 客户端
+统一请求为 `{ action, payload, requestId? }`。只读可省 requestId，写动作必须 UUID。正式公开模式通过环境变量显式开启，并只接受 `web-email-uid-v1`。
 
-### 3.1 Web 客户端
+CloudBase JS SDK 3.7.1 提供数据库和 `runTransaction`。生成 admission 在一个事务中处理预算、成功额度槽、任务和 admission；worker/cleanup 使用 admission 状态实现幂等竞争。金额全部使用整数分，禁止浮点货币。
 
-使用 React、Vite、TypeScript、React Router、TanStack Query、CSS Modules 和 CloudBase Web SDK。首次通过 CloudBase 邮箱验证码登录，认证会话由 SDK 使用 `local` 持久化；同一浏览器有有效会话时自动恢复。TanStack Query 只使用内存缓存，不把业务响应持久化到 LocalStorage。文件选择后可以后台上传，但只有点击生成才创建 OCR/模型任务。
+CloudBase 文档数据库不向浏览器开放业务集合。存储路径包含服务端内部 userId；服务端再次校验 fileId 与临时访问 URL 的 bucket、object path 和所有权。
 
-### 3.2 Legacy 微信原生小程序（冻结）
+## 6. 安全与隐私
 
-使用 TypeScript、WXML、WXSS、原生 Page/Component，以及微信文件、媒体、云函数和剪贴板 API。MVP 不使用 Taro、uni-app、React 或 Vue。
+- 前端只包含环境 ID、地域、函数名和公开日期，不包含任何 Secret。
+- API 递归移除任意大小写的客户端身份字段。
+- 邮箱原文不进入业务数据；可信 UID 先做命名空间哈希。
+- OCR 原图不进入 TokenHub；文本先遮盖手机号、邮箱、证件号和详细地址。
+- 运行日志只保存状态、时间、数字指标和错误码，不保存用户内容。
+- fixture 必须为合成/脱敏数据；敏感信息门禁继续运行。
 
-页面内部状态放在 Page `data`；登录态、当前用户和默认简历 ID 放在应用级状态。服务端是任务和额度的事实来源，本地只保存无敏感信息的界面偏好、最近 `jobId`，以及最多 20 条只含事件名和可选 applicationId 的分析重试队列。
+## 7. 环境与部署
 
-### 3.2.1 Legacy UI 组件（历史）
+- Legacy/预发布环境保留且不迁移数据。
+- 正式生产使用独立 CloudBase 环境，个人版作为待控制台复核的基线。
+- `cloudbaserc.json` 在生产环境创建前仍保留旧环境 ID，不代表生产配置。
+- BrowserRouter 需要在 CloudBase 静态托管设置 4xx → `index.html`。
+- 正式环境默认关闭 AI；完成域名、HTTPS、备案、探针、隔离、质量、时延与合规门后才开放注册。
 
-不引入第三方 UI 组件库。全局 WXSS 只提供颜色、字号、间距、圆角、按钮、表单、状态、88rpx 触控高度和安全区基础规则；阶段 9 的 13 个业务页面和阶段 10 新增的协议页面各自维护页面级 WXSS，避免所有页面复用同一种卡片堆叠。
+任何套餐、环境、域名、备案、密钥或部署动作都需要单独授权；付款、实名、验证码和密码由产品负责人操作。
 
-协议正文、版本、生效日期和联系邮箱使用 `miniprogram/core/legal-documents.ts` 作为客户端单一代码源；`miniprogram/pages/legal/` 只负责原生展示、切换、读取同意时间和复制全文。该能力复用现有 TypeScript、WXML、WXSS 与微信剪贴板 API，不增加 Markdown 渲染器、富文本库或其他依赖。`docs/phase-10/` 保存人工审阅稿，并由测试校验标题、版本、联系邮箱和章节与代码源一致。
-
-阶段 9 的 A“克制玻璃”使用原生 WXSS 实现半透明暖白表面、亮色细边、内高光、轻量阴影和按压反馈，不增加依赖，不调用 Apple SwiftUI Liquid Glass API，也不使用 `backdrop-filter`、实时模糊或持续动画。跨平台降级依赖实色背景、边框和间距，原生三标签导航保持不变。
-
-微信开发者工具中的原生呈现是视觉验收基准，浏览器预览只作为设计参考。分段控件、状态统计、筛选栏、结果页双按钮和管理员统计等关键横向区域统一使用可收缩 Flex；页面级样式不依赖 CSS Grid、`minmax()`、`repeat()` 或关键 `@media` 才能成立。共享按钮规则使用 `min-width: 0`、最大宽度约束和容器内弹性分配，确保 320px、375px 与 390px 宽度下不横向溢出。该策略只调整原生样式层，不新增依赖或业务接口。
-
-首页只承担当前简历、今日额度和岗位输入入口，最近投递统一由记录页承载；右上管理入口使用页面内绝对定位的可触控 `view`，副标题保持单行，不让微信原生 `button` 参与左右宽度分配。简历列表以原生操作菜单映射不同状态，页面只保留一个添加入口。简历上传顶层只显示“上传文件／粘贴文字”，文件模式再承接 PDF、DOCX 与最多 6 张图片。生成页使用本地纯函数管理截图/文字双草稿、追加、删除、排序与 requestId 重置；选择 JD 原图后立即启动最多 3 张后台并发上传，每张独立保存状态和 fileId，全部完成后才允许生成。结果页优先渲染 job.get 首屏预览，再补拉完整详情；页面仍只展示正文、复制、保存和次级投递操作。证据保存在服务端但不渲染，AI 改写不提供页面入口。“我的”使用分组列表而非身份卡片，四个可操作行采用带辅助语义和按压态的 `view`，内部以占满宽度的三段 Flex 稳定实现图标贴左、正文弹性扩展和操作贴右。
-
-页面组合按任务关系决定是否使用原生表面，不为统一而套用巨型容器。登录页采用“背景层品牌介绍 + 独立紧凑表单卡”的上下两层结构，并通过原生 Flex 把两层组成的内容组放在胶囊安全区以下可用高度的视觉中心；首页按状态、主入口、事实流程顺序连续排布。两者都不依靠 `margin-top: auto` 或大段空白制造层级。
-
-登录页使用自定义导航时，不能只依赖 `env(safe-area-inset-top)`。客户端在页面加载时读取 `wx.getMenuButtonBoundingClientRect()` 和 `wx.getWindowInfo()`，由纯函数计算品牌起点与标题位置；标题必须低于胶囊底部并保留固定视觉间距，缺失胶囊信息时使用状态栏高度的保守回退值。
-
-本地演示邀请码保留在显式 `demo` 适配器、README 和自动化测试中，不渲染到登录页面。原生页面所需的少量语义 Emoji 直接使用系统字形，不引入图标库、图片资源或网络字体；Emoji 用于核对页的三类重点事实，以及“我的”页四个可操作入口，使用情况等只读行保持纯文本。当前开发者/体验成员客户端默认使用 `cloudbase_experience`，接入既有 CloudBase、腾讯 OCR 与 TokenHub 体验环境；`touristappid` 只属于早期模拟器检查的历史配置，不能证明真实云端身份或当前运行模式。显式 `demo` 仍只用于离线合成界面测试。
-
-编写页面代码前，先完成登录、首页、简历、生成、结果、记录和“我的”七个低保真线框并取得确认。
-
-### 3.3 异步任务体验
-
-- `resume.parse` 和 `generation.create` 返回 `jobId` 后，客户端通过 `job.get` 查询状态。
-- 前后台切换、页面重建和网络重连时，以最近 `jobId` 恢复。
-- 查询采用有限退避并允许用户手动刷新，不进行无限高频轮询。
-- 岗位任务不设置“等待用户确认”页面：OCR 与解析后直接生成；低置信字段省略并在结果页提示，内容不足则失败并提示重新提交且不扣额度。
-
-## 4. 服务端
-
-### 4.1 三个普通云函数
-
-CloudBase 普通云函数支持异步任务模式，适合把创建请求和重处理分离。[CloudBase 函数类型](https://docs.cloudbase.net/cloud-function/quickstart/select-types)
-
-| 函数 | 建议上限 | 职责 |
-|---|---:|---|
-| `api` | 10–15 秒 | 鉴权、协议/邀请检查、Zod 入参、任务创建、查询、记录与管理员动作 |
-| `worker` | 45 秒 | OCR、脱敏、简历结构化解析（同一 provider 最多一次纠错 Prompt 重试）、v8 单次生成/改写和质量门；生成/改写不自动纠错 |
-| `cleanup` | 60 秒 | 残留文件、10 分钟僵死任务、过期幂等、草稿和待删除账号 |
-
-三个函数均使用当前 CloudBase 支持且阶段 0 验证通过的 Node.js LTS 运行时。运行时版本写入部署配置，不在业务逻辑里推断。
-
-当前免费环境 `applymate-mvp-d0g005nnw103af4c3` 已交付文档型数据库，八个固定集合均为 `ADMINONLY`。腾讯官方云函数文档推荐 `@cloudbase/node-sdk`，但候选版本公开依赖仍包含 `axios@0.27.2`，故不进入本项目依赖。项目使用经 `npm audit --omit=dev` 验证为 0 漏洞的 `@cloudbase/js-sdk@3.7.1` Node 入口访问文档数据库和云存储；`api`、`worker` 与 `cleanup` 初始化时都显式传入受限 `CLOUDBASE_APIKEY`。结构化简历 profile 采用 JSON-at-rest 兼容层，API 与 worker 在业务边界解码，避免当前 SDK 对嵌套对象更新静默不落库。
-
-体验版默认使用 `cloudbase_experience`；显式 `demo` 只用于本地合成界面测试。`api` 负责可信身份、协议、邀请码、用户数据与任务创建，`worker` 负责 OCR、脱敏、真实模型、解析/生成/改写和临时文件清理，`cleanup` 保留严格受限的可靠性和删除清理入口。
-
-图片性能基线使用微信原生原图上传，不在手机端压缩：选图后最多 3 张并发，成功图片不会因单图失败重传。worker 一次批量获取所有签名 URL，再用 Promise 并行 OCR 并按原顺序合并；仅 URL/OCR 传输失败的对应图片使用 `sharp` 生成 720×1080/质量 80 云端副本重试一次。`processingMetrics` 仅保存客户端后台上传、选择到创建、图片数、批量签名、输入/OCR、模型、校验、worker 总耗时和管线版本等数字或枚举，不保存文件、OCR 原文、Prompt 或正文。
-
-`api` 负责可靠地创建任务并异步触发 `worker`。部署适配器通过腾讯 SCF `Invoke` 的 `InvocationType=Event` 发送 jobId，并使用 8 秒接受截止；派发成功后 `generation.create` 立即返回 jobId，不在请求内查询终态。客户端进入任务页查询真实状态；成功的 job.get 按 userId 联查 application 并返回安全首屏预览。`worker` 通过事务认领任务，重复触发时只有一个执行者进入外部调用。`cleanup` 对终态转换、额度释放和删除操作保持幂等。阶段 10 新增的 `analytics.track` 仍是 `api` 内的轻量写动作，不引入分析 SDK、消息队列或新数据库集合。
-
-### 4.2 代码边界
-
-服务端按以下边界组织：
+## 8. 本地命令
 
 ```text
-handler → schema → service → repository / provider-adapter → CloudBase / OCR / TokenHub
+npm ci --ignore-scripts
+npm run typecheck
+npm run web:typecheck
+npm test
+npm run web:build
+npm run check
 ```
 
-- `handler`：action 路由、身份、权限、协议和统一响应。
-- `schema`：API、任务、结构化简历、JD、生成结果和证据 Schema。
-- `service`：用户、邀请、简历、生成、投递、反馈、额度和删除规则。
-- `repository`：数据库、事务和临时存储。
-- `ocr-adapter`：腾讯 OCR 请求、超时、错误归一化和用量元数据。
-- `model-adapter`：TokenHub Hy3 文本请求、超时、JSON 提取、事实 ID 校验和用量元数据；写作模型不再作为主备链路。
+`npm run check` 是当前主线门禁。Legacy 小程序文件不参与根 TypeScript build 和主 Vitest，但继续接受敏感信息与基础格式扫描。
 
-模型与 OCR 适配器只能由 `worker` 调用。`api` 和小程序不得直接持有外部服务密钥。
+## 9. 版本与费用核对
 
-### 4.3 API 与幂等
-
-统一请求结构为 `{ action, payload, requestId }`。写操作要求 UUID `requestId`；读操作可省略。服务端幂等键由可信用户身份、action 和 requestId 组成，并保存负载哈希：
-
-- 相同键和相同负载返回原任务或原终态。
-- 相同键但负载不同返回冲突。
-- 终态映射保存 24 小时。
-
-`resume.parse` 返回 `jobId`；`generation.create` 在有界窗口内成功时返回 `applicationId`，否则返回 `jobId`。所有未合并终态的任务统一通过 `job.get` 查询，不保留 `generation.get`。
-
-协议同意通过写动作 `agreement.accept` 保存当前用户协议和隐私政策版本及同一接受时间。身份只从 CloudBase 上下文读取；管理员白名单在服务端转换为身份哈希后判定，任何客户端 OpenID、userId 或管理员标记均不可信。
-
-## 5. 数据与任务状态
-
-### 5.1 集合
-
-使用八个集合：
-
-- `users`
-- `invites`
-- `resumes`
-- `applications`
-- `ai_jobs`
-- `daily_usage`
-- `feedback`
-- `audit_logs`
-
-客户端不直接读写数据库。每次用户查询都附加服务端解析出的用户 ID；越权资源统一返回不存在。
-
-建议业务索引：
-
-- `resumes`: 用户 + 更新时间
-- `applications`: 用户 + 状态 + 更新时间
-- `ai_jobs`: 用户 + 状态 + 创建时间
-- `daily_usage`: 用户 + 北京日期唯一键
-- `feedback`: 用户 + 投递记录唯一业务键
-- `audit_logs`: 创建时间
-
-### 5.2 固定状态机
-
-任务状态固定为：
-
-> 排队 → OCR → 解析 → 生成 → 校验 → 成功／失败
-
-文本输入可跳过 OCR；简历解析仍可进入“等待用户确认”供用户确认简历事实，但岗位生成不得进入该状态。不适用的状态允许跳过，但不能倒退。每次转换执行前校验允许的来源状态并记录时间。
-
-worker 使用早于平台 45 秒硬上限的内部截止时间，尽量先写入失败终态并释放额度；若进程被平台直接终止，则由 `cleanup` 在任务创建 10 分钟后抢占、失败并释放。只有简历解析后的等待确认不预留生成额度，最多保留 24 小时。
-
-### 5.3 额度事务
-
-`daily_usage` 保存 `reserved`、`succeeded`、当日临时增加次数和日期。进入实际 AI 生成前在事务中预留，成功后转为成功次数，失败后释放。v8 生成/改写不执行模型重试；简历解析的内部备用尝试与任务派发幂等回放均不重复扣次。
-
-`admin.quotaAdjust` 仅修改当日临时增加次数，必须保存管理员、用户、调整值、原因和时间；北京时间次日自动失效。
-
-## 6. 文件解析、OCR 与脱敏
-
-### 6.1 文本型文件
-
-- DOCX 使用 Mammoth 的纯文本提取能力，不渲染其 HTML。
-- PDF 使用 unpdf 检查页数并提取文本。
-- 扫描型 PDF 无可用文字时提示用户改传每页截图，不在 MVP 引入 Chromium、Canvas、Puppeteer 或本地 OCR。
-- PDF/DOCX 单文件最大 10MB，PDF 最多 10 页，提取文本最大 20,000 个可见字符。
-
-### 6.2 图片
-
-- 简历图片最多 6 张；JD 截图最多 5 张。两类图片总计均最大 10MB，且使用独立常量和校验入口。
-- 服务端验证扩展名、MIME、Magic Bytes、大小与所有权。
-- 原图从临时存储只发送给腾讯 OCR；OCR 结束后尽快删除，异常残留最多 1 小时。
-- TokenHub 运行时不配置图像输入能力；YT-VITA 和 HY-Vision 不在主流程或备用流程中。
-
-### 6.3 脱敏
-
-OCR 或本地提取后的文本在进入 TokenHub 前遮盖手机号、邮箱、身份证号、其他证件号和详细地址。姓名、学校和公司可作为匹配事实保留。
-
-脱敏必须是确定性本地函数，并同时输出遮盖类型与位置供测试，不把原文写入日志。阶段 0 和发布前捕获完整外发链路，证明 TokenHub 请求不含受保护信息。
-
-## 7. 文本模型
-
-### 7.1 TokenHub 适配器
-
-使用 Node.js 原生 `fetch` 调用 TokenHub 的 OpenAI 兼容文本接口，不引入通用 AI SDK。模型由环境配置提供：
-
-| 能力 | 当前模型 | 失败策略 |
-|---|---|---|
-| JD 结构化与事实选择 | `hy3`，每任务最多一次 | 失败时释放额度并请用户重试，不切换写作模型 |
-| 开场白生成 | `hy3`，与 JD 结构化共用一次调用 | 草稿未通过事实、JD、格式或机械模板门时失败并释放额度，不自动纠错、不使用本地套话兜底 |
-| 开场白改写 | `hy3`，每任务最多一次 | 对用户最新正文改写并重新执行事实质量门；失败时不覆盖原文、不自动纠错 |
-
-准确 Base URL、Model ID、免费额度和后付费开关已由控制台与官方文档验证。0.11R 已锁定 720×1080、JPEG 质量 80 的 OCR 临时副本，并通过 30 组全量时延、准确率和零费用复验；0.12 的旧确定性候选方案仍作为历史基准。体验版现默认使用真实 CloudBase、腾讯 GeneralBasicOCR 和 TokenHub Hy3；`api` 与 `worker` 必须同时配置 `APPLYMATE_REAL_AI_ENABLED=true`，任一免费资源不足或付费兜底开启时失败关闭。OCR 使用独立 `APPLYMATE_OCR_SECRET_ID`、`APPLYMATE_OCR_SECRET_KEY`、区域和可选 SessionToken，绝不复用 CloudBase 运行时身份。业务层仍保留 `parseResume`、`generateGreeting`、`rewriteGreeting` 接口；简历解析首次输出无效时沿用同一 provider 和同一 `callModel` 入口，以纠错 Prompt 最多重试一次，不存在另配备用 provider。v8 首次生成和改写则分别只调用一次 Hy3。v8 首次生成由同一响应提供结构化 JD、`strong | partial | low` 匹配模式、`direct | transferable | background` 证据计划和 3–4 段正文；服务端验证来源、成熟度、数字、PII、岗位理解和跨 JD 隔离，失败即释放额度，不重试也不生成本地正文。
-
-适配器负责请求级截止、429/5xx 失败关闭、JSON 提取、Zod 校验，以及模型、耗时、Token、估算成本、Prompt 版本和内容哈希记录。岗位生成与改写保持单次调用并受 worker 总截止约束；该规则不取消简历解析对同一 provider 发起一次纠错 Prompt 重试的既有路径。生成结果必须保存实际 Hy3 模型与 Prompt 版本，用于投递快照与页面公示；真实模式缺少必要元数据时拒绝保存。不得保存原始 Prompt 或用户正文。
-
-### 7.2 不使用 AI 编排框架
-
-不使用 LangChain、LlamaIndex 或 Agent 框架。工作流是固定状态机，复杂性应由明确的服务方法、Schema 和任务状态承担，而不是交给自主 Agent。
-
-## 8. Schema、模型直出与技术安全检查
-
-使用 Zod 定义请求、用户偏好、简历事实、JD 字段、任务、`GreetingMatchPlan` 和生成结果。TypeScript 类型不能替代运行时校验。共享层 `shared/src/greeting-match-plan.ts` 是结构化匹配计划的唯一 Schema；部署目录的 `cloudfunctions/worker/deploy/greeting-calibration.js` 采用无第三方运行时依赖的 CommonJS 实现，供生产 worker 直接校验同一语义。该校准没有增加 npm 依赖或 AI 编排框架。
-
-求职偏好最多 500 个可见字符，按已确认句子或换行拆成来源类型为 `preference` 的事实。每项生成陈述保存自己的来源映射；来源可以是简历/偏好 `factId`、JD 字段 ID 或二者组合。
-
-首次生成的运行时规则：
-
-- Prompt 继续以 350–450 个可见字符、3–4 段、自然“您好”开头和岗位匹配策略作为质量目标，但这些目标不再作为首次正文硬拒绝条件。
-- 模型返回可读非空正文便直接展示；事实 ID、evidence、机构、数字、长度和段落均不阻断。
-- 正文出现邮箱、11 位中国大陆手机号或未替换的敏感遮盖占位符时失败关闭；空或无法解析的模型响应同样失败。
-- 首次生成只调用模型一次，不重试，也不使用本地机械正文兜底。
-
-手动编辑仍只产生非阻断警告。历史 AI 改写兼容路径保留自身质量门，但体验版结果页不提供改写入口；本节的模型直出决定仅适用于首次生成。
-
-## 9. 数据生命周期与安全
-
-- 已确认简历立即删除原文件，仅保留结构化事实。
-- 投递记录保存当时引用的脱敏事实和 JD 快照；删除简历不删除历史。
-- 删除账号二次确认后立即禁用；`cleanup` 在 24 小时内删除所有可关联数据和事实快照。
-- 只允许保留无法重新关联用户的匿名聚合指标。
-- 协议保存类型、版本和同意时间；实质变化后阻止业务操作直到重新同意。
-- 邀请码只保存哈希；管理员由服务端 OpenID 白名单判定。
-- 邀请码失败限制直接保存在用户记录中，不增加集合：每个可信身份 15 分钟内 5 次失败后锁定 15 分钟，成功清除；不可用原因共用同一错误文案。
-- 产品分析不接入 PostHog 等第三方 SDK。只允许 `app_opened` 和剪贴板成功后的 `greeting_copied`，用户记录保存最小参与时间；五项指标由现有用户、简历、任务和反馈数据确定性计算。
-- AI 与审计日志最多保存 180 天，只保存元数据和内容哈希，不保存原始文件、截图、简历、JD、Prompt 或联系方式；账号删除时删除或不可逆匿名化用户关联。
-
-隐私政策必须明确披露 CloudBase 临时存储、腾讯 OCR 与 TokenHub 的处理目的和数据范围。
-
-## 10. 测试技术栈
-
-使用 Vitest 作为唯一单元与契约测试框架，不并行引入 Jest。测试层次：
-
-1. **单元测试：** 可见字符计数、敏感信息遮盖、factId、逐项证据、状态机、额度、幂等、指标/成本计算和清理。
-2. **契约测试：** OCR/模型超时、429、无效 JSON、截断、免费额度耗尽、简历解析同 provider 纠错 Prompt 重试，以及 v8 生成/改写无第二次调用；旧生成纠错分支只作为历史兼容负向回归，不是当前执行路径。
-3. **阶段 0 质量评测：** 30 组由产品负责人确认的脱敏样本，按字段级准确率、合规率、虚构、耗时和全部资源成本计分；计算器在不是恰好 30 组或存在未确认样本时拒绝正式结论。
-4. **云端集成测试：** 任务重复触发、45 秒上限、10 分钟回收、额度释放、跨用户隔离和账号删除。
-5. **外发链路测试：** 捕获请求，证明原图只到 OCR，TokenHub 文本无手机号、邮箱、证件号和详细地址。
-6. **真机验收：** iOS、Android、弱网、前后台恢复、文件选择、压缩与复制标识。
-
-30 组评测门槛为关键字段准确率 ≥90%、文案合规率 ≥95%、零虚构、中位耗时 ≤10 秒，且实际账单费用为 0 元。未通过不得进入完整开发。
-
-## 11. 构建、版本与环境
-
-- 使用 npm 与 `package-lock.json`；直接依赖锁定确定版本。
-- 小程序 TypeScript 由微信开发者工具编译；云函数使用 TypeScript 编译器。
-- 本地脚本提供格式、fixture 隔离、敏感信息、类型、全部测试和五模块构建检查；敏感扫描拒绝真实密钥、OpenID、未声明个人信息、原文生产日志和生产导出。
-- 当前没有 Git 远程时只建立本地完整检查；配置 GitHub 后再添加 CI。
-- 既有体验环境、文档数据库、腾讯 OCR 与 TokenHub 已在独立授权下准备并保持零付费；v8 真实模型复评和 worker 部署尚未开始。任何新增、替换或重新配置的外部资源仍须逐项获得产品负责人授权。
-- 阶段 0 先建立一个严格零付费的开发/评测环境；生产环境仅在发布准备且确认仍为零付费时创建。
-
-## 12. 最小依赖
-
-运行依赖保持最少：
-
-- `@cloudbase/js-sdk@3.7.1` Node 入口（未来 CloudBase 适配器；当前门禁函数零依赖）
-- Zod
-- Mammoth
-- unpdf
-- `sharp@0.35.3`（Apache-2.0）：只在 OCR URL 失败或图片超限时由 Node 20 worker 生成 720×1080 JPEG 临时副本；普通截图不加载该原生模块路径。0.34.3 因 libvips 高危公告未部署，0.35.3 生产依赖审计为 0 漏洞
-- 腾讯云 OCR 官方 Node.js SDK 或经过测试的最小签名客户端（二者在阶段 0 选一，不同时保留）
-
-开发依赖仅包含 TypeScript、微信小程序 API 类型、Vitest 和 CloudBase CLI。除非出现已量化且记录在 [`architecture.md`](./architecture.md) 的问题，不增加框架或基础设施。
-
-## 13. 明确不采用
-
-| 不采用 | 原因 |
-|---|---|
-| YT-VITA / HY-Vision 运行时流程 | 原图只允许发送给腾讯 OCR，TokenHub 只接收脱敏文本 |
-| Taro / uni-app / React / Vue | 无多端目标，增加构建与兼容层 |
-| Vercel / 独立服务器 | 增加国内部署、身份、域名和运维问题 |
-| FastAPI / Python | 引入第二语言与独立服务，MVP 无必要 |
-| MySQL / PostgreSQL / ORM | 当前文档数据和 CloudBase 事务已足够 |
-| Express / NestJS | 普通云函数 action router 足够 |
-| LangChain / Agent 框架 | 只有固定流程和三个模型动作 |
-| Redis / 外部队列 | 30–100 人内测使用任务集合、事务和异步云函数即可 |
-| 本地 OCR / PDF 渲染栈 | 扫描 PDF 可改传截图；`sharp` 只承担异常图片压缩，不做 OCR 或 PDF 渲染 |
-| Sentry / PostHog | 减少第三方数据外发，首版使用 CloudBase 元数据日志和自有反馈 |
-
-## 14. 架构摘要
-
-```text
-微信原生小程序
-  → api：鉴权、验证、创建/查询任务
-  → worker：腾讯 OCR → 本地脱敏 → TokenHub 文本模型 → 事实质量门
-  → CloudBase：文档数据库 + 临时存储
-  → cleanup：超时回收、文件清理、账号物理删除
-```
-
-这是 MVP 的最终技术基线。它以三个小型云函数替代长同步请求，以腾讯 OCR 隔离原图，以逐项证据和确定性规则限制虚构，并把“实际费用必须为零”作为不可自动降级的停止条件。
+仓库锁文件是本地可复现依据。CloudBase 套餐价格、备案条件、OCR/TokenHub 额度与官方账单均属于会变化的外部事实，不能写死为“已确认”；在购买或上线前必须从控制台和官方文档重新核对。

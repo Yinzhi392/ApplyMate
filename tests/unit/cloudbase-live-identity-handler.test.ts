@@ -7,6 +7,7 @@ const { createLiveApiHandler, hashBootstrapToken, hashTrustedIdentity, stripClie
   createLiveApiHandler(input: {
     database: { collection(name: string): unknown };
     dispatchReliabilityProbe?(jobId: string): Promise<void>;
+    publicWebV3?: boolean;
     readBootstrapTokenHash?(): string | undefined;
     readTrustedIdentity?(): Promise<{ value: string; namespace: string } | null>;
     readTrustedOpenId?(): string | undefined;
@@ -139,8 +140,39 @@ describe("CloudBase live identity and invite handler", () => {
       .not.toBe(hashTrustedIdentity("same", "applymate-openid-v1"));
     expect(stripClientIdentity({
       userId: "forged-envelope",
-      payload: { uid: "forged-payload", nested: { OPENID: "forged", keep: true } },
+      payload: {
+        uid: "forged-payload",
+        nested: { OPENID: "forged", EmailAddress: "forged@example.com", OWNERID: "forged", keep: true },
+      },
     })).toEqual({ payload: { nested: { keep: true } } });
+  });
+
+  it("accepts only a trusted email UID when public Web v3 mode is enabled", async () => {
+    const anonymousStore = createDatabase();
+    const anonymous = createLiveApiHandler({
+      database: anonymousStore.database,
+      publicWebV3: true,
+      readTrustedIdentity: async () => ({ value: "anonymous-a", namespace: "web-anonymous-uid-v1" }),
+      now: () => new Date("2026-08-23T12:00:00.000Z"),
+    });
+    await expect(anonymous({ action: "auth.status", payload: {} })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "UNAUTHENTICATED" },
+    });
+
+    const emailStore = createDatabase();
+    const email = createLiveApiHandler({
+      database: emailStore.database,
+      publicWebV3: true,
+      readTrustedIdentity: async () => ({ value: "email-a", namespace: "web-email-uid-v1" }),
+      now: () => new Date("2026-08-23T12:00:00.000Z"),
+    });
+    await expect(email({ action: "auth.status", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        serviceAccess: { phase: "read_only", aiAvailability: "resource_paused" },
+      },
+    });
   });
 
   it("initializes an ordinary event cloud function without cloud-hosting context", async () => {

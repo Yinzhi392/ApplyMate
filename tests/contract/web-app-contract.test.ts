@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -11,15 +11,17 @@ describe("mobile Web application contract", () => {
     const app = source("web/src/app/App.tsx");
     const router = source("web/src/app/AppRouter.tsx");
     for (const route of [
-      "/login", "/", "/resumes", "/resumes/new", "/resumes/:id/review",
-      "/preferences", "/jobs/new", "/jobs/:jobId", "/results/:applicationId",
-      "/records", "/records/:id", "/account", "/legal", "/admin",
+      "/", "/login", "/legal", "/support", "/app", "/app/resumes",
+      "/app/resumes/new", "/app/resumes/:id/review", "/app/preferences",
+      "/app/jobs/new", "/app/jobs/:jobId", "/app/results/:applicationId",
+      "/app/records", "/app/records/:id", "/app/account", "/app/admin",
     ]) {
       expect(router).toContain(`path="${route}"`);
     }
-    expect(app).toContain("HashRouter");
-    expect(app).not.toContain("BrowserRouter");
-    expect(source("memory-bank/design-document.md")).toContain("Legacy");
+    expect(app).toContain("BrowserRouter");
+    expect(app).not.toContain("HashRouter");
+    expect(router).toContain("lazy(");
+    expect(source("memory-bank/design-document.md")).toContain("legacy-miniprogram-final");
   });
 
   it("keeps the legal link independent from the agreement checkbox", () => {
@@ -40,25 +42,27 @@ describe("mobile Web application contract", () => {
     expect(frame).toContain("min-height: 44px");
   });
 
-  it("caches only the public shell and never API or user content", () => {
-    const worker = source("web/public/sw.js");
-    expect(worker).toContain("SHELL_ASSETS");
-    expect(worker).toContain("/assets/");
-    expect(worker).not.toMatch(/SHELL_ASSETS\s*=\s*\[[^\]]*["']\/["']/su);
-    expect(worker).not.toContain('caches.match("/")');
-    expect(worker).not.toMatch(/callFunction|temporary\/web|applicationId|greetingBody|localStorage/u);
+  it("removes the PWA shell and unregisters old workers without registering a new one", () => {
+    const main = source("web/src/main.tsx");
+    const html = source("web/index.html");
+    expect(existsSync("web/public/sw.js")).toBe(false);
+    expect(existsSync("web/public/manifest.webmanifest")).toBe(false);
+    expect(main).toContain("registration.unregister()");
+    expect(main).not.toContain("serviceWorker.register");
+    expect(html).not.toContain("manifest.webmanifest");
   });
 
   it("starts OCR and generation only after the user submits", () => {
     const jobs = source("web/src/features/jobs/JobPages.tsx");
     expect(jobs).toContain("uploadPromise.current");
+    expect(jobs).toContain("prepareAndUploadJdImages");
     expect(jobs).toContain('callApi<{ jobId: string }>("generation.create"');
     expect(jobs.indexOf("generation.create")).toBeGreaterThan(jobs.indexOf("async function submit"));
-    expect(jobs).not.toContain("compressImage");
+    expect(source("web/src/lib/jd-image-preparation.ts")).toContain("new Worker");
   });
 
   it("binds temporary uploads to the trusted internal user path", () => {
-    const uploads = source("web/src/lib/cloudbase.ts");
+    const uploads = source("web/src/lib/temporary-upload.ts");
     const api = source("cloudfunctions/api/deploy/experience-api.js");
     expect(uploads).toContain("temporary/web/${safeOwnerId(ownerId)}");
     expect(api).toContain("/temporary/web/${user.userId}/");
@@ -68,7 +72,7 @@ describe("mobile Web application contract", () => {
   it("uses one-time email codes and does not expose invitations in the Web login", () => {
     const login = source("web/src/features/auth/LoginPage.tsx");
     const featureStyles = source("web/src/features/Feature.module.css");
-    const cloudbase = source("web/src/lib/cloudbase.ts");
+    const cloudbase = source("web/src/lib/session.ts");
     expect(login).toContain("requestEmailVerification");
     expect(login).toContain("signInWithEmailCode");
     expect(login).not.toMatch(/邀请码|invite\.activate/u);
@@ -88,15 +92,44 @@ describe("mobile Web application contract", () => {
     expect(result).not.toMatch(/omittedRequirements|匹配依据|内部校验/u);
     expect(result).toContain("继续投下一个岗位");
     expect(result).toContain("AI生成内容，请核对真实性");
+    expect(result).not.toContain("generation.rewrite");
+    expect(result).not.toContain("AI 改写");
   });
 
-  it("keeps administrator controls behind the trusted server role", () => {
+  it("uses accessible application dialogs instead of native browser prompts", () => {
+    const webSources = [
+      source("web/src/features/resumes/ResumePages.tsx"),
+      source("web/src/features/records/RecordPages.tsx"),
+      source("web/src/features/account/AccountPages.tsx"),
+    ].join("\n");
+    expect(webSources).not.toMatch(/window\.(?:prompt|confirm)/u);
+    expect(webSources).toContain("ConfirmDialog");
+    expect(webSources).toContain("ActionSheet");
+    expect(source("web/src/ui/Dialog.tsx")).toContain("showModal()");
+  });
+
+  it("splits session, uploads and business API behind separate modules", () => {
+    expect(source("web/src/lib/session.ts")).toContain("requestEmailVerification");
+    expect(source("web/src/lib/temporary-upload.ts")).toContain("TemporaryUploadPort");
+    expect(source("web/src/lib/api.ts")).toContain("callApi");
+    expect(source("web/src/lib/cloudbase.ts")).not.toContain("signInWithOtp");
+  });
+
+  it("keeps the public administrator page role-gated and read-only", () => {
     const account = source("web/src/features/account/AccountPages.tsx");
     expect(account).toContain("auth.status?.isAdmin === true");
     expect(account).toContain("当前邮箱身份不是管理员");
     expect(account).not.toMatch(/创建一次性邀请码|admin\.inviteCreate/u);
-    expect(account).toContain("启用用户");
-    expect(account).toContain("停用用户");
-    expect(account).toContain("增加 5 次");
+    expect(account).not.toMatch(/admin\.userSetEnabled|admin\.quotaAdjust/u);
+    expect(account).toContain("没有修改 100 元预算上限或用户额度的入口");
+  });
+
+  it("has real-browser mobile checks for the approved viewport and routing gates", () => {
+    const browserTest = source("tests/browser/mobile-web.spec.ts");
+    expect(browserTest).toContain("width: 320");
+    expect(browserTest).toContain("width: 390");
+    expect(browserTest).toContain("width: 430");
+    expect(browserTest).toContain("getRegistrations");
+    expect(browserTest).toContain('page.goto("/app/records")');
   });
 });

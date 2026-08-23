@@ -3,6 +3,128 @@
   gap: 28px;
 }
 
+.landing {
+  padding-bottom: 16px;
+}
+
+.publicHeader {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.publicBrand {
+  color: var(--jade);
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.heroCopy {
+  display: grid;
+  gap: 18px;
+  padding: clamp(24px, 8dvh, 72px) 0 14px;
+}
+
+.heroCopy h1 {
+  max-width: 420px;
+  margin: 0;
+  font-size: clamp(42px, 13vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -0.06em;
+}
+
+.heroCopy > p:not(.eyebrowText) {
+  max-width: 400px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.eyebrowText {
+  margin: 0;
+  color: var(--jade);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+
+.heroButtons {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.textButton {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--jade-dark);
+  font-weight: 750;
+  text-align: center;
+}
+
+.publicSteps {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.publicStep {
+  display: flex;
+  gap: 14px;
+}
+
+.publicStep > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--mist);
+  color: var(--jade-dark);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.publicStep strong {
+  display: block;
+  margin-top: 1px;
+}
+
+.publicStep p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.publicGrid {
+  display: grid;
+  gap: 18px;
+}
+
+.publicFooter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 8px 2px 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.publicFooter a {
+  color: var(--jade-dark);
+  font-weight: 700;
+}
+
 .compactStack {
   display: grid;
   gap: 14px;

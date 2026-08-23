@@ -3,7 +3,7 @@
 const CloudBase = require("@cloudbase/js-sdk");
 const { createReliabilityCleanup } = require("./reliability-cleanup");
 const { createSyntheticAccountDeletion } = require("./synthetic-account-deletion");
-const { createWebMaintenanceCleanup } = require("./web-maintenance-cleanup");
+const { createRetirementInventory, createWebMaintenanceCleanup } = require("./web-maintenance-cleanup");
 
 function createCloudBaseApp(context) {
   const cloudbaseContext = CloudBase.getCloudbaseContext(context);
@@ -26,6 +26,20 @@ exports.main = async (event, context) => {
     };
   }
   if (!event || event.reliabilityProbeCleanup !== true || Object.keys(event).length !== 1) {
+    if (event && event.retirementDelete === true) {
+      return {
+        ok: false,
+        error: {
+          code: "DESTRUCTIVE_AUTHORIZATION_REQUIRED",
+          message: "Production-wide deletion requires a separate authorization and checked inventory.",
+          retryable: false,
+        },
+      };
+    }
+    if (event && event.retirementInventory === true && Object.keys(event).length === 1) {
+      const app = createCloudBaseApp(context);
+      return createRetirementInventory({ database: app.database() })(event);
+    }
     if (event && event.webMaintenanceCleanup === true && Object.keys(event).length === 1) {
       const app = createCloudBaseApp(context);
       return createWebMaintenanceCleanup({ database: app.database() })(event);

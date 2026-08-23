@@ -12,9 +12,6 @@
     },
     {
       "path": "./cloudfunctions/cleanup"
-    },
-    {
-      "path": "./miniprogram"
     }
   ]
 }

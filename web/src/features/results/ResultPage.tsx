@@ -62,16 +62,6 @@ export function ResultPage(): React.JSX.Element {
       setError("复制失败，请长按正文手动复制。");
     }
   }
-  async function rewrite(): Promise<void> {
-    if (!(await save())) return;
-    setBusy(true);
-    setError("");
-    try {
-      const created = await callApi<{ jobId: string }>("generation.rewrite", { applicationId, mode: "rephrase" }, createRequestId());
-      navigate(`/jobs/${created.jobId}?kind=generation`, { replace: true });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "改写失败，请稍后重试。"); }
-    finally { setBusy(false); }
-  }
   async function leave(to: string): Promise<void> {
     if (await save()) navigate(to, { replace: true });
   }
@@ -87,13 +77,13 @@ export function ResultPage(): React.JSX.Element {
       </Surface>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
       <PrimaryButton onClick={() => void copy()}>{copied ? "已复制" : "复制开场白"}</PrimaryButton>
-      <div className={styles.buttonRow}><SecondaryButton disabled={busy} onClick={() => void save()}>{body === savedBody ? "已保存" : "保存修改"}</SecondaryButton><SecondaryButton disabled={busy} onClick={() => void rewrite()}>AI 改写</SecondaryButton></div>
+      <SecondaryButton disabled={busy} onClick={() => void save()}>{body === savedBody ? "已保存" : "保存修改"}</SecondaryButton>
       <Surface>
         <div className={styles.compactStack}>
           <h2 className={styles.sectionTitle}>准备投下一个岗位？</h2>
           <p className={styles.intro}>当前修改会先保存，再进入一份全新的岗位草稿。</p>
-          <PrimaryButton disabled={busy} onClick={() => void leave("/jobs/new")}>继续投下一个岗位</PrimaryButton>
-          <SecondaryButton disabled={busy} onClick={() => void leave("/")}>返回首页</SecondaryButton>
+          <PrimaryButton disabled={busy} onClick={() => void leave("/app/jobs/new")}>继续投下一个岗位</PrimaryButton>
+          <SecondaryButton disabled={busy} onClick={() => void leave("/app")}>返回首页</SecondaryButton>
         </div>
       </Surface>
     </div>

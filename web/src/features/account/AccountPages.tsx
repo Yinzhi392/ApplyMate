@@ -6,7 +6,11 @@ import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
 import { renderWebLegalText, WEB_CONTACT_EMAIL, WEB_EFFECTIVE_DATE, WEB_LEGAL_DOCUMENTS } from "../../lib/legal-documents";
 import { createRequestId } from "../../lib/request-id";
+import { signOut } from "../../lib/session";
+import { downloadUserExport } from "../../lib/user-export";
 import { ErrorNotice, Header, PrimaryButton, SecondaryButton, Surface } from "../../ui/ui";
+import { ConfirmDialog } from "../../ui/Dialog";
+import { ServiceBanner } from "../../ui/ServiceBanner";
 import styles from "../Feature.module.css";
 
 interface UserView {
@@ -19,6 +23,7 @@ interface UserView {
 }
 
 export function PreferencesPage(): React.JSX.Element {
+  const auth = useAuth();
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["user.get"], queryFn: () => callApi<UserView>("user.get", {}) });
   const [draft, setDraft] = useState<string | undefined>();
@@ -28,13 +33,16 @@ export function PreferencesPage(): React.JSX.Element {
     onSuccess: async () => { setMessage("偏好已保存"); await client.invalidateQueries({ queryKey: ["user.get"] }); },
     onError: (cause) => setMessage(cause instanceof Error ? cause.message : "保存失败。"),
   });
+  const writable = auth.status?.serviceAccess?.phase !== "read_only" &&
+    auth.status?.serviceAccess?.phase !== "retired";
   return (
     <div className={styles.stack}>
       <Header eyebrow="长期生效" title="求职偏好" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
       <p className={styles.intro}>例如远程、到岗时间、每周天数和实习周期。最多 500 字，后续每个岗位都会参考。</p>
       <Surface><label className={styles.field}><span>偏好内容</span><textarea className={styles.textarea} maxLength={500} onChange={(event) => { setDraft(event.target.value); setMessage(""); }} placeholder="例如：目前人在海外，只考虑远程；每周可到岗 3–4 天，可连续实习 3–6 个月。" value={draft ?? query.data?.user.preferenceText ?? ""} /></label></Surface>
       {message === "" ? null : <p className={styles.intro}>{message}</p>}
-      <PrimaryButton disabled={mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中…" : "保存偏好"}</PrimaryButton>
+      <PrimaryButton disabled={!writable || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中…" : writable ? "保存偏好" : "只读期不可修改"}</PrimaryButton>
     </div>
   );
 }
@@ -44,33 +52,84 @@ export function AccountPage(): React.JSX.Element {
   const auth = useAuth();
   const query = useQuery({ queryKey: ["user.get"], queryFn: () => callApi<UserView>("user.get", {}) });
   const [error, setError] = useState("");
-  async function deleteAccount(): Promise<void> {
-    if (!window.confirm("账号删除不可撤销，当前浏览器之后也无法恢复数据。继续吗？")) return;
+  const [deleteStep, setDeleteStep] = useState<"first" | "final" | null>(null);
+  const [deleteToken, setDeleteToken] = useState("");
+  const [exporting, setExporting] = useState(false);
+  async function requestAccountDeletion(): Promise<void> {
     try {
       const requested = await callApi<{ confirmationToken: string }>("user.delete", { operation: "request" }, createRequestId());
-      if (!window.confirm("最后确认：将在 24 小时内删除全部可关联数据，仅保留匿名聚合指标。")) return;
-      await callApi("user.delete", { operation: "confirm", confirmationToken: requested.confirmationToken }, createRequestId());
+      setDeleteToken(requested.confirmationToken);
+      setDeleteStep("final");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "删除申请失败。") }
+  }
+  async function confirmAccountDeletion(): Promise<void> {
+    try {
+      await callApi("user.delete", { operation: "confirm", confirmationToken: deleteToken }, createRequestId());
+      setDeleteStep(null);
       await auth.refresh();
       navigate("/login", { replace: true });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "删除申请失败。") }
   }
+  async function exportData(): Promise<void> {
+    setExporting(true);
+    setError("");
+    try {
+      await downloadUserExport();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "数据导出失败。");
+    } finally {
+      setExporting(false);
+    }
+  }
+  async function leaveAccount(): Promise<void> {
+    try {
+      await signOut();
+      await auth.refresh();
+      navigate("/", { replace: true });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "退出失败，请重试。");
+    }
+  }
   return (
     <div className={styles.stack}>
       <Header eyebrow="当前邮箱账号" title="我的 👋" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
       <p className={styles.intro}>资料、偏好与数据权利都在这里。</p>
       <section><h2 className={styles.sectionTitle}>求职资料</h2><Surface><div className={styles.list}>
-        <Link className={styles.listRow} to="/resumes"><span className={styles.icon}>📄</span><div className={styles.rowMain}><strong>简历管理</strong><span>核对事实、设置默认简历</span></div><span className={styles.rowAction}>管理 →</span></Link>
-        <Link className={styles.listRow} to="/preferences"><span className={styles.icon}>🎯</span><div className={styles.rowMain}><strong>求职偏好</strong><span>{query.data?.user.preferenceText || "还未补充长期偏好"}</span></div><span className={styles.rowAction}>编辑 →</span></Link>
+        <Link className={styles.listRow} to="/app/resumes"><span className={styles.icon}>📄</span><div className={styles.rowMain}><strong>简历管理</strong><span>核对事实、设置默认简历</span></div><span className={styles.rowAction}>管理 →</span></Link>
+        <Link className={styles.listRow} to="/app/preferences"><span className={styles.icon}>🎯</span><div className={styles.rowMain}><strong>求职偏好</strong><span>{query.data?.user.preferenceText || "还未补充长期偏好"}</span></div><span className={styles.rowAction}>编辑 →</span></Link>
       </div></Surface></section>
       <section><h2 className={styles.sectionTitle}>使用情况</h2><Surface><div className={styles.list}>
         <div className={styles.listRow}><span className={styles.icon}>⚡</span><div className={styles.rowMain}><strong>今日生成额度</strong><span>北京时间每日零点重置</span></div><span className={styles.rowAction}>剩余 {query.data?.user.remainingQuota ?? "—"} 次</span></div>
       </div></Surface></section>
       <section><h2 className={styles.sectionTitle}>隐私与账号</h2><Surface><div className={styles.list}>
         <Link className={styles.listRow} to="/legal"><span className={styles.icon}>🔒</span><div className={styles.rowMain}><strong>协议与隐私</strong><span>用户协议、隐私政策和 AI 服务说明</span></div><span className={styles.rowAction}>查看 →</span></Link>
-        {query.data?.user.isAdmin ? <Link className={styles.listRow} to="/admin"><span className={styles.icon}>🧭</span><div className={styles.rowMain}><strong>管理员</strong><span>用户、额度与测试指标</span></div><span className={styles.rowAction}>进入 →</span></Link> : null}
-        <button className={styles.listRow} onClick={() => void deleteAccount()} type="button"><span className={styles.icon}>🗑️</span><div className={styles.rowMain}><strong className={styles.dangerText}>删除账号</strong><span>立即停用，并在 24 小时内删除可关联数据</span></div><span className={`${styles.rowAction} ${styles.dangerText}`}>删除 →</span></button>
+        {query.data?.user.isAdmin ? <Link className={styles.listRow} to="/app/admin"><span className={styles.icon}>🧭</span><div className={styles.rowMain}><strong>管理员</strong><span>用户、预算与服务阶段</span></div><span className={styles.rowAction}>进入 →</span></Link> : null}
+        <button className={styles.listRow} disabled={exporting} onClick={() => void exportData()} type="button"><span className={styles.icon}>⇩</span><div className={styles.rowMain}><strong>导出我的数据</strong><span>在当前浏览器组成版本化 JSON，不写回云存储</span></div><span className={styles.rowAction}>{exporting ? "准备中…" : "下载 →"}</span></button>
+        <button className={styles.listRow} onClick={() => void leaveAccount()} type="button"><span className={styles.icon}>↪</span><div className={styles.rowMain}><strong>退出登录</strong><span>清除当前浏览器的 CloudBase 会话</span></div><span className={styles.rowAction}>退出 →</span></button>
+        <button className={styles.listRow} onClick={() => setDeleteStep("first")} type="button"><span className={styles.icon}>🗑️</span><div className={styles.rowMain}><strong className={styles.dangerText}>删除账号</strong><span>立即停用，并在 24 小时内删除可关联数据</span></div><span className={`${styles.rowAction} ${styles.dangerText}`}>删除 →</span></button>
       </div></Surface></section>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
+      {deleteStep === "first" ? (
+        <ConfirmDialog
+          confirmLabel="继续"
+          destructive
+          detail="账号删除不可撤销，当前浏览器之后也无法恢复数据。下一步还会再次确认。"
+          onCancel={() => setDeleteStep(null)}
+          onConfirm={() => void requestAccountDeletion()}
+          title="申请删除账号？"
+        />
+      ) : null}
+      {deleteStep === "final" ? (
+        <ConfirmDialog
+          confirmLabel="最终确认删除"
+          destructive
+          detail="账号会立即停用，并在 24 小时内删除全部可关联数据，仅保留无法回连个人的匿名聚合指标。"
+          onCancel={() => setDeleteStep(null)}
+          onConfirm={() => void confirmAccountDeletion()}
+          title="最后确认"
+        />
+      ) : null}
     </div>
   );
 }
@@ -85,7 +144,7 @@ export function LegalPage(): React.JSX.Element {
   const acceptedAt = user.data?.user.agreements.userAgreement?.acceptedAt;
   return (
     <div className={styles.stack}>
-      <Header eyebrow="小范围测试版" title="协议与隐私" />
+      <Header eyebrow="正式公开站" title="协议与隐私" />
       <p className={styles.intro}>生效日期：{WEB_EFFECTIVE_DATE} · 联系邮箱：{WEB_CONTACT_EMAIL}</p>
       {WEB_LEGAL_DOCUMENTS.map((document) => (
         <Surface key={document.title}>
@@ -116,38 +175,22 @@ export function AdminPage(): React.JSX.Element {
     queryKey: ["admin.stats"],
     queryFn: () => callApi<AdminStats>("admin.stats", {}),
   });
-  const [error, setError] = useState("");
-  const [targetUserId, setTargetUserId] = useState("");
-  const [message, setMessage] = useState("");
-  async function setUserEnabled(enabled: boolean): Promise<void> {
-    try {
-      await callApi(
-        "admin.userSetEnabled",
-        { targetUserId, enabled, reason: "Web 邮箱测试管理员操作" },
-        createRequestId(),
-      );
-      setError("");
-      setMessage(enabled ? "用户已启用" : "用户已停用");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "操作失败。");
-    }
-  }
   if (auth.status?.isAdmin !== true) {
     return (
       <div className={styles.stack}>
         <Header eyebrow="权限受限" title="管理员" />
         <ErrorNotice>当前邮箱身份不是管理员，无法访问此页面。</ErrorNotice>
-        <Link className={styles.inlineLink} to="/">返回首页</Link>
+        <Link className={styles.inlineLink} to="/app">返回首页</Link>
       </div>
     );
   }
   return (
     <div className={styles.stack}>
-      <Header eyebrow="隐藏入口" title="管理员" />
-      <Surface><div className={styles.compactStack}><h2 className={styles.sectionTitle}>用户操作</h2><label className={styles.field}><span>内部 userId</span><input className={styles.input} onChange={(event) => setTargetUserId(event.target.value.trim())} placeholder="user_…" value={targetUserId} /></label><div className={styles.buttonRow}><SecondaryButton onClick={() => void setUserEnabled(true)}>启用用户</SecondaryButton><SecondaryButton onClick={() => void setUserEnabled(false)}>停用用户</SecondaryButton><SecondaryButton onClick={() => void callApi("admin.quotaAdjust", { targetUserId, increase: 5, reason: "Web 邮箱测试临时额度" }, createRequestId()).then(() => setMessage("今日临时增加 5 次")).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "操作失败。"))}>增加 5 次</SecondaryButton></div></div></Surface>
-      <Surface><h2 className={styles.sectionTitle}>测试指标</h2><pre className={styles.legalBody}>{query.isLoading ? "加载中…" : JSON.stringify(query.data ?? {}, null, 2)}</pre></Surface>
-      {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
-      {message === "" ? null : <p className={styles.intro}>{message}</p>}
+      <Header eyebrow="只读运营入口" title="管理员" />
+      <ServiceBanner access={auth.status?.serviceAccess} />
+      <p className={styles.intro}>展示用户、质量、固定成本、预留、结算、官方账单快照和服务阶段。正式网页没有修改 100 元预算上限或用户额度的入口。</p>
+      <Surface><h2 className={styles.sectionTitle}>运营指标</h2><pre className={styles.legalBody}>{query.isLoading ? "加载中…" : JSON.stringify(query.data ?? {}, null, 2)}</pre></Surface>
+      {query.error === null ? null : <ErrorNotice>{query.error.message}</ErrorNotice>}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 
 import { AuthProvider } from "./AuthProvider";
 import { AppRouter } from "./AppRouter";
@@ -14,11 +14,11 @@ const queryClient = new QueryClient({
 export function App(): React.JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
-      <HashRouter>
+      <BrowserRouter>
         <AuthProvider>
           <AppRouter />
         </AuthProvider>
-      </HashRouter>
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }
