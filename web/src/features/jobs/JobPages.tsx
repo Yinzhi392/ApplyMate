@@ -32,6 +32,21 @@ export function JobCreatePage(): React.JSX.Element {
   const resumes = useQuery({ queryKey: ["resume.list"], queryFn: () => callApi<{ resumes: ResumeListItem[] }>("resume.list", {}) });
   const defaultResume = resumes.data?.resumes.find((resume) => resume.isDefault && resume.status === "confirmed");
 
+  function startUpload(nextFiles: File[]): Promise<PreparedJdUpload[]> | null {
+    const nextUpload = nextFiles.length === 0
+      ? null
+      : prepareAndUploadJdImages(nextFiles, auth.status?.userId ?? "", cloudbaseTemporaryUploadPort, 3);
+    uploadPromise.current = nextUpload;
+    if (nextUpload !== null) {
+      void nextUpload.catch((cause: unknown) => {
+        if (uploadPromise.current !== nextUpload) return;
+        uploadPromise.current = null;
+        setError(cause instanceof Error ? cause.message : "图片上传失败，请重新选择图片。");
+      });
+    }
+    return nextUpload;
+  }
+
   function chooseFiles(nextFiles: File[]): void {
     const limited = nextFiles.slice(0, 5);
     const previousUpload = uploadPromise.current;
@@ -42,9 +57,7 @@ export function JobCreatePage(): React.JSX.Element {
     }
     setFiles(limited);
     setError(nextFiles.length > 5 ? "最多添加 5 张岗位截图。" : "");
-    uploadPromise.current = limited.length === 0
-      ? null
-      : prepareAndUploadJdImages(limited, auth.status?.userId ?? "", cloudbaseTemporaryUploadPort, 3);
+    startUpload(limited);
   }
   async function submit(): Promise<void> {
     if (defaultResume === undefined) {
@@ -54,9 +67,10 @@ export function JobCreatePage(): React.JSX.Element {
     setBusy(true);
     setError("");
     try {
-      const uploads = mode === "images"
-        ? await (uploadPromise.current ?? Promise.resolve([]))
-        : [];
+      let uploads: PreparedJdUpload[] = [];
+      if (mode === "images") {
+        uploads = await (uploadPromise.current ?? startUpload(files) ?? Promise.resolve([]));
+      }
       const payload = mode === "text"
         ? { resumeId: defaultResume.resumeId, inputType: "text" as const, text }
         : {

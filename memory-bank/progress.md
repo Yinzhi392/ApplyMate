@@ -25,6 +25,7 @@
 - BrowserRouter：公开 `/`、`/login`、`/legal`、`/support`；业务 `/app/*`。
 - 新增产品首页、支持页、服务阶段 banner 和 active/read_only/retired 路由/交互门。
 - CloudBase 认证、临时上传、API 调用拆为三个 seam，CloudBase SDK 延迟加载。
+- 修复 Web 存储上传把文件名字符串误传为 `filePath` 的问题；现在按 CloudBase Web 契约传入真实 `File`，失败会立即显示可理解错误并允许重试。
 - 路由和 PDF 解析按需加载，生产 source map 关闭；静态首屏 JS gzip 200KB 自动门禁。
 - 删除 manifest、Service Worker、PWA 安装和 AI 改写。
 - 新增退出登录、版本化数据导出、本地 JSON 下载。
@@ -60,8 +61,8 @@
 - `npm run typecheck`：通过。
 - `npm run web:typecheck`：通过。
 - `npm run check`：完整通过。
-- Vitest：115 个当前主线测试文件、569 项测试通过（Legacy 小程序测试退出主线后计数降低）。
-- Web build：通过；HTML entry 主 JS gzip 71.66KB，CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
+- Vitest：116 个当前主线测试文件、571 项测试通过（Legacy 小程序测试退出主线后计数降低）。
+- Web build：通过；HTML entry 主 JS gzip 71.67KB，CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
 - Playwright + 本机 Chrome：6 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
 - fixture 隔离、敏感信息、严格 TypeScript、Web TypeScript 与 deploy 目标语法/契约均通过。
 

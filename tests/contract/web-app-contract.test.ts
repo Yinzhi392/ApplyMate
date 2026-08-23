@@ -62,7 +62,7 @@ describe("mobile Web application contract", () => {
   });
 
   it("binds temporary uploads to the trusted internal user path", () => {
-    const uploads = source("web/src/lib/temporary-upload.ts");
+    const uploads = source("web/src/lib/temporary-upload-adapter.ts");
     const api = source("cloudfunctions/api/deploy/experience-api.js");
     expect(uploads).toContain("temporary/web/${safeOwnerId(ownerId)}");
     expect(api).toContain("/temporary/web/${user.userId}/");

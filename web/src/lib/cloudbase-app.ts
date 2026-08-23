@@ -23,8 +23,7 @@ export interface CloudbaseWebApp {
   getTempFileURL(options: { fileList: string[] }): Promise<unknown>;
   uploadFile(options: {
     cloudPath: string;
-    fileContent: Blob;
-    filePath: string;
+    filePath: File;
   }): Promise<{ fileID?: unknown }>;
 }
 

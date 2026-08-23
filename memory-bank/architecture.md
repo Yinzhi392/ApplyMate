@@ -54,7 +54,8 @@ CloudBase 静态托管必须在控制台设置“4xx 错误页 → `/index.html`
 
 - `web/src/lib/cloudbase-app.ts`：延迟加载 SDK 并创建单例 app。
 - `web/src/lib/session.ts`：邮箱 OTP、会话检查和退出登录。
-- `web/src/lib/temporary-upload.ts`：临时上传/删除及 `TemporaryUploadPort`。
+- `web/src/lib/temporary-upload.ts`：装配默认 CloudBase 临时上传/删除 port。
+- `web/src/lib/temporary-upload-adapter.ts`：平台可替换的存储 Adapter；Web 上传必须把浏览器 `File` 直接作为 CloudBase `filePath`，不能用文件名字符串冒充，否则签名长度与实际图片字节不一致。
 - `web/src/lib/api.ts`：唯一业务函数调用入口。
 
 兼容文件 `web/src/lib/cloudbase.ts` 只做 re-export，不包含平台业务逻辑。
