@@ -70,6 +70,7 @@
 
 ### 本地代码
 
+- JD 截图上传新增分段可观测性：岗位页分别展示本地纯压缩与网络上传耗时、压缩前后字节；CloudBase 存储失败只记录 allowlist 内的脱敏诊断字段。运行时已明确不执行字段保留率、虚构率、OCR、模型或隐私分析。
 - 固定 JD 图像 profile 的 A/B 选择函数已实现，但尚未用固定真实脱敏图片测量 99% 关键字段保留率。
 - 严格 TypeScript cleanup 已定义孤立文件 port；部署 cleanup 仍需正式 CloudBase 存储枚举 adapter。
 - `api/deploy/live-api.js` 与 `experience-api.js` 仍承载 Legacy 兼容业务。`index.js` 已收薄、公开路径已隔离和测试，但“完全消除 src/deploy 双实现”尚未全部完成。
@@ -82,6 +83,7 @@
 - api/worker/cleanup 均为 Node.js 20.19、256MB、45 秒、Active；三者均没有触发器，因此 cleanup 当前没有定时执行证据。
 - 旧静态托管在线但错误页未设为 `index.html`；仍存在 `manifest.webmanifest`、`sw.js`、旧约 1.125MB JS 和最高约 3.7MB source map。未对这些旧文件做删除或覆盖。
 - 旧身份配置同时启用邮箱、匿名和用户名登录；存储为 PRIVATE/创建者和管理员读写，无自定义存储规则；CORS 仍包含旧域名、平台默认项和通配配置，没有正式产品域名。
+- 已只读定位本地 Web 截图上传失败：当前安全域名列表没有 `127.0.0.1`/`localhost`，而测试页来源是 `http://127.0.0.1:4173`。CloudBase Web SDK 直传对象存储因此被 CORS 拒绝并包装为 `OPERATION_FAIL [storage]`；尚未取得新增本地安全域名的独立云端配置授权，所以没有修改。
 - 当前账期为 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包和按量费用均显示 0；资源点主要来自 NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。该快照不等于 OCR/TokenHub 独立账单。
 - 旧数据库存在 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；不存在 v3 所需 service_config、budget_periods、ai_task_admissions。未读取或导出任何用户记录。
 - 未购买套餐、未创建新生产环境、未创建集合/权限/触发器、未部署。

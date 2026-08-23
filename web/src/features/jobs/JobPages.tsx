@@ -5,7 +5,9 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
 import {
+  describeJdImageUploadProgress,
   prepareAndUploadJdImages,
+  type JdImageUploadProgress,
   type PreparedJdUpload,
 } from "../../lib/jd-image-preparation";
 import { cloudbaseTemporaryUploadPort } from "../../lib/temporary-upload";
@@ -26,16 +28,35 @@ export function JobCreatePage(): React.JSX.Element {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<JdImageUploadProgress[]>([]);
   const uploadPromise = useRef<Promise<PreparedJdUpload[]> | null>(null);
+  const uploadRunId = useRef(0);
   const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
   useEffect(() => () => previews.forEach(({ url }) => URL.revokeObjectURL(url)), [previews]);
   const resumes = useQuery({ queryKey: ["resume.list"], queryFn: () => callApi<{ resumes: ResumeListItem[] }>("resume.list", {}) });
   const defaultResume = resumes.data?.resumes.find((resume) => resume.isDefault && resume.status === "confirmed");
 
   function startUpload(nextFiles: File[]): Promise<PreparedJdUpload[]> | null {
+    const runId = uploadRunId.current + 1;
+    uploadRunId.current = runId;
+    setUploadProgress([]);
     const nextUpload = nextFiles.length === 0
       ? null
-      : prepareAndUploadJdImages(nextFiles, auth.status?.userId ?? "", cloudbaseTemporaryUploadPort, 3);
+      : prepareAndUploadJdImages(
+          nextFiles,
+          auth.status?.userId ?? "",
+          cloudbaseTemporaryUploadPort,
+          3,
+          undefined,
+          (progress) => {
+            if (uploadRunId.current !== runId) return;
+            setUploadProgress((current) => {
+              const updated = [...current];
+              updated[progress.index] = progress;
+              return updated;
+            });
+          },
+        );
     uploadPromise.current = nextUpload;
     if (nextUpload !== null) {
       void nextUpload.catch((cause: unknown) => {
@@ -88,6 +109,7 @@ export function JobCreatePage(): React.JSX.Element {
   const aiAvailable = auth.status?.serviceAccess === undefined ||
     (auth.status.serviceAccess.phase === "active" && auth.status.serviceAccess.aiAvailability === "available");
   const ready = aiAvailable && defaultResume !== undefined && (mode === "text" ? text.trim().length > 20 : files.length > 0);
+  const uploadStatus = describeJdImageUploadProgress(uploadProgress.filter(Boolean), files.length);
   return (
     <div className={styles.stack}>
       <Header eyebrow="新岗位" title="提交岗位信息" />
@@ -117,6 +139,7 @@ export function JobCreatePage(): React.JSX.Element {
           <label className={styles.field}><span>岗位文字</span><textarea className={styles.textarea} onChange={(event) => setText(event.target.value)} placeholder="粘贴岗位职责与任职要求" value={text} /></label>
         )}
       </Surface>
+      {mode === "images" && uploadStatus !== "" ? <p aria-live="polite" className={styles.uploadStatus}>{uploadStatus}</p> : null}
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
       <PrimaryButton disabled={!ready || busy} onClick={() => void submit()}>{busy ? "正在创建任务…" : "生成开场白"}</PrimaryButton>
     </div>

@@ -23,7 +23,7 @@
 - api、worker、cleanup 均为 Node.js 20.19、256MB、45 秒、Active，触发器列表均为空。cleanup 因而没有定时运行证据。
 - 静态托管在线，默认首页是 `index.html`，错误页为空；当前不满足 BrowserRouter 刷新回退。托管中仍有旧 `manifest.webmanifest`、`sw.js`、旧大体积 JS 和 source map。
 - 邮箱、匿名、用户名登录均开启；手机登录关闭。该身份面不能用于 v3 生产。
-- CORS 仍含 Legacy 托管域名、平台默认来源和通配项；只有默认 CloudBase 域名，没有正式产品域名或路由。
+- CORS 仍含 Legacy 托管域名、平台默认来源和通配项；只有默认 CloudBase 域名，没有正式产品域名或路由。2026-08-23 复核确认安全域名中也没有 `127.0.0.1` 或 `localhost`，所以从 `http://127.0.0.1:4173` 使用 Web SDK 直传对象存储会被 CORS 拒绝；未授权前没有新增域名。
 - 当前账期 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包与按量费用显示 0；NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。
 - 已看到 Legacy 业务集合 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；尚无 service_config、budget_periods、ai_task_admissions。
 

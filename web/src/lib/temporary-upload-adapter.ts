@@ -26,6 +26,54 @@ export interface CloudbaseStorageClient {
   uploadFile(options: { cloudPath: string; filePath: File }): Promise<{ fileID?: unknown }>;
 }
 
+export interface StorageDiagnostic {
+  code?: string;
+  message?: string;
+  requestId?: string;
+  stage: "access_url" | "upload";
+  status?: number;
+}
+
+type StorageDiagnosticReporter = (diagnostic: StorageDiagnostic) => void;
+
+function safeDiagnosticText(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  return value
+    .replace(/https?:\/\/\S+/giu, "[url]")
+    .replace(/cloud:\/\/\S+/giu, "[file]")
+    .slice(0, 240);
+}
+
+function diagnosticRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function storageDiagnostic(cause: unknown, stage: StorageDiagnostic["stage"]): StorageDiagnostic {
+  const outer = diagnosticRecord(cause);
+  const inner = diagnosticRecord(outer?.cause);
+  const read = (...keys: string[]): unknown => {
+    for (const record of [outer, inner]) {
+      for (const key of keys) {
+        if (record?.[key] !== undefined) return record[key];
+      }
+    }
+    return undefined;
+  };
+  const rawStatus = read("status", "statusCode");
+  const code = safeDiagnosticText(read("code", "errCode", "errorCode"));
+  const message = safeDiagnosticText(read("message"));
+  const requestId = safeDiagnosticText(read("requestId", "requestID"));
+  return {
+    stage,
+    ...(code === undefined ? {} : { code }),
+    ...(message === undefined ? {} : { message }),
+    ...(requestId === undefined ? {} : { requestId }),
+    ...(typeof rawStatus === "number" && Number.isFinite(rawStatus) ? { status: rawStatus } : {}),
+  };
+}
+
 function temporaryAccessUrl(response: unknown, fileId: string): string {
   if (typeof response !== "object" || response === null) return "";
   const list = (response as { fileList?: unknown }).fileList;
@@ -42,6 +90,7 @@ function temporaryAccessUrl(response: unknown, fileId: string): string {
 
 export function createTemporaryUploadPort(
   loadClient: () => Promise<CloudbaseStorageClient>,
+  reportDiagnostic: StorageDiagnosticReporter = () => undefined,
 ): TemporaryUploadPort {
   return {
     async delete(fileIds): Promise<void> {
@@ -55,6 +104,7 @@ export function createTemporaryUploadPort(
       try {
         response = await app.uploadFile({ cloudPath, filePath: file });
       } catch (cause) {
+        reportDiagnostic(storageDiagnostic(cause, "upload"));
         throw new Error("图片上传失败，请检查网络后重新选择图片。", { cause });
       }
       if (typeof response.fileID !== "string" || response.fileID.length === 0) {
@@ -66,6 +116,7 @@ export function createTemporaryUploadPort(
         if (accessUrl === "") throw new Error("文件读取授权失败，请重新上传后重试。");
         return { accessUrl, fileId: response.fileID };
       } catch (cause) {
+        reportDiagnostic(storageDiagnostic(cause, "access_url"));
         await app.deleteFile({ fileList: [response.fileID] }).catch(() => undefined);
         throw cause instanceof Error ? cause : new Error("文件读取授权失败，请重新上传后重试。");
       }

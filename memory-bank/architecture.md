@@ -66,6 +66,8 @@ Vite 关闭生产 source map。路由、CloudBase SDK、PDF 解析均动态加�
 
 JD 图像选择后由 `jd-image.worker.ts` 使用 `createImageBitmap + OffscreenCanvas` 压缩；不支持时退回主线程 Canvas。`jd-image-profile.ts` 只接受固定评测结果选择的候选。`prepareAndUploadJdImages` 并发上限固定 3，最多 5 张。选择只准备/上传，点击生成才调用 `generation.create`。
 
+运行时图片准备只执行解码、按最长边缩放和 JPEG 编码，不调用 OCR、模型、字段保留评测、虚构检查或脱敏。字段保留率只在离线固定 A/B 中用于选定构建 profile。岗位页分别显示本地准备耗时、网络上传耗时和压缩前后字节；开发环境的存储诊断只允许输出 stage、错误码、HTTP 状态与脱敏后的 requestId/message，不记录文件名、对象路径、签名 URL、身份或图片内容。
+
 历史 Service Worker 和 manifest 已删除。启动时只执行一次旧 worker 注销与旧 shell cache 清理，不注册新 worker。
 
 ## 4. 身份与 API 边界

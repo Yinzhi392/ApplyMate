@@ -1,17 +1,22 @@
 import {
   cloudbaseTemporaryUploadPort,
-  type TemporaryUpload,
   type TemporaryUploadPort,
 } from "./temporary-upload";
 import { JD_IMAGE_PROFILES, type JdImageProfile } from "./jd-image-profile";
+import {
+  describeJdImageUploadProgress,
+  prepareAndUploadJdImagesWith,
+  type JdImagePreparer,
+  type JdImageProgressReporter,
+  type JdImageUploadProgress,
+  type PreparedJdUpload,
+} from "./jd-image-upload-progress";
 
-export interface PreparedJdUpload extends TemporaryUpload {
-  originalBytes: number;
-  preparedBytes: number;
-  preparationMs: number;
-  profileId: JdImageProfile["id"];
-  uploadMs: number;
-}
+export {
+  describeJdImageUploadProgress,
+  type JdImageUploadProgress,
+  type PreparedJdUpload,
+} from "./jd-image-upload-progress";
 
 export function configuredJdImageProfile(): JdImageProfile {
   const configured = import.meta.env.VITE_JD_IMAGE_PROFILE?.trim();
@@ -93,29 +98,16 @@ export async function prepareAndUploadJdImages(
   port: TemporaryUploadPort = cloudbaseTemporaryUploadPort,
   limit = 3,
   profile: JdImageProfile = configuredJdImageProfile(),
+  reportProgress: JdImageProgressReporter = () => undefined,
+  prepareImage: JdImagePreparer = prepareJdImage,
 ): Promise<PreparedJdUpload[]> {
-  const output = new Array<PreparedJdUpload>(files.length);
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, files.length) }, async () => {
-    while (cursor < files.length) {
-      const index = cursor;
-      cursor += 1;
-      const file = files[index];
-      if (file === undefined) continue;
-      const preparationStarted = performance.now();
-      const prepared = await prepareJdImage(file, profile);
-      const preparationMs = Math.max(0, Math.round(performance.now() - preparationStarted));
-      const uploadStarted = performance.now();
-      const uploaded = await port.upload(prepared, ownerId);
-      output[index] = {
-        ...uploaded,
-        originalBytes: file.size,
-        preparedBytes: prepared.size,
-        preparationMs,
-        uploadMs: Math.max(0, Math.round(performance.now() - uploadStarted)),
-        profileId: profile.id,
-      };
-    }
-  }));
-  return output;
+  return prepareAndUploadJdImagesWith(
+    files,
+    ownerId,
+    port,
+    limit,
+    profile,
+    reportProgress,
+    prepareImage,
+  );
 }

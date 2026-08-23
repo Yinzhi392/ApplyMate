@@ -45,4 +45,33 @@ describe("Web temporary upload", () => {
       "user_aaaaaaaaaaaaaaaaaaaaaaaa",
     )).rejects.toThrow("图片上传失败，请检查网络后重新选择图片。");
   });
+
+  it("reports only allowlisted and redacted storage diagnostics", async () => {
+    const report = vi.fn();
+    const diagnosticPort = createTemporaryUploadPort(async () => sdk, report);
+    const cloudbaseError = Object.assign(new Error(
+      "request failed https://secret.example/upload?token=private",
+    ), {
+      code: "STORAGE_PERMISSION_DENIED",
+      requestId: "request-123",
+      statusCode: 403,
+      cloudPath: "temporary/web/user_secret/private.jpg",
+    });
+    sdk.uploadFile.mockRejectedValueOnce(cloudbaseError);
+
+    await expect(diagnosticPort.upload(
+      new File(["image"], "岗位截图.jpg", { type: "image/jpeg" }),
+      "user_aaaaaaaaaaaaaaaaaaaaaaaa",
+    )).rejects.toThrow("图片上传失败，请检查网络后重新选择图片。");
+
+    expect(report).toHaveBeenCalledWith({
+      code: "STORAGE_PERMISSION_DENIED",
+      message: "request failed [url]",
+      requestId: "request-123",
+      stage: "upload",
+      status: 403,
+    });
+    expect(JSON.stringify(report.mock.calls)).not.toContain("user_secret");
+    expect(JSON.stringify(report.mock.calls)).not.toContain("token=private");
+  });
 });
