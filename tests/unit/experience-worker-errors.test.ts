@@ -37,11 +37,11 @@ describe("experience worker public errors", () => {
   });
 
   it.each([
-    "greeting_length",
-    "match_plan_schema",
-    "cross_jd_domain_term",
-    "evidence_strength_mismatch",
-  ])("does not expose the %s validation gate or source content", (validationGate) => {
+    ["greeting_length", "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。"],
+    ["match_plan_schema", "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。"],
+    ["cross_jd_domain_term", "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"],
+    ["evidence_strength_mismatch", "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"],
+  ])("does not expose the %s validation gate or source content", (validationGate, message) => {
     const error = Object.assign(new Error("MODEL_INVALID_OUTPUT"), {
       validationGate,
       sourceContent: "private resume and JD content",
@@ -51,7 +51,7 @@ describe("experience worker public errors", () => {
 
     expect(result).toEqual({
       code: "MODEL_INVALID_OUTPUT",
-      message: "AI 返回内容未通过真实性或格式检查，请重新提交。",
+      message,
       retryable: true,
     });
     expect(JSON.stringify(result)).not.toContain(validationGate);

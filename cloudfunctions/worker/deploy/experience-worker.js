@@ -41,11 +41,23 @@ const PUBLIC_PROCESSING_ERRORS = Object.freeze({
   SCANNED_PDF_SCREENSHOT_REQUIRED: ["扫描版 PDF 无法读取文字，请改传页面截图。", false],
 });
 
+const AUTHENTICITY_VALIDATION_GATES = new Set([
+  "cross_jd_domain_term",
+  "evidence_strength_mismatch",
+  "greeting_evidence_alignment",
+  "greeting_numeric_source",
+  "greeting_partial_match_integrity",
+  "greeting_unknown_fact",
+]);
+
 function publicProcessingError(error) {
   if (error?.message === "MODEL_INVALID_OUTPUT") {
+    const authenticityFailure = AUTHENTICITY_VALIDATION_GATES.has(error?.validationGate);
     return {
       code: "MODEL_INVALID_OUTPUT",
-      message: "AI 返回内容未通过真实性或格式检查，请重新提交。",
+      message: authenticityFailure
+        ? "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"
+        : "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。",
       retryable: true,
     };
   }
@@ -1139,9 +1151,9 @@ function jdPrompt(text, facts) {
 判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；每个 JD 数组项目必须优先复制本次 JD 的原句片段，只能删除不必要文字，禁止同义改写或补充截图中没有的职责；不确定的辅助字段直接省略。coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
 证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
 matchMode：strong 至少有一项核心直接证据；partial 用一句话诚实披露 JD 明确要求但缺少的直接经验，再说明可迁移证据；low 没有足够直接或可迁移证据，只写真实背景、相关基础和投入条件，不得声称高度匹配或能够快速上手。
-正文硬规则：简体中文；350至450个可见字符；3至4个非空段落；第一段自然包含“您好”，优先写“您好，我是…”；结尾根据证据和匹配模式自然收束，不固定句式；必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
+正文硬规则：简体中文；建议180至320个可见字符、2至3个非空段落，信息充分时可以更长但不得超过500个可见字符；第一段自然包含“您好”，优先写“您好，我是…”；结尾根据证据和匹配模式自然收束，不固定句式；必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
 表达规则：专业、自然、自信但不过度包装。通过事实让 HR 得出匹配结论；保留有用数字、方法和专业术语；不机械罗列所有事实。禁用“本人具备”“贵公司是行业领先者”“希望贴近真实工作”“愿意踏实学习”“分析练习”“这些练习”“看到岗位主要围绕”“这些要求与我的经历和能力比较契合”“这段积累能支持我”。
-返回前检查：岗位名与当前 JD 一致；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；正文长度和段落数合格。服务端不会进行第二次模型调用，也不会用本地模板补写。
+返回前检查：岗位名与当前 JD 一致；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；正文不超过500个可见字符且为2至4个非空段落。服务端不会进行第二次模型调用，也不会用本地模板补写。
 只返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"coreFunctions":[{"requirementType":"responsibilities","requirementIndex":0,"summary":""},{"requirementType":"responsibilities","requirementIndex":1,"summary":""}],"domainContext":[],"matchMode":"strong","directFactIds":[],"transferableEvidence":[{"factId":"","capability":"","wordingStrength":"transferable"}],"supportingFactIds":[],"gaps":[],"paragraphs":["","",""]}。
 JD：${maskProtectedText(text).slice(0, 6_000)}
 可引用事实：${JSON.stringify(safeFacts)}`;
@@ -1565,18 +1577,9 @@ function modelGreetingPackage(plan, jd, matches, facts) {
   const paragraphs = plan.paragraphs.map((item) => item.trim()).filter(Boolean);
   const body = paragraphs.join("\n");
   const outputVisibleLength = visibleLength(body);
-  if (outputVisibleLength < 350 || outputVisibleLength > 450) {
-    throw modelValidationFailure("greeting_length", {
-      visibleLength: outputVisibleLength,
-      paragraphCount: paragraphs.length,
-    });
-  }
-  if (paragraphs.length < 3 || paragraphs.length > 4) {
-    throw modelValidationFailure("greeting_paragraph_count", {
-      visibleLength: outputVisibleLength,
-      paragraphCount: paragraphs.length,
-    });
-  }
+  // Length and paragraph count are presentation preferences, not authenticity
+  // boundaries. The prompt asks for a concise shape, but a truthful result must
+  // not be discarded merely because the model wrote fewer or longer paragraphs.
   if (!/^您好(?:[，,!！。]|$)/u.test(paragraphs[0])) {
     throw modelValidationFailure("greeting_salutation", {
       visibleLength: outputVisibleLength,
@@ -1818,18 +1821,9 @@ function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
 
   const body = paragraphs.join("\n");
   const outputVisibleLength = visibleLength(body);
-  if (outputVisibleLength < 350 || outputVisibleLength > 450) {
-    throw modelValidationFailure("greeting_length", {
-      visibleLength: outputVisibleLength,
-      paragraphCount: paragraphs.length,
-    });
-  }
-  if (paragraphs.length < 3 || paragraphs.length > 4) {
-    throw modelValidationFailure("greeting_paragraph_count", {
-      visibleLength: outputVisibleLength,
-      paragraphCount: paragraphs.length,
-    });
-  }
+  // Length and paragraph count are presentation preferences, not authenticity
+  // boundaries. The prompt asks for a concise shape, but a truthful result must
+  // not be discarded merely because the model wrote fewer or longer paragraphs.
   if (!/^您好(?:[，,!！。]|$)/u.test(paragraphs[0])) {
     throw modelValidationFailure("greeting_salutation", {
       visibleLength: outputVisibleLength,
@@ -1874,6 +1868,13 @@ function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
   const requirements = requirementEntries(jd);
   const selectedFactIds = new Set(collectGreetingFactIds(selection));
   const selectedFacts = facts.filter(({ factId }) => selectedFactIds.has(factId));
+  if (selectedFacts.length === 0) {
+    throw modelValidationFailure("greeting_evidence_alignment", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+      citedFactCount: 0,
+    });
+  }
   const evidence = paragraphs.map((paragraph, paragraphIndex) => {
     const sources = [];
     const sourceKeys = new Set();
@@ -1903,6 +1904,19 @@ function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
       sources,
     };
   });
+
+  const citedFactCount = new Set(
+    evidence.flatMap(({ sources }) => sources.flatMap((source) =>
+      source.type === "fact" ? [source.factId] : []
+    )),
+  ).size;
+  if (citedFactCount === 0) {
+    throw modelValidationFailure("greeting_evidence_alignment", {
+      visibleLength: outputVisibleLength,
+      paragraphCount: paragraphs.length,
+      citedFactCount,
+    });
+  }
 
   return {
     greetingPackage: { body, evidence },

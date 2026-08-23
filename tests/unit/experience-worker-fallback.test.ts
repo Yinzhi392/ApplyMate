@@ -57,6 +57,28 @@ describe("model greeting delivery", () => {
     expect(result.greetingPackage.body).not.toContain("我已确认的个人资料包括");
   });
 
+  it("delivers a concise factual greeting instead of rejecting it for missing an essay-length floor", async () => {
+    const modelCall = vi.fn(async () => ({
+      jobTitle: "AI投研内容实习生",
+      companyName: "深圳市优品投资顾问有限公司",
+      paragraphs: [
+        "您好！我想申请深圳市优品投资顾问有限公司的AI投研内容实习生岗位。我目前就读于南方理工大学金融科技专业，希望把研究分析与清晰表达用于岗位工作。",
+        "我独立完成过消费公司行业研究、财务预测和估值分析，并输出完整研究报告；过程中使用表格和演示工具整理数据、核对假设并呈现结论。",
+        "期待有机会进一步了解团队需求，也愿意具体介绍相关项目。",
+      ],
+    }));
+
+    const result = await worker.resolveGreetingGeneration({
+      rawText: "招聘AI投研内容实习生，负责研究资料整理、分析支持与内容输出。",
+      facts,
+      modelCall,
+    });
+
+    expect(modelCall).toHaveBeenCalledTimes(1);
+    expect(result.generationMode).toBe("model");
+    expect(result.greetingPackage.body).toContain("独立完成过消费公司行业研究");
+  });
+
   it("rejects a short result without making a second model request", async () => {
     const modelCall = vi.fn(async () => ({
       jobTitle: "AI投研内容实习生",

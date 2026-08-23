@@ -298,8 +298,8 @@ describe("experience worker privacy and case-calibrated output", () => {
     expect(prompt).toContain('"transferableEvidence"');
     expect(prompt).toContain('"supportingFactIds"');
     expect(prompt).toContain('"gaps"');
-    expect(prompt).toContain("350至450个可见字符");
-    expect(prompt).toContain("3至4个非空段落");
+    expect(prompt).toContain("建议180至320个可见字符");
+    expect(prompt).toContain("2至3个非空段落");
     expect(prompt).toContain("核心功能 > 行业背景 > 加分标签");
     expect(prompt).not.toContain("第一段必须以“您好！”开始");
     expect(prompt).not.toContain("第三段必须以“期待得到您的回复！”结尾");
@@ -393,39 +393,6 @@ describe("experience worker privacy and case-calibrated output", () => {
     ]);
   });
 
-  it("rejects a complete draft below the calibrated 350-character floor", () => {
-    const paragraphs = [
-      "您好，我想应聘示例科技的AI产品实习生。我关注真实用户场景，也习惯把模糊问题整理为能够讨论和验证的产品方案；这种先判断问题再推进验证的方式，是我关注该岗位的重要原因。",
-      "在校园智能助手项目中，我访谈目标用户、归纳高频问题、拆分核心流程，并用Figma完成原型后组织可用性测试。我根据反馈调整入口和信息层级，也会主动说明方案取舍，让项目从想法逐步变成可讨论、可测试的交付物。",
-      "此外，我在实习中参与模型回复质量评估，能够从用户意图、事实准确性和表达完整度判断结果是否可用。我希望把这项判断能力用于贵司的产品工作，也愿意进一步介绍项目中的具体取舍并了解团队需求。",
-    ];
-    while (visibleLengthForTest(paragraphs.join("\n")) < 309) {
-      paragraphs[2] += "期待交流。";
-    }
-    const body = paragraphs.join("\n");
-
-    expect(visibleLengthForTest(body)).toBeGreaterThanOrEqual(300);
-    expect(visibleLengthForTest(body)).toBeLessThan(350);
-    expect(() =>
-      modelGreetingPackage(localPlan(paragraphs), jd, matchedFacts(), facts),
-    ).toThrow("MODEL_INVALID_OUTPUT");
-  });
-
-  it("rejects a concise draft below the calibrated 350-character floor", () => {
-    const paragraphs = [
-      "您好！我想应聘示例科技的AI产品实习生。我关注真实用户场景，也习惯先理解问题，再把需求整理成可以验证的产品方案。",
-      "在校园智能助手项目中，我访谈用户、归纳高频问题、拆分核心流程，并用Figma完成原型和可用性测试。我根据反馈调整入口和信息层级，也会向协作同学说明方案取舍。这让我更熟悉在信息不完整时确定优先级并推进迭代。",
-      "此外，我在实习中参与模型回复质量评估，能够从用户意图、事实准确性和表达完整度判断结果是否可用。我希望把这项判断能力用于贵司的产品工作。期待得到您的回复！",
-    ];
-    const body = paragraphs.join("\n");
-
-    expect(visibleLengthForTest(body)).toBeGreaterThanOrEqual(230);
-    expect(visibleLengthForTest(body)).toBeLessThan(300);
-    expect(() =>
-      modelGreetingPackage(localPlan(paragraphs), jd, matchedFacts(), facts),
-    ).toThrow("MODEL_INVALID_OUTPUT");
-  });
-
   it("derives evidence locally from three model paragraphs without fragile duplicated claims", () => {
     const body = naturalDraft();
     const result = modelGreetingPackage(
@@ -461,7 +428,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     ).toThrow("MODEL_INVALID_OUTPUT");
   });
 
-  it("identifies the non-content gate when a draft is too short", () => {
+  it("rejects a generic short draft for missing evidence rather than its length", () => {
     const shortDraft = [
       "您好，我想应聘示例科技的AI产品实习生。",
       "我在校园智能助手项目中访谈用户、拆分需求并完成原型验证。",
@@ -479,7 +446,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     } catch (error) {
       expect(error).toMatchObject({
         message: "MODEL_INVALID_OUTPUT",
-        validationGate: "greeting_length",
+        validationGate: "greeting_evidence_alignment",
         validationMetrics: {
           paragraphCount: 3,
           visibleLength: visibleLengthForTest(shortDraft),
