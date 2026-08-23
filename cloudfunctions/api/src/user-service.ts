@@ -14,7 +14,8 @@ import type { IdentityRepository } from "./identity-repository.js";
 
 export type IdentityNamespace =
   | "applymate-openid-v1"
-  | "web-anonymous-uid-v1";
+  | "web-anonymous-uid-v1"
+  | "web-email-uid-v1";
 
 export function hashTrustedIdentity(
   identity: string,
@@ -43,8 +44,10 @@ export class UserService {
       return {
         userId: `user_${identityHash.slice(0, 24)}`,
         identityHash,
+        identityNamespace: namespace,
         accountStatus: "enabled",
-        activationStatus: "pending_invite",
+        activationStatus:
+          namespace === "web-email-uid-v1" ? "active" : "pending_invite",
         agreements: {},
         preferenceText: "",
         preferenceFacts: [],

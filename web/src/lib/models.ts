@@ -30,7 +30,7 @@ export interface ApplicationItem {
 
 export interface JobView {
   applicationId?: string;
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; stage?: string };
   jobId: string;
   progress?: number;
   status: string;

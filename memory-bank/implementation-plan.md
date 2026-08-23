@@ -5,12 +5,16 @@
 以下步骤取代后续微信小程序发布工作；旧阶段保留为历史证据，不再继续开发小程序。
 
 - [x] W0.1 运行完整门禁并创建 `chore: checkpoint legacy miniprogram` 检查点；排除 `project.config.json` 与 `project.private.config.json`。
-- [x] W0.2 更新设计、技术栈与 8 个移动 Web 线框，锁定匿名身份、20 次额度、PWA 与数据不迁移边界。
+- [x] W0.2 更新设计、技术栈与 8 个移动 Web 线框，锁定初始匿名身份、20 次额度、PWA 与数据不迁移边界；该身份决策已被 W3b 取代。
 - [x] W1 建立 `web/` React/Vite/TypeScript、React Router、TanStack Query、Zod、CSS Modules 和只缓存外壳的 PWA；14 条路由本地直接访问均返回 200，320–430px 静态契约已通过，托管域名回退留在 W9 实测。
-- [x] W2 接入 CloudBase 匿名身份；服务端使用 `web-anonymous-uid-v1` 哈希，递归忽略客户端身份字段；本地验证两个 UID 数据互不可见。
-- [x] W3 完成邀请码、协议、禁用状态和匿名会话恢复；本地验证同码不可绑定两个 UID，未激活身份只能调用三项准入 API。
+- [x] W2 接入 CloudBase 匿名身份并验证 UID 租户隔离；该准入方式保留为历史兼容，不再由 Web 客户端创建。
+- [x] W3 完成首版邀请码、协议和匿名会话；该产品路径已被 W3b 取代。
+- [x] W3b 将 Web 准入改为 CloudBase 邮箱验证码：移除邀请码 UI 与管理员邀请码操作，使用 `local` 会话自动恢复；服务端以 `web-email-uid-v1` 哈希可信注册 UID，邮箱明文不进入业务数据库。验证邮箱/验证码规则、登录契约、协议变化、禁用状态和匿名/邮箱命名空间隔离。2026-08-23 已用真实邮箱完成本地验证码登录，并修复 SDK 成功响应 `error: undefined` 被严格 null 判断误报失败的问题；同构建已上传测试域名。
+- [x] W3c 修复邮箱用户登录后所有业务入口回到登录页：CloudBase 只提供 `TCB_UUID` 且缺少匿名标记时按当前邮箱身份处理，显式匿名标记才进入 Legacy；协议链接与勾选框解除嵌套，路由改用 HashRouter，Service Worker 不再缓存根 HTML 或导航。身份与页面契约回归测试通过后才部署 `api` 和静态站点。
+- [x] W3d 修复 CloudBase Web 身份标记漂移造成的二次准入：邮箱和 Web 匿名两个可信命名空间均在当前协议有效后直接 active，旧邀请码门仅保留给微信 OpenID。新增“显式匿名 Web UID 协议后可调用 user.get”回归，同时确认普通小程序身份仍为 invite-required；部署后逐一验证首页、简历、记录和账户路由不再回到登录页。
 - [x] W4 将新 JD 日额度调整为 20，改写改用独立频率门；验证前 20 次成功、第 21 次拒绝，失败和改写不占新 JD 次数。
 - [x] W5 完成简历上传、解析、核对、默认简历、偏好和临时文件清理；覆盖 PDF/DOCX/图片/文字以及 3 份上限。
+- [x] W5a 修复 Web 邮箱身份与 worker 的私有文件所有权边界：上传创建者签发短期 URL，API 严格绑定 CloudBase bucket/对象路径，worker 读取后清除 URL 和原件；回归测试必须模拟 worker 签名与下载均无权，禁止用 worker 自有文件冒充真实用户验收。
 - [x] W6 完成 JD 截图/文字、异步任务、生成、改写、结果和任务恢复；点击前不创建 OCR/模型任务，结果不显示内部证据和校验。
 - [x] W7 完成记录、反馈、账号删除、法律与管理员页面；管理员目标统一使用 `targetUserId`，业务仓储继续按可信内部 `userId` 隔离。
 - [x] W8a 验证 Service Worker、LocalStorage 与离线缓存不含用户内容；PWA 只缓存同源版本化外壳。

@@ -21,6 +21,8 @@ const CLIENT_IDENTITY_FIELDS = new Set([
   "uid",
   "customUserId",
   "identityHash",
+  "email",
+  "emailAddress",
 ]);
 
 export interface CloudBaseContextSnapshot {
@@ -28,9 +30,13 @@ export interface CloudBaseContextSnapshot {
   openId?: unknown;
   uid?: unknown;
   userInfo?: {
+    isAnonymous?: unknown;
+    is_anonymous?: unknown;
+    loginType?: unknown;
     openId?: unknown;
     uid?: unknown;
   };
+  isAnonymous?: unknown;
 }
 
 export interface ApiEntryDependencies {
@@ -42,7 +48,10 @@ export interface ApiEntryDependencies {
     service: IdempotencyService;
     createCallerKey: (
       trustedIdentity: string,
-      namespace?: "applymate-openid-v1" | "web-anonymous-uid-v1",
+      namespace?:
+        | "applymate-openid-v1"
+        | "web-anonymous-uid-v1"
+        | "web-email-uid-v1",
     ) => string;
     now: () => Date;
   };
@@ -85,9 +94,16 @@ function isTrustedIdentity(value: unknown): value is string {
   );
 }
 
+function isAnonymousWebIdentity(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
 function resolveTrustedIdentity(cloudContext: CloudBaseContextSnapshot): {
   value: string;
-  namespace: "applymate-openid-v1" | "web-anonymous-uid-v1";
+  namespace:
+    | "applymate-openid-v1"
+    | "web-anonymous-uid-v1"
+    | "web-email-uid-v1";
 } | null {
   const openId = cloudContext.OPENID ?? cloudContext.openId ?? cloudContext.userInfo?.openId;
   if (isTrustedIdentity(openId)) {
@@ -95,7 +111,17 @@ function resolveTrustedIdentity(cloudContext: CloudBaseContextSnapshot): {
   }
   const uid = cloudContext.uid ?? cloudContext.userInfo?.uid;
   if (isTrustedIdentity(uid)) {
-    return { value: uid, namespace: "web-anonymous-uid-v1" };
+    const isAnonymous = cloudContext.isAnonymous ??
+      cloudContext.userInfo?.isAnonymous ??
+      cloudContext.userInfo?.is_anonymous;
+    const loginType = cloudContext.userInfo?.loginType;
+    const anonymousLogin = typeof loginType === "string" && loginType.toUpperCase().includes("ANONYMOUS");
+    return {
+      value: uid,
+      namespace: isAnonymousWebIdentity(isAnonymous) || anonymousLogin
+        ? "web-anonymous-uid-v1"
+        : "web-email-uid-v1",
+    };
   }
   return null;
 }

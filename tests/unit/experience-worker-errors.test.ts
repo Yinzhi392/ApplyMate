@@ -28,6 +28,14 @@ describe("experience worker public errors", () => {
     });
   });
 
+  it("returns an actionable message when an uploaded file cannot be read", () => {
+    expect(publicProcessingError(new Error("FILE_PROCESSING_FAILED"))).toEqual({
+      code: "FILE_PROCESSING_FAILED",
+      message: "上传文件读取失败，请重新上传后重试。",
+      retryable: true,
+    });
+  });
+
   it.each([
     "greeting_length",
     "match_plan_schema",

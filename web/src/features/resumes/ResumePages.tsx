@@ -7,6 +7,7 @@ import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
 import { uploadWithConcurrency } from "../../lib/cloudbase";
 import type { ResumeListItem } from "../../lib/models";
+import { prepareResumeFilePayload } from "../../lib/resume-document";
 import { createRequestId } from "../../lib/request-id";
 import { EmptyState, ErrorNotice, Header, PrimaryButton, PrimaryLink, SecondaryButton, Surface } from "../../ui/ui";
 import styles from "../Feature.module.css";
@@ -91,15 +92,10 @@ export function ResumeNewPage(): React.JSX.Element {
       if (mode === "text") {
         payload = { inputType: "text", text };
       } else {
-        const fileIds = await uploadWithConcurrency(files, auth.status?.userId ?? "", 3);
-        const first = files[0];
-        if (first === undefined) throw new Error("请先选择简历文件。");
-        const extension = first.name.toLowerCase().split(".").pop();
-        payload = files.length > 1 || first.type.startsWith("image/")
-          ? { inputType: "images", fileIds }
-          : extension === "pdf"
-            ? { inputType: "pdf", fileIds }
-            : { inputType: "docx", fileIds };
+        payload = await prepareResumeFilePayload(
+          files,
+          (selected) => uploadWithConcurrency(selected, auth.status?.userId ?? "", 3),
+        );
       }
       const created = await callApi<{ jobId: string; resumeId: string }>("resume.parse", payload, createRequestId());
       navigate(`/jobs/${created.jobId}?kind=resume&resumeId=${created.resumeId}`);
@@ -132,7 +128,7 @@ export function ResumeNewPage(): React.JSX.Element {
       </Surface>
       <p className={styles.intro}>原文件仅用于解析；你确认后会删除，只保留结构化事实。</p>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
-      <PrimaryButton disabled={!ready || busy} onClick={() => void submit()}>{busy ? "正在安全上传…" : "解析简历"}</PrimaryButton>
+      <PrimaryButton disabled={!ready || busy} onClick={() => void submit()}>{busy ? "正在读取简历…" : "解析简历"}</PrimaryButton>
     </div>
   );
 }

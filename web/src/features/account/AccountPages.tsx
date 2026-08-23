@@ -56,7 +56,7 @@ export function AccountPage(): React.JSX.Element {
   }
   return (
     <div className={styles.stack}>
-      <Header eyebrow="当前浏览器身份" title="我的 👋" />
+      <Header eyebrow="当前邮箱账号" title="我的 👋" />
       <p className={styles.intro}>资料、偏好与数据权利都在这里。</p>
       <section><h2 className={styles.sectionTitle}>求职资料</h2><Surface><div className={styles.list}>
         <Link className={styles.listRow} to="/resumes"><span className={styles.icon}>📄</span><div className={styles.rowMain}><strong>简历管理</strong><span>核对事实、设置默认简历</span></div><span className={styles.rowAction}>管理 →</span></Link>
@@ -67,7 +67,7 @@ export function AccountPage(): React.JSX.Element {
       </div></Surface></section>
       <section><h2 className={styles.sectionTitle}>隐私与账号</h2><Surface><div className={styles.list}>
         <Link className={styles.listRow} to="/legal"><span className={styles.icon}>🔒</span><div className={styles.rowMain}><strong>协议与隐私</strong><span>用户协议、隐私政策和 AI 服务说明</span></div><span className={styles.rowAction}>查看 →</span></Link>
-        {query.data?.user.isAdmin ? <Link className={styles.listRow} to="/admin"><span className={styles.icon}>🧭</span><div className={styles.rowMain}><strong>管理员</strong><span>邀请码与测试指标</span></div><span className={styles.rowAction}>进入 →</span></Link> : null}
+        {query.data?.user.isAdmin ? <Link className={styles.listRow} to="/admin"><span className={styles.icon}>🧭</span><div className={styles.rowMain}><strong>管理员</strong><span>用户、额度与测试指标</span></div><span className={styles.rowAction}>进入 →</span></Link> : null}
         <button className={styles.listRow} onClick={() => void deleteAccount()} type="button"><span className={styles.icon}>🗑️</span><div className={styles.rowMain}><strong className={styles.dangerText}>删除账号</strong><span>立即停用，并在 24 小时内删除可关联数据</span></div><span className={`${styles.rowAction} ${styles.dangerText}`}>删除 →</span></button>
       </div></Surface></section>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
@@ -85,7 +85,7 @@ export function LegalPage(): React.JSX.Element {
   const acceptedAt = user.data?.user.agreements.userAgreement?.acceptedAt;
   return (
     <div className={styles.stack}>
-      <Header eyebrow="邀请制测试版" title="协议与隐私" />
+      <Header eyebrow="小范围测试版" title="协议与隐私" />
       <p className={styles.intro}>生效日期：{WEB_EFFECTIVE_DATE} · 联系邮箱：{WEB_CONTACT_EMAIL}</p>
       {WEB_LEGAL_DOCUMENTS.map((document) => (
         <Surface key={document.title}>
@@ -116,23 +116,14 @@ export function AdminPage(): React.JSX.Element {
     queryKey: ["admin.stats"],
     queryFn: () => callApi<AdminStats>("admin.stats", {}),
   });
-  const [invite, setInvite] = useState("");
   const [error, setError] = useState("");
-  const [inviteId, setInviteId] = useState("");
   const [targetUserId, setTargetUserId] = useState("");
   const [message, setMessage] = useState("");
-  async function createInvite(): Promise<void> {
-    try {
-      const result = await callApi<{ code: string; inviteId: string }>("admin.inviteCreate", {}, createRequestId());
-      setInvite(result.code);
-      setInviteId(result.inviteId);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "邀请码创建失败。") }
-  }
   async function setUserEnabled(enabled: boolean): Promise<void> {
     try {
       await callApi(
         "admin.userSetEnabled",
-        { targetUserId, enabled, reason: "Web 邀请制测试管理员操作" },
+        { targetUserId, enabled, reason: "Web 邮箱测试管理员操作" },
         createRequestId(),
       );
       setError("");
@@ -145,7 +136,7 @@ export function AdminPage(): React.JSX.Element {
     return (
       <div className={styles.stack}>
         <Header eyebrow="权限受限" title="管理员" />
-        <ErrorNotice>当前匿名身份不是管理员，无法访问此页面。</ErrorNotice>
+        <ErrorNotice>当前邮箱身份不是管理员，无法访问此页面。</ErrorNotice>
         <Link className={styles.inlineLink} to="/">返回首页</Link>
       </div>
     );
@@ -153,9 +144,7 @@ export function AdminPage(): React.JSX.Element {
   return (
     <div className={styles.stack}>
       <Header eyebrow="隐藏入口" title="管理员" />
-      <Surface><div className={styles.compactStack}><h2 className={styles.sectionTitle}>邀请码</h2><PrimaryButton onClick={() => void createInvite()}>创建一次性邀请码</PrimaryButton>{invite === "" ? null : <p className={styles.value}>{invite}</p>}</div></Surface>
-      {inviteId === "" ? null : <SecondaryButton onClick={() => void callApi("admin.inviteRevoke", { inviteId }, createRequestId()).then(() => { setMessage("邀请码已撤销"); setInvite(""); setInviteId(""); }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "撤销失败。"))}>撤销刚创建的邀请码</SecondaryButton>}
-      <Surface><div className={styles.compactStack}><h2 className={styles.sectionTitle}>用户操作</h2><label className={styles.field}><span>内部 userId</span><input className={styles.input} onChange={(event) => setTargetUserId(event.target.value.trim())} placeholder="user_…" value={targetUserId} /></label><div className={styles.buttonRow}><SecondaryButton onClick={() => void setUserEnabled(true)}>启用用户</SecondaryButton><SecondaryButton onClick={() => void setUserEnabled(false)}>停用用户</SecondaryButton><SecondaryButton onClick={() => void callApi("admin.quotaAdjust", { targetUserId, increase: 5, reason: "Web 邀请制测试临时额度" }, createRequestId()).then(() => setMessage("今日临时增加 5 次")).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "操作失败。"))}>增加 5 次</SecondaryButton></div></div></Surface>
+      <Surface><div className={styles.compactStack}><h2 className={styles.sectionTitle}>用户操作</h2><label className={styles.field}><span>内部 userId</span><input className={styles.input} onChange={(event) => setTargetUserId(event.target.value.trim())} placeholder="user_…" value={targetUserId} /></label><div className={styles.buttonRow}><SecondaryButton onClick={() => void setUserEnabled(true)}>启用用户</SecondaryButton><SecondaryButton onClick={() => void setUserEnabled(false)}>停用用户</SecondaryButton><SecondaryButton onClick={() => void callApi("admin.quotaAdjust", { targetUserId, increase: 5, reason: "Web 邮箱测试临时额度" }, createRequestId()).then(() => setMessage("今日临时增加 5 次")).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "操作失败。"))}>增加 5 次</SecondaryButton></div></div></Surface>
       <Surface><h2 className={styles.sectionTitle}>测试指标</h2><pre className={styles.legalBody}>{query.isLoading ? "加载中…" : JSON.stringify(query.data ?? {}, null, 2)}</pre></Surface>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}
       {message === "" ? null : <p className={styles.intro}>{message}</p>}

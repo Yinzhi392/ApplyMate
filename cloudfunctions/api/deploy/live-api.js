@@ -12,8 +12,8 @@ const { CloudBaseJobRepository } = require("./cloudbase-job-repository");
 const { createExperienceApiHandler } = require("./experience-api");
 
 const CURRENT_VERSIONS = Object.freeze({
-  userAgreementVersion: "user-2026-08-09",
-  privacyPolicyVersion: "privacy-2026-08-09",
+  userAgreementVersion: "user-2026-08-23",
+  privacyPolicyVersion: "privacy-2026-08-23",
 });
 const BOOTSTRAP_RECORD_TYPE = "admin_bootstrap";
 const INVITE_RECORD_TYPE = "invite";
@@ -41,6 +41,7 @@ const JOB_STATUS_LABELS = Object.freeze({
 });
 const CLIENT_IDENTITY_FIELDS = new Set([
   "uid", "UID", "openId", "openid", "OPENID", "userId", "customUserId", "identityHash",
+  "email", "emailAddress",
 ]);
 
 function hashValue(domain, value) {
@@ -136,7 +137,7 @@ function createUser(identityHash, identityNamespace, now) {
     identityNamespace,
     roles: [],
     accountStatus: "enabled",
-    activationStatus: "pending_invite",
+    activationStatus: identityNamespace === "web-email-uid-v1" ? "active" : "pending_invite",
     agreements: {},
     preferenceText: "",
     preferenceFacts: [],
@@ -176,7 +177,12 @@ function accessState(user) {
   ) {
     return "agreement_required";
   }
-  return isAdmin(user) || user.activationStatus === "active" ? "active" : "invite_required";
+  const isWebIdentity =
+    user.identityNamespace === "web-email-uid-v1" ||
+    user.identityNamespace === "web-anonymous-uid-v1";
+  return isAdmin(user) || isWebIdentity || user.activationStatus === "active"
+    ? "active"
+    : "invite_required";
 }
 
 function isAgreementPayload(payload) {
@@ -254,7 +260,7 @@ function createLiveApiHandler({
       !trustedIdentity ||
       typeof trustedIdentity.value !== "string" ||
       trustedIdentity.value.trim() === "" ||
-      !["applymate-openid-v1", "web-anonymous-uid-v1"].includes(trustedIdentity.namespace)
+      !["applymate-openid-v1", "web-anonymous-uid-v1", "web-email-uid-v1"].includes(trustedIdentity.namespace)
     ) {
       return unauthenticated();
     }

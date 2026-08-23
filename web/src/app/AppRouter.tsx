@@ -14,16 +14,22 @@ function ProtectedRoutes(): React.JSX.Element {
   const auth = useAuth();
   const location = useLocation();
   if (auth.loading) {
-    return <LoadingScreen label="正在恢复当前浏览器的身份…" />;
+    return <LoadingScreen label="正在恢复登录状态…" />;
   }
-  if (auth.error !== null || auth.status === undefined) {
+  if (auth.error !== null) {
     return <LoadingScreen label={auth.error?.message ?? "暂时无法连接服务"} action={auth.refresh} />;
   }
   const isPublicRoute = location.pathname === "/login" || location.pathname === "/legal";
-  if (auth.status.accessState !== "active" && !isPublicRoute) {
+  if (!auth.authenticated && !isPublicRoute) {
     return <Navigate replace to="/login" />;
   }
-  if (auth.status.accessState === "active" && location.pathname === "/login") {
+  if (auth.authenticated && auth.status === undefined) {
+    return <LoadingScreen label="正在读取账号状态…" action={auth.refresh} />;
+  }
+  if (auth.status !== undefined && auth.status.accessState !== "active" && !isPublicRoute) {
+    return <Navigate replace to="/login" />;
+  }
+  if (auth.status?.accessState === "active" && location.pathname === "/login") {
     return <Navigate replace to="/" />;
   }
   return (

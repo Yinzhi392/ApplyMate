@@ -25,6 +25,7 @@ const PUBLIC_PROCESSING_ERRORS = Object.freeze({
   APPLICATION_NOT_FOUND: ["找不到需要改写的投递记录，请返回记录页重试。", false],
   DATABASE_WRITE_FAILED: ["处理结果保存失败，请稍后重试。", true],
   DOCUMENT_EMPTY: ["没有读取到文档内容，请检查文件后重试。", false],
+  FILE_PROCESSING_FAILED: ["上传文件读取失败，请重新上传后重试。", true],
   GREETING_LENGTH_INVALID: ["生成内容未通过长度检查，请重新生成。", true],
   INSUFFICIENT_FACTS: ["已确认的简历事实不足，暂时无法生成可靠内容。", false],
   MODEL_CREDENTIALS_MISSING: ["AI 服务配置未完成，请联系管理员。", false],
@@ -235,6 +236,70 @@ async function temporaryFileUrl(app, fileId) {
   return urls instanceof Map ? urls.get(fileId) || "" : "";
 }
 
+function trustedClientFileUrls(fileIds, fileAccessUrls) {
+  if (!Array.isArray(fileAccessUrls) || fileAccessUrls.length !== fileIds.length) return new Map();
+  const urls = new Map();
+  fileIds.forEach((fileId, index) => {
+    const match = /^cloud:\/\/([^/]+)\/(.+)$/u.exec(fileId);
+    const rawUrl = fileAccessUrls[index];
+    if (!match || typeof rawUrl !== "string") return;
+    const separator = match[1].indexOf(".");
+    if (separator < 1 || separator === match[1].length - 1) return;
+    const bucket = match[1].slice(separator + 1).toLowerCase();
+    try {
+      const url = new URL(rawUrl);
+      const hostname = url.hostname.toLowerCase();
+      const validHost = hostname === `${bucket}.tcb.qcloud.la` ||
+        (hostname.startsWith(`${bucket}.cos.`) && hostname.endsWith(".myqcloud.com"));
+      const decodedPath = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/gu, "");
+      if (url.protocol === "https:" && url.username === "" && url.password === "" &&
+        (url.port === "" || url.port === "443") && validHost && decodedPath === match[2]) {
+        urls.set(fileId, rawUrl);
+      }
+    } catch {
+      // The API rejects malformed URLs; worker validation is a second defensive boundary.
+    }
+  });
+  return urls;
+}
+
+async function signedFileBytes(url, timeoutMs = 10_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error("SIGNED_FILE_DOWNLOAD_FAILED");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0) throw new Error("SIGNED_FILE_DOWNLOAD_FAILED");
+    return bytes;
+  } catch {
+    throw new Error("SIGNED_FILE_DOWNLOAD_FAILED");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function uploadedFileBytes(app, fileId, signedUrl = "") {
+  if (signedUrl) {
+    try {
+      return await signedFileBytes(signedUrl);
+    } catch {
+      // Fall back for environments where temporary URLs cannot be fetched internally.
+    }
+  }
+  if (typeof app.downloadFile !== "function") throw new Error("FILE_DOWNLOAD_FAILED");
+  const response = await app.downloadFile({ fileID: fileId });
+  const content = response?.fileContent;
+  if (content == null) throw new Error("FILE_DOWNLOAD_FAILED");
+  const bytes = content instanceof ArrayBuffer
+    ? Buffer.from(content)
+    : ArrayBuffer.isView(content)
+      ? Buffer.from(content.buffer, content.byteOffset, content.byteLength)
+      : Buffer.from(content);
+  if (bytes.length === 0) throw new Error("FILE_DOWNLOAD_FAILED");
+  return bytes;
+}
+
 async function compressedOcrCopy(app, fileId, credentials) {
   const response = await app.downloadFile({ fileID: fileId });
   const originalBytes = Buffer.from(response.fileContent);
@@ -268,14 +333,14 @@ async function compressedOcrCopy(app, fileId, credentials) {
   }
 }
 
-async function extractFileTextDetailed(app, fileId, inputType, credentials, signedImageUrl = "") {
+async function extractFileTextDetailed(app, fileId, inputType, credentials, signedFileUrl = "") {
   const isDocx = inputType === "docx" || /\.docx(?:$|\?)/iu.test(fileId);
   const isPdf = inputType === "pdf" || /\.pdf(?:$|\?)/iu.test(fileId);
   if (!isDocx && !isPdf) {
-    if (signedImageUrl) {
+    if (signedFileUrl) {
       try {
         return {
-          text: await recognizeImage(signedImageUrl, credentials, 8_000),
+          text: await recognizeImage(signedFileUrl, credentials, 8_000),
           originalBytes: 0,
           compressedBytes: 0,
           ocrTransportMode: "image_url",
@@ -288,12 +353,11 @@ async function extractFileTextDetailed(app, fileId, inputType, credentials, sign
     }
     return compressedOcrCopy(app, fileId, credentials);
   }
-  const response = await app.downloadFile({ fileID: fileId });
-  const bytes = Buffer.from(response.fileContent);
+  const bytes = await uploadedFileBytes(app, fileId, signedFileUrl);
   if (isDocx) {
     const result = await mammoth.extractRawText({ buffer: bytes });
     if (!result.value.trim()) throw new Error("DOCUMENT_EMPTY");
-    return { text: result.value.trim(), originalBytes: bytes.length, ocrTransportMode: "document" };
+    return { text: result.value.trim(), originalBytes: bytes.length, ocrTransportMode: "document_url" };
   }
   if (isPdf) {
     const { extractText, getDocumentProxy } = await import("unpdf");
@@ -302,7 +366,7 @@ async function extractFileTextDetailed(app, fileId, inputType, credentials, sign
     const result = await extractText(pdf, { mergePages: true });
     const text = String(result.text ?? "");
     if (!text.trim()) throw new Error("SCANNED_PDF_SCREENSHOT_REQUIRED");
-    return { text: text.trim(), originalBytes: bytes.length, ocrTransportMode: "document" };
+    return { text: text.trim(), originalBytes: bytes.length, ocrTransportMode: "document_url" };
   }
   return {
     text: await recognizeImage(bytes, credentials),
@@ -325,9 +389,12 @@ async function readInputTextDetailed(app, input, credentials) {
   }
   const fileIds = input.fileIds || [];
   const batchSigningStartedAt = Date.now();
-  const signedUrls = input.inputType === "images"
-    ? await temporaryFileUrls(app, fileIds).catch(() => new Map())
-    : new Map();
+  const signedUrls = trustedClientFileUrls(fileIds, input.fileAccessUrls);
+  const missingFileIds = fileIds.filter((fileId) => !signedUrls.has(fileId));
+  if (missingFileIds.length > 0) {
+    const workerSignedUrls = await temporaryFileUrls(app, missingFileIds).catch(() => new Map());
+    workerSignedUrls.forEach((url, fileId) => signedUrls.set(fileId, url));
+  }
   const signedUrlBatchMs = Date.now() - batchSigningStartedAt;
   const results = await Promise.all(
     fileIds.map((fileId) =>
@@ -339,7 +406,11 @@ async function readInputTextDetailed(app, input, credentials) {
         signedUrls.get(fileId) || "",
       )
     ),
-  );
+  ).catch((error) => {
+    const code = String(error?.message || "");
+    if (Object.prototype.hasOwnProperty.call(PUBLIC_PROCESSING_ERRORS, code)) throw error;
+    throw new Error("FILE_PROCESSING_FAILED");
+  });
   const modes = new Set(results.map(({ ocrTransportMode }) => ocrTransportMode));
   return {
     text: results.map(({ text }) => text).join("\n").trim(),
@@ -397,12 +468,60 @@ function resumePrompt(text) {
   return `从已脱敏简历中提取可核对事实，不得补写。只返回 JSON 对象；缺失分类可以省略或使用空数组。字段：name；education[{school,major,degree,text}]；experiences[{organization,role,text}]；projects[{name,text}]；skills/languages/certificates/achievements[{name,text}]；otherFacts[{text}]。每一项的 text 保留原意并包含最有验证价值的动作、方法和结果，不要合并互不相关的经历。\n简历：${maskProtectedText(text).slice(0, 24_000)}`;
 }
 
-async function parseResumeOnce(rawText, resumeId) {
-  const value = await callModel(resumePrompt(rawText), {
+async function parseResumeOnce(rawText, resumeId, modelCall = callModel) {
+  const value = await modelCall(resumePrompt(rawText), {
     maxTokens: 1_000,
     timeoutMs: 16_000,
   });
   return normalizeResumeModel(value, resumeId);
+}
+
+function fallbackResumeProfile(rawText, resumeId) {
+  const safeText = maskProtectedText(rawText)
+    .replaceAll("[MASKED_PHONE]", "[手机号已遮盖]")
+    .replaceAll("[MASKED_EMAIL]", "[邮箱已遮盖]")
+    .replaceAll("[MASKED_ID]", "[证件号已遮盖]")
+    .replaceAll("[MASKED_ADDRESS]", "[详细地址已遮盖]");
+  const lines = safeText
+    .split(/\r?\n/u)
+    .map((line) => line.replace(/\s+/gu, " ").trim().slice(0, 2_000))
+    .filter(Boolean)
+    .slice(0, 100);
+  if (lines.length === 0) throw new Error("DOCUMENT_EMPTY");
+  return {
+    resumeId,
+    confirmed: false,
+    preferences: [],
+    education: [],
+    experiences: [],
+    projects: [],
+    skills: [],
+    languages: [],
+    certificates: [],
+    achievements: [],
+    otherFacts: lines.map((text) => ({
+      factId: factId("other", text),
+      factHash: sha256(text),
+      sourceType: "other",
+      text,
+    })),
+  };
+}
+
+async function parseResumeWithFallback(rawText, resumeId, modelCall = callModel) {
+  try {
+    return {
+      profile: await parseResumeOnce(rawText, resumeId, modelCall),
+      parsingMode: "model",
+    };
+  } catch (error) {
+    if (["DOCUMENT_EMPTY", "MODEL_CREDENTIALS_MISSING"].includes(error?.message)) throw error;
+    return {
+      profile: fallbackResumeProfile(rawText, resumeId),
+      parsingMode: "verified_text_fallback",
+      warning: "AI_PARSE_FALLBACK",
+    };
+  }
 }
 
 function allFacts(profile) {
@@ -2074,7 +2193,8 @@ function createExperienceWorker({
       if (firstStatus === "ocr") await jobs.transitionJob(job.jobId, "ocr", "parsing", now());
       if (job.kind === "resume_parse") {
         const modelStartedAt = Date.now();
-        const profile = await parseResumeOnce(rawText, job.resumeId);
+        const parsedResume = await parseResumeWithFallback(rawText, job.resumeId, modelCall);
+        const { profile } = parsedResume;
         modelDurationMs = Date.now() - modelStartedAt;
         const profileJson = JSON.stringify(profile);
         const result = {
@@ -2087,9 +2207,11 @@ function createExperienceWorker({
             inputDurationMs,
             modelDurationMs,
             ...inputMetrics,
-            serverPipelineVersion: "greeting-v8.19-low-latency",
+            parsingMode: parsedResume.parsingMode,
+            serverPipelineVersion: "resume-parse-v2-resilient",
             totalDurationMs: Date.now() - processingStartedAt,
           },
+          warnings: parsedResume.warning ? [parsedResume.warning] : [],
         };
         const resumeRecord = await findOne(database.collection("resumes"), {
           recordType: "resume", resumeId: job.resumeId, userId: job.userId,
@@ -2212,7 +2334,7 @@ function createExperienceWorker({
       if (current && !TERMINAL.has(current.status) && !error?.rewriteReconciliationPending) {
         const validationDiagnostics = safeValidationDiagnostics(error);
         await jobs.transitionJob(job.jobId, current.status, "failed", now(), {
-          error: publicError,
+          error: { ...publicError, stage: current.status },
           processingMetrics: {
             ...(current.processingMetrics || {}),
             ...clientProcessingMetrics,
@@ -2239,6 +2361,14 @@ function createExperienceWorker({
       }
       return failure(publicError.code, publicError.message, publicError.retryable);
     } finally {
+      if (Array.isArray(job.input?.fileAccessUrls) && job.input.fileAccessUrls.length > 0) {
+        const sanitizedInput = { ...job.input };
+        delete sanitizedInput.fileAccessUrls;
+        await updateExactlyOne(database.collection("ai_jobs").where({
+          _id: job._id,
+          userId: job.userId,
+        }), { input: sanitizedInput }).catch(() => undefined);
+      }
       if (fileIds.length > 0) await app.deleteFile({ fileList: fileIds }).catch(() => undefined);
     }
   };
@@ -2256,6 +2386,7 @@ module.exports = {
   modelGreetingPackage,
   modelGreetingPackageWithLocalValidation,
   normalizeResumeModel,
+  parseResumeWithFallback,
   normalizeRewriteModel,
   parseJson,
   persistGreetingMatchMode,

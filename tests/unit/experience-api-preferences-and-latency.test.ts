@@ -78,7 +78,8 @@ describe("experience API preference and low-latency contracts", () => {
         action: "resume.parse",
         payload: {
           inputType: "images",
-          fileIds: ["cloud://env/temporary/web/user_bbbbbbbbbbbbbbbbbbbbbbbb/resume.jpg"],
+          fileIds: ["cloud://env.bucket/temporary/web/user_bbbbbbbbbbbbbbbbbbbbbbbb/resume.jpg"],
+          fileAccessUrls: ["https://bucket.tcb.qcloud.la/temporary/web/user_bbbbbbbbbbbbbbbbbbbbbbbb/resume.jpg?sign=creator"],
         },
         requestId: "f1234567-1234-4123-8123-123456789abc",
       },
@@ -90,12 +91,49 @@ describe("experience API preference and low-latency contracts", () => {
         action: "resume.parse",
         payload: {
           inputType: "images",
-          fileIds: ["cloud://env/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.jpg"],
+          fileIds: ["cloud://env.bucket/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.jpg"],
+          fileAccessUrls: ["https://bucket.tcb.qcloud.la/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.jpg?sign=creator"],
         },
         requestId: "f2234567-1234-4123-8123-123456789abc",
       },
       user: webUser,
     })).resolves.toMatchObject({ ok: true, data: { resumeId: expect.any(String) } });
+  });
+
+  it("accepts only creator-issued CloudBase access URLs that match the owned Web file", async () => {
+    const state = createDatabase();
+    const webUser = {
+      ...user,
+      identityNamespace: "web-email-uid-v1",
+      userId: "user_aaaaaaaaaaaaaaaaaaaaaaaa",
+    };
+    const handler = createExperienceApiHandler({
+      database: state.database,
+      dispatchExperienceJob: async () => ({ ok: true }),
+      accessState: () => "active",
+      now: () => new Date("2026-08-23T12:00:00.000Z"),
+    });
+    const fileId = "cloud://env.bucket/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.pdf";
+    const validUrl = "https://bucket.tcb.qcloud.la/temporary/web/user_aaaaaaaaaaaaaaaaaaaaaaaa/resume.pdf?sign=creator";
+
+    await expect(handler({
+      event: {
+        action: "resume.parse",
+        payload: { inputType: "pdf", fileIds: [fileId], fileAccessUrls: ["https://example.com/resume.pdf"] },
+        requestId: "f3234567-1234-4123-8123-123456789abc",
+      },
+      user: webUser,
+    })).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+
+    await expect(handler({
+      event: {
+        action: "resume.parse",
+        payload: { inputType: "pdf", fileIds: [fileId], fileAccessUrls: [validUrl] },
+        requestId: "f4234567-1234-4123-8123-123456789abc",
+      },
+      user: webUser,
+    })).resolves.toMatchObject({ ok: true, data: { resumeId: expect.any(String) } });
+    expect(state.documents("ai_jobs")[0]?.input).toMatchObject({ fileAccessUrls: [validUrl] });
   });
 
   it("accepts preferenceText, saves normalized facts, and returns them", async () => {

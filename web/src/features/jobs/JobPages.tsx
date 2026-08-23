@@ -4,11 +4,12 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 
 import { useAuth } from "../../app/AuthProvider";
 import { callApi } from "../../lib/api";
-import { uploadWithConcurrency } from "../../lib/cloudbase";
+import { uploadWithConcurrency, type TemporaryUpload } from "../../lib/cloudbase";
 import type { JobView, ResumeListItem } from "../../lib/models";
 import { createRequestId } from "../../lib/request-id";
 import { ErrorNotice, Header, PrimaryButton, SecondaryButton, Surface } from "../../ui/ui";
 import styles from "../Feature.module.css";
+import { createJobProgressContent } from "./job-progress";
 
 type InputMode = "images" | "text";
 
@@ -20,7 +21,7 @@ export function JobCreatePage(): React.JSX.Element {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const uploadPromise = useRef<Promise<string[]> | null>(null);
+  const uploadPromise = useRef<Promise<TemporaryUpload[]> | null>(null);
   const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
   useEffect(() => () => previews.forEach(({ url }) => URL.revokeObjectURL(url)), [previews]);
   const resumes = useQuery({ queryKey: ["resume.list"], queryFn: () => callApi<{ resumes: ResumeListItem[] }>("resume.list", {}) });
@@ -42,9 +43,17 @@ export function JobCreatePage(): React.JSX.Element {
     setBusy(true);
     setError("");
     try {
+      const uploads = mode === "images"
+        ? await (uploadPromise.current ?? Promise.resolve([]))
+        : [];
       const payload = mode === "text"
         ? { resumeId: defaultResume.resumeId, inputType: "text" as const, text }
-        : { resumeId: defaultResume.resumeId, inputType: "images" as const, fileIds: await (uploadPromise.current ?? Promise.resolve([])) };
+        : {
+            resumeId: defaultResume.resumeId,
+            inputType: "images" as const,
+            fileIds: uploads.map(({ fileId }) => fileId),
+            fileAccessUrls: uploads.map(({ accessUrl }) => accessUrl),
+          };
       const created = await callApi<{ jobId: string }>("generation.create", payload, createRequestId());
       navigate(`/jobs/${created.jobId}?kind=generation`, { replace: true });
     } catch (cause) {
@@ -86,8 +95,6 @@ export function JobCreatePage(): React.JSX.Element {
   );
 }
 
-const stages = ["读取岗位输入", "识别岗位职责与要求", "匹配简历事实并生成"];
-
 export function JobProgressPage(): React.JSX.Element {
   const { jobId = "" } = useParams();
   const [params] = useSearchParams();
@@ -96,14 +103,16 @@ export function JobProgressPage(): React.JSX.Element {
   const query = useQuery({
     queryKey: ["job.get", jobId],
     queryFn: () => callApi<JobView & { kind?: string; result?: Record<string, unknown> }>("job.get", { jobId }),
-    refetchInterval: (state) => ["succeeded", "failed"].includes(state.state.data?.status ?? "") ? false : 1_000,
+    refetchInterval: (state) => ["succeeded", "failed", "awaiting_user_confirmation"].includes(state.state.data?.status ?? "") ? false : 1_000,
   });
   const job = query.data;
   useEffect(() => {
-    if (navigated.current || job?.status !== "succeeded") return;
+    const kind = params.get("kind") ?? job?.kind;
+    const complete = job?.status === "succeeded" ||
+      (job?.status === "awaiting_user_confirmation" && (kind === "resume" || job?.kind === "resume_parse"));
+    if (navigated.current || !complete) return;
     navigated.current = true;
     const result = job.result ?? {};
-    const kind = params.get("kind") ?? job.kind;
     if (kind === "resume" || job.kind === "resume_parse") {
       const resumeId = String(result.resumeId ?? params.get("resumeId") ?? "");
       navigate(`/resumes/${resumeId}/review`, { replace: true });
@@ -112,15 +121,17 @@ export function JobProgressPage(): React.JSX.Element {
       navigate(`/results/${applicationId}`, { replace: true });
     }
   }, [job, navigate, params]);
-  const activeIndex = job?.status === "queued" ? 0 : job?.status === "ocr" || job?.status === "parsing" ? 1 : 2;
+  const kind = params.get("kind") ?? job?.kind;
+  const progressContent = createJobProgressContent(kind, job?.status, job?.error?.stage);
+  const { activeIndex, stages, title } = progressContent;
   return (
     <div className={styles.stack}>
-      <Header eyebrow="任务会自动恢复" title={job?.status === "failed" ? "处理未完成" : "正在生成开场白"} />
+      <Header eyebrow="任务会自动恢复" title={title} />
       <p className={styles.intro}>可以切到其他应用，回来后会继续显示当前进度。</p>
       <Surface>
         <div className={styles.compactStack}>
           <div className={styles.split}><p className={styles.value}>{job?.statusLabel ?? "排队"}</p><span className={styles.pill}>{job?.status === "failed" ? "可重试" : "处理中"}</span></div>
-          <div aria-label="任务进度" className={styles.progress}><span style={{ width: `${job?.status === "succeeded" ? 100 : (activeIndex + 1) * 30}%` }} /></div>
+          <div aria-label="任务进度" className={styles.progress}><span style={{ width: `${["succeeded", "awaiting_user_confirmation"].includes(job?.status ?? "") ? 100 : (activeIndex + 1) * 30}%` }} /></div>
         </div>
       </Surface>
       <Surface>

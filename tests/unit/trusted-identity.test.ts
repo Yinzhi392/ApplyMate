@@ -60,6 +60,7 @@ describe("trusted CloudBase identity boundary", () => {
       registry,
       readCloudBaseContext: () => ({
         uid: "anonymous_uid_a",
+        isAnonymous: true,
       }),
     });
 
@@ -75,6 +76,58 @@ describe("trusted CloudBase identity boundary", () => {
     });
     expect(hashTrustedIdentity("same_value", "web-anonymous-uid-v1"))
       .not.toBe(hashTrustedOpenId("same_value"));
+  });
+
+  it("treats an unmarked Web UID as the configured email identity", async () => {
+    const registry = new ActionRegistry();
+    registry.register("user.get", async (_payload, context) => ({
+      ok: true,
+      data: { namespace: context.identityNamespace ?? "applymate-openid-v1" },
+    }));
+    const api = createApiEntry({
+      registry,
+      readCloudBaseContext: () => ({ uid: "registered_email_without_marker" }),
+    });
+
+    await expect(api({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { namespace: "web-email-uid-v1" },
+    });
+  });
+
+  it("uses a separate registered-email namespace and strips client email fields", async () => {
+    const registry = new ActionRegistry();
+    let receivedPayload: Record<string, unknown> | undefined;
+    registry.register("user.get", async (payload, context) => {
+      receivedPayload = payload;
+      return {
+        ok: true,
+        data: {
+          namespace: context.identityNamespace ?? "applymate-openid-v1",
+        },
+      };
+    });
+    const api = createApiEntry({
+      registry,
+      readCloudBaseContext: () => ({
+        uid: "registered_email_uid",
+        isAnonymous: "false",
+      }),
+    });
+
+    await expect(api({
+      action: "user.get",
+      payload: {
+        email: "forged@example.com",
+        profile: { emailAddress: "nested@example.com", keep: "safe" },
+      },
+    })).resolves.toMatchObject({
+      ok: true,
+      data: { namespace: "web-email-uid-v1" },
+    });
+    expect(receivedPayload).toEqual({ profile: { keep: "safe" } });
+    expect(hashTrustedIdentity("same_value", "web-email-uid-v1"))
+      .not.toBe(hashTrustedIdentity("same_value", "web-anonymous-uid-v1"));
   });
 
   it("keeps OPENID as the Legacy identity when both identifiers exist", async () => {

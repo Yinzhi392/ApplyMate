@@ -1,5 +1,5 @@
-const SHELL_CACHE = "applymate-shell-v2";
-const SHELL_ASSETS = ["/", "/manifest.webmanifest", "/icon.svg"];
+const SHELL_CACHE = "applymate-shell-v3";
+const SHELL_ASSETS = ["/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS)));
@@ -22,7 +22,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/")));
+    // Always load the latest application shell. HashRouter keeps application
+    // routes client-side, so navigation needs no cached HTML fallback.
     return;
   }
   if (!SHELL_ASSETS.includes(url.pathname) && !url.pathname.startsWith("/assets/")) {

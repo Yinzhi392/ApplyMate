@@ -1,49 +1,53 @@
 # ApplyMate Architecture Memory
 
-## Web v2.0 当前架构（2026-08-23 本地实现）
+## Web v2.1 当前架构（2026-08-23 已部署，待真实邮箱验收）
 
 微信小程序从提交 `b99be7e` 起冻结为 Legacy。`miniprogram/`、既有体验版云函数和旧数据只读保留；Web 不迁移旧 OpenID 用户或其数据，任何删除仍需单独授权。
 
 ### 新增文件职责
 
-- `web/`：React/Vite 移动端生产客户端，负责路由、匿名会话启动、临时文件上传、任务恢复与 PWA 外壳。
+- `web/`：React/Vite 移动端生产客户端，负责路由、邮箱验证码会话、临时文件上传、任务恢复与 PWA 外壳。
 - `web/src/app/`：路由、查询客户端、访问门和全局布局。
 - `web/src/features/`：按登录、简历、岗位、结果、记录、账户和管理员拆分业务页面。
-- `web/src/lib/cloudbase.ts`：CloudBase Web SDK 唯一初始化点；前端只调用匿名认证、云函数和临时存储。
+- `web/src/lib/cloudbase.ts`：CloudBase Web SDK 唯一初始化点；前端只调用邮箱验证码认证、云函数和临时存储。
+- `web/src/lib/email-auth.ts`：邮箱规范化、地址格式和 CloudBase 6 位字母或数字验证码的无副作用校验；不保存邮箱或验证码。
 - `web/src/lib/api.ts`：统一 `{ action, payload, requestId }` API 客户端；不接受身份字段。
 - `web/src/styles/`：移动设计令牌、安全区、玻璃表面和无溢出布局。
 - `web/public/sw.js`：只缓存带版本号的网站外壳；API、CloudBase、文件及用户路由响应全部网络直连且不落缓存。
 - `docs/web-wireframes.md`：八组响应式结构基线和 320–430px 验收规则。
 - `docs/web-cloudbase-setup.md`：测试域名部署、匿名认证、数据库拒绝直连、存储规则和人工验收清单；它不是已部署证明。
 
-### 匿名身份边界
+### 邮箱登录身份边界
 
-1. 浏览器使用 CloudBase `local` 持久化创建或恢复匿名会话。
-2. 云函数上下文提供可信 UID；`api-entry` 在任意嵌套对象或数组中递归删除客户端 UID/OpenID/userId/identityHash 后再校验请求。
-3. `UserService` 使用 `web-anonymous-uid-v1\0<uid>` 计算 SHA-256 身份哈希；Legacy OpenID 继续使用 `applymate-openid-v1`，两个命名空间绝不碰撞。
-4. 业务记录只持久化内部 `userId`；仓储的读取、写入和删除都把当前 `userId` 作为必要条件。
-5. 未激活匿名身份只允许 `auth.status`、`agreement.accept` 和 `invite.activate`；管理员通过独立身份哈希白名单判断。
+1. 首次登录由 CloudBase 身份服务向邮箱发送验证码：浏览器调用 SDK v3 `signInWithOtp({ email })`，只在当前页面内存中保存其返回的 `verifyOtp`，用户输入验证码后调用 `verifyOtp({ token })` 建立注册用户会话；SDK 使用 `local` 持久化，同一浏览器在会话有效期内自动恢复。刷新页面或更换邮箱后必须重新发送验证码，项目不自建密码、验证码或邮件发送服务。
+2. CloudBase 成功响应的 `error` 可能为 `null` 或 `undefined`，发送和验证只能使用 nullish 判断；禁止使用 `error !== null`，否则验证码实际已送达时仍会被前端误报为发送失败。
+3. 普通云函数的可信运行时上下文以 `WX_OPENID` 表示 Legacy 微信身份、以 `TCB_UUID` 表示 Web 身份。`TCB_UUID` 缺少匿名标记时按注册邮箱处理；运行时明确提供 `isAnonymous=true` 或 `ANONYMOUS` 登录类型时进入 Web 匿名命名空间。两种 Web 命名空间都只在当前协议有效后进入 active，不再要求邀请码；只有 `WX_OPENID` 旧小程序身份保留邀请码状态。`api` 绝不从 event/payload 读取 UID、邮箱或登录类型，`api-entry` 会在任意嵌套对象或数组中递归删除客户端 UID/OpenID/userId/identityHash/email 后再校验请求。
+4. 注册邮箱身份使用 `web-email-uid-v1\0<uid>`、历史匿名身份使用 `web-anonymous-uid-v1\0<uid>`、Legacy OpenID 使用 `applymate-openid-v1\0<openid>` 计算 SHA-256 身份哈希，三个命名空间互不碰撞。业务数据库不保存邮箱明文。
+5. 业务记录只持久化内部 `userId`；仓储的读取、写入和删除都把当前 `userId` 作为必要条件。
+6. 注册邮箱身份和受信 Web 匿名身份都须接受当前协议后才能调用业务动作；`auth.status` 和 `agreement.accept` 是登录后的准入动作。Web 页面不显示、提交或依赖邀请码。Legacy 微信 OpenID 身份继续保留旧邀请码状态，只用于小程序历史兼容。
+7. 云端调用面只允许已认证身份访问 `api`；`worker` 与 `cleanup` 不向浏览器开放。认证能力不能绕过 `api` 直连业务数据库。
 
 ### Web 数据与缓存边界
 
 - 浏览器不直连业务数据库；CloudBase 数据库安全规则拒绝客户端直接读写。
 - 文件上传路径由可信 UID 归属的临时前缀和随机 ID 组成；提交给 API 的 fileId 仍需服务端所有权校验。
-- TanStack Query 只保存在内存，不启用持久化；LocalStorage 只由 CloudBase SDK 保存匿名会话，不写简历、JD、正文或任务响应。
-- Service Worker 只缓存构建期静态文件，明确绕过 CloudBase、文件、导航和非 GET 请求。
+- TanStack Query 只保存在内存，不启用持久化；LocalStorage 只由 CloudBase SDK 保存认证会话，不写邮箱、验证码、简历、JD、正文或任务响应。
+- Service Worker 不缓存 HTML 导航或根页面，只缓存公开 manifest、图标和已取得的版本化静态资源；CloudBase、文件、用户路由和非 GET 请求全部绕过缓存。发布新版本时提升缓存版本并主动检查更新，避免旧页面壳继续控制入口。
 
 ### 额度与任务
 
 - 新 JD 使用北京时间日期键和 `reserved + succeeded` 事务，默认上限 20；成功正文（包括安全通用版）结算一次，失败/超时释放，重复 requestId 回放原结果。
 - 改写不占新 JD 额度，使用独立的用户级短窗口频率限制。
 - 截图选择后可并行上传但不 OCR；点击生成后才创建任务。最多 3 张并行上传，worker 只在超过上游限制时创建临时副本，不进行第二次模型纠错调用。
-- 管理员写操作只接受 `targetUserId`，避免它被通用身份字段过滤器当作客户端自报身份删除；启停、加额和邀请码操作均写审计。首份简历确认率只计算邀请码激活后 168 小时内的首次确认。
+- 管理员写操作只接受 `targetUserId`，避免它被通用身份字段过滤器当作客户端自报身份删除；启停和加额均写审计。Web 管理页不再提供邀请码创建/撤销。首份简历确认率以邮箱账号首次创建后 168 小时内确认首份简历计算。
 - `cleanup` 增加 Web 僵死任务、24 小时草稿、1 小时孤立文件、过期幂等/改写频率槽和账号删除清理；实际定时触发仍需 W9 云端配置与验证。
 
 ### 本地验证与部署边界
 
-- `npm run check` 当前覆盖 124 个测试文件、636 项测试、共享/三个云函数/Legacy 小程序五模块构建和 Web 生产构建。
-- `dist/web/` 是唯一 Web 托管产物；React Router 的路径回退必须在 CloudBase 静态托管中配置为 `index.html` 后，再逐路由验证直接刷新。
-- 本地实现通过不代表匿名认证、存储安全规则、跨设备行为或真实 AI 已上线。W8b/W9 和任何云资源写入仍等待单独授权。
+- `npm run check` 当前覆盖 125 个测试文件、643 项测试、共享/三个云函数/Legacy 小程序五模块构建和 Web 生产构建。
+- `dist/web/` 是唯一 Web 托管产物；前端使用 `HashRouter`，业务地址形如 `/#/resumes`，不依赖 CloudBase 的 SPA 404 回退。所有导航必须从根页面加载最新 HTML，再由片段路由解析页面。
+- Web 私有上传采用“创建者签发、API 约束、worker 消费”的能力传递：浏览器上传后以当前邮箱身份取得短期 HTTPS URL；`api` 将 URL 与同序 `fileId` 进行 bucket/路径/域名严格绑定；`worker` 不假设自己拥有用户文件，只读取该短期 URL，并在终态清除 URL 与原件。禁止用 worker 自己上传的文件作为跨身份读取验收，因为那无法覆盖 CloudBase `PRIVATE` 所有权边界。
+- CloudBase 邮箱验证码使用平台内置代发服务；本地真实邮箱已通过发送与验证登录，且“验证码实际送达却误报失败”的 SDK 响应判断已修复。随后发现普通云函数对 Web 调用者的匿名标记并不稳定：仅靠命名空间推断会让部分已登录用户在协议提交后仍进入 `invite_required`，被前端访问门送回登录页。当前访问规则以客户端类型为边界：`web-email-uid-v1` 与 `web-anonymous-uid-v1` 均在协议有效后 active，只有 `applymate-openid-v1` 保留旧邀请码门；同时使用 HashRouter 和不缓存导航的 Service Worker，避免页面入口看似全部失效。
 
 **版本：** 阶段 10 低延迟信息流框架 v2 / greeting-v8.19-low-latency
 
@@ -1011,3 +1015,23 @@ ApplyMate MVP 采用微信原生小程序和腾讯 CloudBase。服务端固定�
 - `experience-worker.js` 在进入严格质量门前，使用同一套段落—事实贡献度算法修复缺失、空值或未知的事实 ID；只能恢复正文实际引用且存在于已确认简历/偏好中的事实，不能新增事实。
 - 真机两次客户端图片准备分别约 18.5 秒和 16.6 秒，而服务端总耗时约 7.9 秒和 8.9 秒。`jd-submit-v4` 因此对不超过 4 MiB 的已测量手机截图跳过重复压缩，较大或未测量图片仍走 720px/质量 80；选图仍立即返回，所有准备、上传和生成从用户点击主按钮后并发开始。
 - `processingMetrics.clientPipelineVersion` 与 `serverPipelineVersion` 分别固定为 `jd-submit-v4` 和 `greeting-v8.16`，用于区分真机复验是否命中新链路。
+
+## Web 简历解析的韧性边界（2026-08-23）
+
+- `cloudfunctions/worker/deploy/experience-worker.js` 的简历链路先完成文件读取与隐私遮盖，再调用文本模型整理分类。模型请求或结构化输出异常时，使用同一份已脱敏文字生成 `verified_text_fallback` 草稿，交给用户核对；不把未经用户确认的草稿用于岗位生成。
+- 文件本身损坏、无法从云存储读取或解析器无法处理时仍失败关闭，并返回 `FILE_PROCESSING_FAILED` 等可行动错误；OCR 完全无文字、凭证缺失等原有安全门不放宽。
+- `web/src/features/jobs/job-progress.ts` 是 Web 任务阶段文案的单一映射点，区分 `resume_parse` 与开场白生成。简历的 `awaiting_user_confirmation` 是可导航终态，岗位生成的成功终态仍为 `succeeded`。
+
+## Web 上传文档读取路径（2026-08-23）
+
+- `cloudfunctions/worker/deploy/experience-worker.js` 对图片、PDF 和 DOCX 统一批量申请 CloudBase 短期签名 HTTPS 地址。图片地址直接交给 OCR；PDF/DOCX 通过原生 `fetch` 读取字节后分别交给 `unpdf` 和 Mammoth。
+- CloudBase SDK 的旧 `downloadFile` 仅作为签名 URL 不可用时的兼容回退，且必须显式检查 `fileContent` 存在且非空。生产路径不得再假设 `downloadFile` 一定返回可供 `Buffer.from` 使用的内容。
+- `tests/unit/experience-worker-document-download.test.ts` 是该边界的回归测试：当旧 SDK 下载明确失败但签名地址正常时，PDF 必须解析成功且不得调用旧接口。
+- 真实云端合成探针只用于部署验证，完成后立即删除探针文件和临时入口；正式 worker 不保留可由客户端触发的存储诊断接口。
+
+## Web 文本型 PDF 本地提取边界（2026-08-23）
+
+- 连续三个真实邮箱用户任务均在 OCR/模型调用前报告“上传文件读取失败”，证明浏览器创建者 URL、受限 API 和 worker 之间的私有存储交接仍不可靠；此前 worker 自建合成文件闭环不能代表真实用户上传闭环。
+- `web/src/lib/resume-document.ts` 现在是 Web 简历文件提交的单一准备入口。单份文本型 PDF 由浏览器按需加载 `unpdf`、仅在内存中提取文字，并直接以现有 `inputType: text` 契约提交；不上传 PDF、不写 LocalStorage，也不改变服务端脱敏、结构化解析和用户核对流程。
+- 扫描 PDF、加密/损坏 PDF、DOCX 和图片仍进入 CloudBase 临时文件链路及既有 OCR/解析兜底。浏览器本地提取失败不得伪装成成功，也不得阻断这些原有输入方式。
+- `tests/unit/web-resume-local-extraction.test.ts` 锁定两条行为：可选文字 PDF 不得调用上传函数；扫描 PDF 必须回退到原上传契约。`unpdf` 通过动态导入只在用户选择 PDF 并提交时加载，避免增加登录和首页首屏负担。

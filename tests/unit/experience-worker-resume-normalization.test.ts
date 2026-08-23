@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { normalizeResumeModel, parseJson } = require(
+const { normalizeResumeModel, parseJson, parseResumeWithFallback } = require(
   "../../cloudfunctions/worker/deploy/experience-worker.js",
 ) as {
   normalizeResumeModel(value: unknown, resumeId: string): {
@@ -15,6 +15,11 @@ const { normalizeResumeModel, parseJson } = require(
     otherFacts: Array<{ text: string }>;
   };
   parseJson(value: unknown): unknown;
+  parseResumeWithFallback(rawText: string, resumeId: string, modelCall: () => Promise<unknown>): Promise<{
+    profile: { otherFacts: Array<{ text: string }> };
+    parsingMode: string;
+    warning?: string;
+  }>;
 };
 
 describe("experience worker resume normalization", () => {
@@ -59,5 +64,21 @@ describe("experience worker resume normalization", () => {
     expect(() => normalizeResumeModel({ name: "张同学" }, "resume_12345678")).toThrow(
       "MODEL_INVALID_OUTPUT",
     );
+  });
+
+  it("returns a reviewable fact draft when the model request fails", async () => {
+    const result = await parseResumeWithFallback(
+      "莫纳什大学金融科技本科在读\n完成上市公司估值项目\n邮箱 student@example.com",
+      "resume_12345678",
+      async () => { throw new TypeError("fetch failed"); },
+    );
+
+    expect(result.parsingMode).toBe("verified_text_fallback");
+    expect(result.warning).toBe("AI_PARSE_FALLBACK");
+    expect(result.profile.otherFacts.map((fact) => fact.text)).toEqual([
+      "莫纳什大学金融科技本科在读",
+      "完成上市公司估值项目",
+      "邮箱 [邮箱已遮盖]",
+    ]);
   });
 });

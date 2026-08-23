@@ -16,6 +16,14 @@ function realAiEnabled() {
   return process.env.APPLYMATE_REAL_AI_ENABLED === "true";
 }
 
+function anonymousFlag(...values) {
+  for (const value of values) {
+    if (value === true || value === 1 || value === "1" || value === "true") return true;
+    if (value === false || value === 0 || value === "0" || value === "false") return false;
+  }
+  return null;
+}
+
 exports.main = async (event, context) => {
   const cloudbaseContext = CloudBase.getCloudbaseContext(context);
   if (event && event.healthcheck === true) {
@@ -47,12 +55,54 @@ exports.main = async (event, context) => {
       : {}),
   });
   const readTrustedIdentity = async () => {
+    // Browser callers expose their trusted CloudBase identity to ordinary functions
+    // through the trusted runtime context. The server SDK auth instance does
+    // not reliably reconstruct that caller when invoked from Web Hosting.
+    if (hasValue(cloudbaseContext.WX_OPENID)) {
+      return { value: cloudbaseContext.WX_OPENID, namespace: "applymate-openid-v1" };
+    }
+    if (hasValue(cloudbaseContext.TCB_UUID)) {
+      let isAnonymous = anonymousFlag(
+        cloudbaseContext.isAnonymous,
+        cloudbaseContext.IS_ANONYMOUS,
+        cloudbaseContext.TCB_ISANONYMOUS_USER,
+      );
+      if (isAnonymous === null) {
+        try {
+          const userInfo = await app.auth.getUserInfo();
+          isAnonymous = anonymousFlag(userInfo?.isAnonymous, userInfo?.is_anonymous);
+          if (isAnonymous === null && hasValue(userInfo?.loginType)) {
+            const loginType = userInfo.loginType.toUpperCase();
+            if (loginType.includes("ANONYMOUS")) isAnonymous = true;
+            if (loginType.includes("EMAIL")) isAnonymous = false;
+          }
+        } catch {
+          // Some Web Hosting invocations expose only TCB_UUID. The current Web
+          // product uses email OTP, so an unmarked Web identity is registered;
+          // Legacy anonymous callers must carry an explicit anonymous marker.
+        }
+      }
+      return {
+        value: cloudbaseContext.TCB_UUID,
+        namespace: isAnonymous === true ? "web-anonymous-uid-v1" : "web-email-uid-v1",
+      };
+    }
+
+    // Retain the SDK fallback for runtimes that provide identity through the
+    // auth object instead of the ordinary-function context fields.
     const userInfo = await app.auth.getUserInfo();
     if (userInfo && hasValue(userInfo.openId)) {
       return { value: userInfo.openId, namespace: "applymate-openid-v1" };
     }
     if (userInfo && hasValue(userInfo.uid)) {
-      return { value: userInfo.uid, namespace: "web-anonymous-uid-v1" };
+      const isAnonymous = anonymousFlag(userInfo.isAnonymous, userInfo.is_anonymous);
+      const emailLogin = hasValue(userInfo.loginType) && userInfo.loginType.toUpperCase().includes("EMAIL");
+      return {
+        value: userInfo.uid,
+        namespace: isAnonymous === true && !emailLogin
+          ? "web-anonymous-uid-v1"
+          : "web-email-uid-v1",
+      };
     }
     return null;
   };

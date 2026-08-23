@@ -1,12 +1,45 @@
 # ApplyMate Progress
 
+## 2026-08-23：Web 所有业务入口无法打开的根因已定位并完成本地修复
+
+- 真实浏览器复现证明按钮本身并未同时失效：邮箱验证码登录成功后，普通云函数只返回 `TCB_UUID` 而没有明确匿名标记，旧 `api` 默认把该身份放入 `web-anonymous-uid-v1`，于是用户变成 `invite_required`；Web 已移除邀请码流程，访问门便把首页、简历、记录和账户等所有受保护路由持续送回 `/login`。
+- 身份规则已改为当前产品的真实边界：无匿名标记的可信 Web UID 按邮箱身份处理，只有显式 `isAnonymous=true` 或 `ANONYMOUS` 类型才进入 Legacy 匿名身份；客户端身份字段仍全部忽略。
+- 同时修复三个放大问题：协议详情链接不再嵌套于勾选框标签；React 改用 HashRouter，避免 CloudBase 无 SPA 回退时子路由 404；Service Worker 不再缓存根 HTML 或导航，发布后不会继续返回旧入口壳。
+- 修复前新增的回归测试稳定复现 4 项失败；实施后身份边界与 Web 契约聚焦测试共 3 个文件、31 项全部通过。完整门禁与云端部署仍须在本节后续补录，不能把本地通过写成线上已恢复。
+
+## 2026-08-23：邮箱验证码误判修复已通过本地验收并上传测试站点
+
+- 根因不是 CloudBase 邮件发送失败，而是前端把 SDK 成功响应中的 `error: undefined` 当成失败：旧判断使用 `result.error !== null`，在 `undefined !== null` 时会错误进入失败分支，所以错误提示会先出现，而验证码稍后仍能正常送达。
+- 发送验证码与验证登录两处均改为 nullish 判断（只在 `error` 既不是 `null` 也不是 `undefined` 时视为失败），保留官方 `signInWithOtp({ email })` 返回的内存态 `verifyOtp({ token })` 流程。
+- 新增固定回归测试，防止再次写回严格 `!== null`；聚焦测试通过 3 个文件共 11 项，完整 `npm run check` 通过 126 个测试文件共 644 项测试、两套类型检查、敏感扫描、格式检查、五模块构建和 Web 生产构建。
+- 产品负责人已在本地真实收到验证码并成功完成验证登录。随后 CloudBase 上传命令在最终确认阶段发生 `EPIPE`，但只读文件清单证明 7 个新文件均已写入；线上首页已确认引用与本地一致的 `assets/index-Cl-_hMMA.js` 和 `assets/index-EfIy0K1R.css`。下一步是在测试域名复验邮箱登录，然后进入 W8b 手机浏览器人工清单。
+
+## 2026-08-23：Web 邮箱验证码登录已配置并部署，待真实验证码验收
+
+- 真实邮件验证发现 CloudBase 验证码可能包含字母；旧前端错误地只接受数字并在输入时删除字母，导致验证码已收到但无法提交。现已将输入与校验规则修正为 6 位 ASCII 字母或数字，增加固定回归测试，并部署到 CloudBase 测试站点。
+
+- 产品负责人取消邀请码，确认采用“首次邮箱验证码登录、同一浏览器自动恢复”的方案；Web 登录页、路由访问门和账户/管理员页面已移除邀请码入口。
+- 本节记录的是第一版历史实现；当前已改用 CloudBase Web SDK v3 的 `signInWithOtp` 与其返回的 `verifyOtp`，会话仍采用 `local` 持久化。服务端把可信注册 UID 放入 `web-email-uid-v1` 命名空间并自动激活，协议版本变化时仍要求重新同意。
+- 业务 API 不接收邮箱或验证码，业务数据库不保存邮箱明文；客户端自报 UID、OpenID、userId 与邮箱字段仍被忽略。Legacy 匿名身份和邀请码代码只为旧小程序/历史数据兼容，不再属于 Web 用户路径。
+- 协议版本升级为 `user-2026-08-23` / `privacy-2026-08-23`。完整 `npm run check` 已通过格式、fixture 隔离、敏感扫描、两套类型检查、125 个测试文件共 643 项测试、五模块构建和 Web 生产构建。
+- 产品负责人在操作前确认后，CloudBase 身份认证已启用“邮箱验证码”，使用平台内置代发服务（控制台标记“已启用 / 代发”，不保存自有 SMTP 凭证）。新版 `api` 已部署成功，`dist/web/` 的 7 个生产文件已上传到固定测试环境静态托管。
+- 线上根地址已实测加载并进入新版 `/login`，显示邮箱、6 位验证码、协议勾选和两个禁用态按钮。直接请求 `/login` 仍由静态托管返回 `NoSuchKey`，因此路由回退到 `index.html` 尚未配置；真实邮件送达、验证码登录、协议确认和同浏览器会话恢复仍待产品负责人亲自输入验证码后验收。
+
+## 2026-08-23：Web 匿名身份权限与 `api` UID 修复已部署
+
+- CloudBase 云函数调用规则已限定为：登录身份（包括匿名用户）只能直接调用 `api`，浏览器不能调用 `worker` 或 `cleanup`；匿名角色的网关访问策略已启用，业务数据库仍禁止浏览器直连。
+- 首次网页联调已证明请求能够到达 `api`，但返回 `UNAUTHENTICATED`。根因是部署入口只调用 `app.auth.getUserInfo()`；Web 匿名调用在普通云函数中通过可信运行时字段 `TCB_UUID` 提供身份，该 SDK 调用在线上返回空。
+- `cloudfunctions/api/deploy/index.js` 现优先读取可信 `WX_OPENID`，其次读取 `TCB_UUID` 并使用 `web-anonymous-uid-v1` 域隔离，最后保留 SDK 用户信息作为兼容回退；事件和 payload 中的 UID/OpenID 仍会被忽略。
+- 新增部署入口回归测试，先复现 `TCB_UUID` 存在但身份为 `null`，修复后通过。完整 `npm run check` 通过 124 个测试文件、637 项测试和 Web/五模块构建。
+- 产品负责人明确授权后仅部署 `api`，CloudBase CLI 返回部署成功；刷新本地 Web 后已从 “Authentication required” 恢复为正确的协议确认页面。未部署 `worker`、`cleanup` 或 Web 静态托管，未修改微信开发者工具本地配置。
+
 ## 2026-08-23：Web v2.0 本地实现完成，等待云端测试
 
 - `web/` 已完成 14 条移动端路由、匿名准入、简历、偏好、岗位、任务、结果、记录、反馈、账号、法律和管理员页面，并生成可安装的 PWA 外壳。
 - 服务端已支持可信匿名 UID 的 `web-anonymous-uid-v1` 域隔离；客户端传入的 UID、OpenID、userId 和 identityHash 会在任意嵌套层级被移除。文件使用 `temporary/web/{internalUserId}/...` 路径并由服务端再次校验所有权。
 - 新 JD 日额度为北京时间每日 20 份成功结果；失败释放预留，改写使用独立 10 分钟频率槽。管理员临时加额使用 `targetUserId`，当日累加、次日失效并写审计。
 - Web 专用用户协议、隐私政策和 AI 服务说明已内置，说明匿名身份不可跨浏览器找回、临时文件保留、AI 标识与联系邮箱；浏览器缓存不保存简历、JD、正文或任务响应。
-- 本地完整 `npm run check` 通过格式、fixture 隔离、敏感扫描、两套 TypeScript 检查、124 个测试文件共 636 项测试、原有五模块构建及 Web 生产构建；14 条路由在本地开发服务器直接访问均返回 200，`npm audit --omit=dev --audit-level=high` 报告 0 个漏洞。
+- 本地完整 `npm run check` 通过格式、fixture 隔离、敏感扫描、两套 TypeScript 检查、124 个测试文件共 637 项测试、原有五模块构建及 Web 生产构建；14 条路由在本地开发服务器直接访问均返回 200，`npm audit --omit=dev --audit-level=high` 报告 0 个漏洞。
 - 尚未部署 CloudBase Web 测试域名，也未启用新的多模态提供方；iOS Safari、Android Chrome、微信内置浏览器、两个真实匿名 UID、连续 10 次真实生成、4.2/5 人工质量和 0 元账单仍是 W8b/W9 人工门槛。
 
 ## 2026-08-22：Web v2.0 重构启动
@@ -633,3 +666,38 @@
 - 产品负责人授权范围内已部署 `api` 与 `worker`，CLI 均返回成功；线上只读健康检查均为 `experience_real_ai_live / acceptsUserTraffic=true`，模型、独立 OCR 与 CloudBase 凭证诊断完整。没有部署 `cleanup`，健康检查没有调用 OCR 或模型。
 - 微信开发者工具已登录，CLI 已把客户端 `0.10.3` 上传为新的开发版本，包体约 193.3 KB；未提交审核或公开发布。
 - 将 `0.10.3` 设为体验版和 iOS 连续五次全部返回正文且中位 ≤15 秒仍待执行；在真机证据完成前 10.18i 不勾选。
+
+## 2026-08-23：Web 简历解析失败恢复
+
+- Web 简历任务此前复用岗位生成进度文案，并且只把 `succeeded` 当作完成；实际简历终态 `awaiting_user_confirmation` 因此不会自动进入核对页。现已改为简历专属三阶段，并在解析完成后直接进入一次性核对。
+- Worker 此前会把 TokenHub 传输、响应解析及 PDF/DOCX 读取中的未分类异常统一显示为“AI 处理失败”。现将文件读取异常映射为明确的 `FILE_PROCESSING_FAILED`；已提取到脱敏文字但模型解析异常时，改为生成 `verified_text_fallback` 可核对事实草稿，不再让整份简历丢失。
+- 完整 `npm run check` 通过 127 个测试文件、650 项测试和 Web/五模块构建。`worker` 部署成功且只读健康检查为 `experience_real_ai_live / acceptsUserTraffic=true`；测试网站入口已指向 `index-BIg-T0w5.js`。旧失败任务的临时文件已清理，需重新上传一次验证。
+
+## 2026-08-23：Web PDF 云存储读取修复
+
+- 生产任务 `job_resume_0ce4ae5d6072e78600165e47` 的只读元数据证明：PDF 上传和任务创建成功，任务在 `parsing` 阶段、OCR/模型调用前 1.33 秒失败，错误为 `FILE_PROCESSING_FAILED`。失败不是简历内容、邮箱登录或模型输出导致。
+- 根因是部署 worker 仅为图片批量获取 CloudBase 临时 HTTPS 地址；PDF/DOCX 仍依赖旧 `downloadFile` 返回可选的 `fileContent`，云函数实际环境没有得到可解析字节。现已让所有上传文件优先通过短期签名地址读取，并保留旧接口作为兼容回退。
+- 新增回归测试锁定“签名 URL 可用、旧下载接口失败”时仍能提取 PDF。完整 `npm run check` 通过 128 个测试文件、651 项测试和 Web/五模块构建。
+- 部署前后使用完全合成 PDF 在真实 CloudBase 环境验证“临时存储 → 签名 URL → PDF 提取 → 删除临时文件”闭环，返回 `document_url`、439 字节和正确文本哈希，云端耗时 2.498 秒。临时诊断入口随后已移除并重新部署最终 worker；最终健康检查为 `experience_real_ai_live / acceptsUserTraffic=true`。
+
+## 2026-08-23：Web 邮箱用户私有文件读取根因修复
+
+- 第二个真实失败任务 `job_resume_16a8e64c29e73dc95a929f82` 仍在 OCR/模型调用前失败，证明上一轮“worker 自己上传再读取”的合成探针没有覆盖真实邮箱用户与 worker 之间的文件所有权边界。
+- CloudBase 临时存储规则为 `PRIVATE`：文件创建者和管理员可读写。Web 邮箱用户上传的 PDF 属于浏览器登录身份，而当前 worker 使用受限服务凭证，既不是文件创建者，也不能替用户生成可读 URL；因此 worker 的签名与下载路径都会在文件读取阶段失败。
+- 现改为由浏览器文件创建者在上传成功后立即取得短期 HTTPS URL，并与 `fileId` 一并提交。API 严格校验 URL 的协议、端口、CloudBase/COS 主机、bucket、对象路径、数量与顺序，避免客户端借此注入任意外部 URL；worker 只使用通过校验的短期 URL，终态后清除任务中的 URL 并删除原件。
+- 新增精确身份边界回归：worker 自身签名和下载均被拒绝时，仍能通过创建者签发 URL 读取 PDF；同时验证恶意外域 URL 被拒绝。完整 `npm run check` 通过 128 个测试文件、653 项测试、严格类型检查和 Web/五模块构建。
+- `api` 与 `worker` 已部署成功，部署后只读健康检查均为 `experience_real_ai_live / acceptsUserTraffic=true`。Web 托管首页已切换至 `index-CfBvRNsa.js`，且线上脚本可核验包含 `fileAccessUrls` 新契约。旧失败任务的原件已按终态清理，必须重新上传新文件才能复验；真实邮箱用户闭环在产品负责人复验前仍不标记通过。
+
+## 2026-08-23：Web 文本型 PDF 绕过私有存储交接
+
+- 产品负责人第三次真实复验任务 `job_resume_3a921775f320b5ba56cee5ce` 仍在文件读取阶段失败，说明继续修补 CloudBase 私有文件 URL 不能给文本型 PDF 提供可靠闭环。
+- 新增浏览器内存提取路径：单份带可选文字的 PDF 在本地提取后按文字简历提交，不再经过 CloudBase 上传、创建者签名 URL、worker 下载这条失败链路；服务端仍执行敏感信息遮盖、AI 分类和一次用户核对。
+- 精确回归已先红后绿：文本型 PDF 能提取并且上传函数调用次数为 0；扫描 PDF 无文字时仍调用原上传/OCR 路径。完整 `npm run check` 已通过 129 个测试文件、655 项测试、严格类型和 Web/五模块构建。
+- Web 修复已部署至 CloudBase 测试站点。线上 HTML 已引用本次构建的 `index-BWTKRrrS.js`；线上主程序、PDF 动态桥接 `dist-BbgJqQKN.js` 与 PDF 引擎 `pdfjs-8BZkTPfh.js` 的 SHA-256 均与本地构建逐项一致，且线上主程序包含“正在读取简历”及 PDF 动态分包入口。真实用户仍需从首页重新上传同一文本型 PDF 进行最终闭环复验；旧失败任务不能复用已清理的临时文件。
+
+## 2026-08-23：Web 全部模块回到登录页根因修复
+
+- 邮箱验证码本身已经成功，页面“点不开”的直接原因不是按钮：受保护路由发现 `auth.status` 仍为 `invite_required` 后统一跳回登录页。CloudBase Web 调用者的匿名标记存在差异，旧后端只放行邮箱命名空间，导致部分 Web UID 被误套旧小程序邀请码门。
+- 访问状态现按客户端边界收敛：`web-email-uid-v1` 和 `web-anonymous-uid-v1` 都在当前协议有效后 active；`applymate-openid-v1` 仍保持邀请码要求。`assertActivated`、`auth.status.inviteRequired` 和生产 `live-api` 使用同一规则。
+- 精确回归先复现“Web 匿名 UID 协议后仍 invite-required”，修复后身份/邮箱契约 4 个测试文件共 28 项通过；同时保留普通微信 OpenID 仍需邀请码的反向测试。
+- 完整 `npm run check` 通过 129 个测试文件、659 项测试、严格类型和 Web/五模块构建；`api` 已重新部署成功。部署后使用已有真实邮箱会话刷新，首页自动恢复为 active，并逐一打开 `/#/resumes`、`/#/records`、`/#/account`，页面均正常返回自身内容且未跳回登录页。阶段结论是访问门与 HashRouter 已恢复，后续单页业务故障须按对应功能单独诊断，不再归因于“所有模块点不开”。

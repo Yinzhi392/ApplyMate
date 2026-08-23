@@ -129,10 +129,45 @@ function active(user, accessState) {
 
 function validFiles(fileIds, maximum, user) {
   const ownerPath = `/temporary/web/${user.userId}/`;
-  const requiresWebOwnerPath = user.identityNamespace === "web-anonymous-uid-v1";
+  const requiresWebOwnerPath = ["web-anonymous-uid-v1", "web-email-uid-v1"]
+    .includes(user.identityNamespace);
   return Array.isArray(fileIds) && fileIds.length > 0 && fileIds.length <= maximum &&
     fileIds.every((fileId) => typeof fileId === "string" && /^cloud:\/\//u.test(fileId) &&
       (requiresWebOwnerPath ? fileId.includes(ownerPath) : fileId.includes("/temporary/")));
+}
+
+function cloudFileLocation(fileId) {
+  const match = /^cloud:\/\/([^/]+)\/(.+)$/u.exec(fileId);
+  if (!match) return null;
+  const authority = match[1];
+  const separator = authority.indexOf(".");
+  if (separator < 1 || separator === authority.length - 1) return null;
+  return { bucket: authority.slice(separator + 1).toLowerCase(), objectPath: match[2] };
+}
+
+function validFileAccessUrls(fileIds, fileAccessUrls, user) {
+  const requiresWebAccessUrls = ["web-anonymous-uid-v1", "web-email-uid-v1"]
+    .includes(user.identityNamespace);
+  if (!requiresWebAccessUrls && fileAccessUrls === undefined) return true;
+  if (!Array.isArray(fileIds) || !Array.isArray(fileAccessUrls) || fileIds.length !== fileAccessUrls.length) {
+    return false;
+  }
+  return fileIds.every((fileId, index) => {
+    const location = cloudFileLocation(fileId);
+    const rawUrl = fileAccessUrls[index];
+    if (!location || typeof rawUrl !== "string") return false;
+    try {
+      const url = new URL(rawUrl);
+      const hostname = url.hostname.toLowerCase();
+      const validHost = hostname === `${location.bucket}.tcb.qcloud.la` ||
+        (hostname.startsWith(`${location.bucket}.cos.`) && hostname.endsWith(".myqcloud.com"));
+      const decodedPath = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/gu, "");
+      return url.protocol === "https:" && url.username === "" && url.password === "" &&
+        (url.port === "" || url.port === "443") && validHost && decodedPath === location.objectPath;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function clientPipelineMetrics(payload) {
@@ -200,7 +235,9 @@ function createExperienceApiHandler({
 
     if (event.action === "resume.parse") {
       const isText = payload.inputType === "text" && typeof payload.text === "string" && payload.text.trim().length > 0;
-      const isFiles = ["images", "pdf", "docx"].includes(payload.inputType) && validFiles(payload.fileIds, 6, user);
+      const isFiles = ["images", "pdf", "docx"].includes(payload.inputType) &&
+        validFiles(payload.fileIds, 6, user) &&
+        validFileAccessUrls(payload.fileIds, payload.fileAccessUrls, user);
       if ((!isText && !isFiles) || typeof event.requestId !== "string") return invalid();
       const suffix = hashId("resume-parse-v1", `${user.userId}:${event.requestId}`);
       const resumeId = `resume_${suffix}`;
@@ -278,7 +315,8 @@ function createExperienceApiHandler({
 
     if (event.action === "generation.create") {
       const isText = payload.inputType === "text" && typeof payload.text === "string" && payload.text.trim().length > 0;
-      const isFiles = payload.inputType === "images" && validFiles(payload.fileIds, 5, user);
+      const isFiles = payload.inputType === "images" && validFiles(payload.fileIds, 5, user) &&
+        validFileAccessUrls(payload.fileIds, payload.fileAccessUrls, user);
       if ((!isText && !isFiles) || typeof payload.resumeId !== "string" || typeof event.requestId !== "string") return invalid();
       const resume = await findOne(resumes, { recordType: "resume", userId: user.userId, resumeId: payload.resumeId, status: "confirmed" });
       if (resume === null) return failure("NOT_FOUND", "Confirmed resume was not found.");

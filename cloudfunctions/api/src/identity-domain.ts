@@ -13,6 +13,10 @@ export interface AgreementAcceptance {
 export interface UserRecord {
   userId: string;
   identityHash: string;
+  identityNamespace?:
+    | "applymate-openid-v1"
+    | "web-anonymous-uid-v1"
+    | "web-email-uid-v1";
   accountStatus: AccountStatus;
   activationStatus: ActivationStatus;
   activatedAt?: string;

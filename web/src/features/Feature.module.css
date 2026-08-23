@@ -249,6 +249,19 @@
   flex: 1;
 }
 
+.verificationRow {
+  align-items: flex-end;
+}
+
+.verificationRow > .verificationButton {
+  width: auto;
+  min-width: 124px;
+  min-height: 48px;
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  white-space: nowrap;
+}
+
 .dangerButton {
   width: 100%;
   min-height: 48px;
@@ -422,5 +435,9 @@
     padding-left: 0;
     border-top: 1px solid var(--line);
     border-left: 0;
+  }
+
+  .verificationRow > .verificationButton {
+    width: 100%;
   }
 }

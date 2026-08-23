@@ -8,7 +8,8 @@ const { createLiveApiHandler, hashBootstrapToken, hashTrustedIdentity, stripClie
     database: { collection(name: string): unknown };
     dispatchReliabilityProbe?(jobId: string): Promise<void>;
     readBootstrapTokenHash?(): string | undefined;
-    readTrustedOpenId(): string | undefined;
+    readTrustedIdentity?(): Promise<{ value: string; namespace: string } | null>;
+    readTrustedOpenId?(): string | undefined;
     now(): Date;
   }): (event: unknown) => Promise<unknown>;
   hashBootstrapToken(token: string): string;
@@ -89,8 +90,8 @@ function createDatabase() {
 }
 
 const AGREEMENTS = {
-  userAgreementVersion: "user-2026-08-09",
-  privacyPolicyVersion: "privacy-2026-08-09",
+  userAgreementVersion: "user-2026-08-23",
+  privacyPolicyVersion: "privacy-2026-08-23",
 };
 const ADMIN_REQUEST_ID = "a1234567-1234-4123-8123-123456789abc";
 const USER_REQUEST_ID = "b1234567-1234-4123-8123-123456789abc";
@@ -107,6 +108,28 @@ function handlerFor(
     readBootstrapTokenHash: () => hashBootstrapToken(bootstrapToken),
     readTrustedOpenId: () => trustedOpenId,
     now: () => new Date("2026-08-11T12:00:00.000Z"),
+  });
+}
+
+function emailHandlerFor(
+  database: ReturnType<typeof createDatabase>["database"],
+  uid: string,
+) {
+  return createLiveApiHandler({
+    database,
+    readTrustedIdentity: async () => ({ value: uid, namespace: "web-email-uid-v1" }),
+    now: () => new Date("2026-08-23T12:00:00.000Z"),
+  });
+}
+
+function anonymousWebHandlerFor(
+  database: ReturnType<typeof createDatabase>["database"],
+  uid: string,
+) {
+  return createLiveApiHandler({
+    database,
+    readTrustedIdentity: async () => ({ value: uid, namespace: "web-anonymous-uid-v1" }),
+    now: () => new Date("2026-08-23T12:00:00.000Z"),
   });
 }
 
@@ -180,6 +203,142 @@ describe("CloudBase live identity and invite handler", () => {
     });
   });
 
+  it("keeps an explicitly anonymous Web UID in the Legacy namespace", async () => {
+    const source = readFileSync("cloudfunctions/api/deploy/index.js", "utf8");
+    const exportsObject: Record<string, unknown> = {};
+    const invocationContext = { extendedContext: "runtime-context" };
+
+    runInNewContext(source, {
+      exports: exportsObject,
+      process: { env: {} },
+      require(moduleId: string) {
+        if (moduleId === "@cloudbase/js-sdk") {
+          return {
+            SYMBOL_DEFAULT_ENV: Symbol("default-environment"),
+            getCloudbaseContext(receivedContext: unknown) {
+              expect(receivedContext).toBe(invocationContext);
+              return {
+                TCB_ENV: "applymate-runtime-environment",
+                TCB_UUID: "anonymous-runtime-uid",
+                isAnonymous: true,
+              };
+            },
+            init() {
+              return {
+                auth: { async getUserInfo() { return null; } },
+                database: () => ({ collection: () => ({}) }),
+              };
+            },
+          };
+        }
+        if (moduleId === "./live-api") {
+          return {
+            createLiveApiHandler: (options: {
+              readTrustedIdentity(): Promise<{ value: string; namespace: string } | null>;
+            }) => async () => options.readTrustedIdentity(),
+          };
+        }
+        if (moduleId === "./scf-async-invoker") {
+          return { createScfAsyncInvoker: () => async () => ({ ok: true }) };
+        }
+        throw new Error(`Unexpected module: ${moduleId}`);
+      },
+    });
+
+    const main = exportsObject.main as (event: unknown, context: unknown) => Promise<unknown>;
+    await expect(main({ action: "auth.status", payload: {} }, invocationContext))
+      .resolves.toEqual({
+        value: "anonymous-runtime-uid",
+        namespace: "web-anonymous-uid-v1",
+      });
+  });
+
+  it("treats a Web UID without an anonymous marker as the configured email identity", async () => {
+    const source = readFileSync("cloudfunctions/api/deploy/index.js", "utf8");
+    const exportsObject: Record<string, unknown> = {};
+
+    runInNewContext(source, {
+      exports: exportsObject,
+      process: { env: {} },
+      require(moduleId: string) {
+        if (moduleId === "@cloudbase/js-sdk") {
+          return {
+            SYMBOL_DEFAULT_ENV: Symbol("default-environment"),
+            getCloudbaseContext() {
+              return { TCB_UUID: "registered-email-without-runtime-marker" };
+            },
+            init() {
+              return {
+                auth: { async getUserInfo() { return null; } },
+                database: () => ({ collection: () => ({}) }),
+              };
+            },
+          };
+        }
+        if (moduleId === "./live-api") {
+          return {
+            createLiveApiHandler: (options: {
+              readTrustedIdentity(): Promise<{ value: string; namespace: string } | null>;
+            }) => async () => options.readTrustedIdentity(),
+          };
+        }
+        if (moduleId === "./scf-async-invoker") {
+          return { createScfAsyncInvoker: () => async () => ({ ok: true }) };
+        }
+        throw new Error(`Unexpected module: ${moduleId}`);
+      },
+    });
+
+    const main = exportsObject.main as (event: unknown, context: unknown) => Promise<unknown>;
+    await expect(main({ action: "auth.status", payload: {} }, {})).resolves.toEqual({
+      value: "registered-email-without-runtime-marker",
+      namespace: "web-email-uid-v1",
+    });
+  });
+
+  it("classifies a registered email caller from trusted CloudBase context", async () => {
+    const source = readFileSync("cloudfunctions/api/deploy/index.js", "utf8");
+    const exportsObject: Record<string, unknown> = {};
+
+    runInNewContext(source, {
+      exports: exportsObject,
+      process: { env: {} },
+      require(moduleId: string) {
+        if (moduleId === "@cloudbase/js-sdk") {
+          return {
+            SYMBOL_DEFAULT_ENV: Symbol("default-environment"),
+            getCloudbaseContext() {
+              return { TCB_UUID: "registered-email-uid", isAnonymous: false };
+            },
+            init() {
+              return {
+                auth: { async getUserInfo() { return null; } },
+                database: () => ({ collection: () => ({}) }),
+              };
+            },
+          };
+        }
+        if (moduleId === "./live-api") {
+          return {
+            createLiveApiHandler: (options: {
+              readTrustedIdentity(): Promise<{ value: string; namespace: string } | null>;
+            }) => async () => options.readTrustedIdentity(),
+          };
+        }
+        if (moduleId === "./scf-async-invoker") {
+          return { createScfAsyncInvoker: () => async () => ({ ok: true }) };
+        }
+        throw new Error(`Unexpected module: ${moduleId}`);
+      },
+    });
+
+    const main = exportsObject.main as (event: unknown, context: unknown) => Promise<unknown>;
+    await expect(main({ action: "auth.status", payload: {} }, {})).resolves.toEqual({
+      value: "registered-email-uid",
+      namespace: "web-email-uid-v1",
+    });
+  });
+
   it("fails closed when CloudBase returns a database error object", async () => {
     const handler = createLiveApiHandler({
       database: {
@@ -208,7 +367,7 @@ describe("CloudBase live identity and invite handler", () => {
     );
   });
 
-  it("derives identity only from trusted context and persists agreement acceptance", async () => {
+  it("derives an ordinary mini-program identity only from trusted context", async () => {
     const state = createDatabase();
     const handler = handlerFor(state.database, "wx_trusted_identity");
 
@@ -226,6 +385,44 @@ describe("CloudBase live identity and invite handler", () => {
       ok: false,
       error: { code: "FORBIDDEN" },
     });
+  });
+
+  it("activates an explicitly anonymous Web identity after agreement without an invitation", async () => {
+    const state = createDatabase();
+    const handler = anonymousWebHandlerFor(state.database, "anonymous-web-identity-uid");
+
+    await expect(handler({ action: "auth.status", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { accessState: "agreement_required", inviteRequired: false },
+    });
+    await expect(handler({ action: "agreement.accept", payload: AGREEMENTS })).resolves.toMatchObject({
+      ok: true,
+      data: { accessState: "active" },
+    });
+    await expect(handler({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { user: { accountStatus: "enabled" } },
+    });
+    expect(JSON.stringify(state.documents("users"))).not.toContain("anonymous-web-identity-uid");
+  });
+
+  it("activates a registered email identity after agreement without an invitation", async () => {
+    const state = createDatabase();
+    const handler = emailHandlerFor(state.database, "email-identity-uid");
+
+    await expect(handler({ action: "auth.status", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { accessState: "agreement_required", inviteRequired: false },
+    });
+    await expect(handler({ action: "agreement.accept", payload: AGREEMENTS })).resolves.toMatchObject({
+      ok: true,
+      data: { accessState: "active" },
+    });
+    await expect(handler({ action: "user.get", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { user: { activationStatus: "active" } },
+    });
+    expect(JSON.stringify(state.documents("users"))).not.toContain("email-identity-uid");
   });
 
   it("bootstraps exactly one trusted administrator after agreement acceptance", async () => {

@@ -193,7 +193,10 @@ function accessState(
   if (!agreements.hasCurrentAgreements(user)) {
     return "agreement_required";
   }
-  if (isAdmin || user.activationStatus === "active") {
+  const isWebIdentity =
+    user.identityNamespace === "web-email-uid-v1" ||
+    user.identityNamespace === "web-anonymous-uid-v1";
+  if (isAdmin || isWebIdentity || user.activationStatus === "active") {
     return "active";
   }
   return "invite_required";
@@ -245,7 +248,10 @@ export function createIdentityAccessApi(
   }
 
   function assertActivated(user: UserRecord): void {
-    if (!isAdmin(user) && user.activationStatus !== "active") {
+    const isWebIdentity =
+      user.identityNamespace === "web-email-uid-v1" ||
+      user.identityNamespace === "web-anonymous-uid-v1";
+    if (!isAdmin(user) && !isWebIdentity && user.activationStatus !== "active") {
       throw new DomainError("INVITE_REQUIRED", "Invitation activation required.");
     }
   }
@@ -255,14 +261,14 @@ export function createIdentityAccessApi(
       return invalidRequest();
     }
     const user = await currentUser(context);
+    const state = accessState(user, agreements, isAdmin(user));
     return success({
       userId: user.userId,
       accountStatus: user.accountStatus,
-      accessState: accessState(user, agreements, isAdmin(user)),
+      accessState: state,
       isAdmin: isAdmin(user),
       agreementRequired: !agreements.hasCurrentAgreements(user),
-      inviteRequired:
-        !isAdmin(user) && user.activationStatus === "pending_invite",
+      inviteRequired: state === "invite_required",
       currentVersions: agreements.currentVersions,
     });
   });

@@ -2,13 +2,13 @@
 
 **版本：** Web MVP v2.0
 
-**日期：** 2026-08-22
+**日期：** 2026-08-23
 
 **依据：** [`design-document.md`](./design-document.md)
 
 **文档关系：** 设计文档定义产品规则，本文定义实现选择；如有冲突，以设计文档为准。
 
-**选型目标：** 简单、健壮、适合 30–100 人移动 Web 邀请制测试，并严格保持实际费用为零。微信小程序栈自 2026-08-22 起冻结为 Legacy。
+**选型目标：** 简单、健壮、适合 30–100 人移动 Web 邮箱登录测试，并严格保持实际费用为零。微信小程序栈自 2026-08-22 起冻结为 Legacy。
 
 ## 1. 最终推荐
 
@@ -18,7 +18,7 @@ Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
 
 | 层级 | 技术 | 职责 |
 |---|---|---|
-| 客户端 | React、Vite、TypeScript、React Router、TanStack Query、CSS Modules | 匿名登录、文件选择、任务恢复、编辑、复制和记录 |
+| 客户端 | React、Vite、TypeScript、React Router、TanStack Query、CSS Modules | 邮箱验证码登录、文件选择、任务恢复、编辑、复制和记录 |
 | 服务端 | 3 个 CloudBase 普通云函数、Node.js、TypeScript | API、异步重任务、清理与数据删除 |
 | 数据 | CloudBase 文档数据库 | 用户、简历、任务、投递、额度、反馈和审计 |
 | 文件 | CloudBase 云存储 | 只保存待处理的临时原文件和截图 |
@@ -33,7 +33,7 @@ Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
 ### 1.1 Web 运行边界
 
 - `web/` 是唯一新增生产客户端；`miniprogram/` 保留为 Legacy，不参与 Web 构建和发布。
-- CloudBase Web SDK 使用 `local` 持久化匿名身份；浏览器不直接访问业务数据库，所有业务动作都通过 `api`。
+- CloudBase Web SDK 使用 `local` 持久化邮箱登录会话；浏览器不直接访问业务数据库，所有业务动作都通过 `api`。
 - CloudBase 环境 ID 通过 Vite 环境变量提供，密钥只存在云函数环境变量；前端仓库不得包含 SecretId、SecretKey 或模型 API Key。
 - Web 构建产物部署到 CloudBase 静态托管测试域名；自定义域名、备案和公开发布不属于本阶段。
 - 设计系统使用本地系统字体、暖白 `#F4F6F1`、墨蓝灰 `#17343B`、低饱和青绿 `#26766C`、薄荷雾 `#DDECE6`、暖棕 `#B97845` 与白色 `#FFFFFF`，不加载第三方字体或视觉脚本。
@@ -42,16 +42,16 @@ Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
 
 ### 2.1 简单
 
-- 产品只面向移动浏览器和微信内置浏览器，不承担自建密码、邮件验证或跨设备找回系统的复杂度。
+- 产品只面向移动浏览器和微信内置浏览器；邮件验证码由 CloudBase 身份服务和已配置 SMTP 发送，项目不自建密码、验证码或找回系统。
 - 前后端统一 TypeScript，数据库保存 JSON 文档，无需 Python 服务或 SQL ORM。
-- Web 只调用 `api` 云函数，服务端从认证上下文读取可信匿名 UID。
+- Web 只调用 `api` 云函数，服务端从认证上下文读取可信邮箱账号 UID；邮箱明文不进入业务 API 或业务数据库。
 - 只有 `api`、`worker`、`cleanup` 三个部署单元，职责固定。
 
 ### 2.2 健壮
 
 - 耗时 OCR/模型始终由 `worker` 异步执行；`api` 创建任务后只做有界终态查询，常见岗位成功任务返回 `applicationId`，慢任务返回 `jobId`。
 - 所有不可信请求和结构化数据均经运行时 Schema 检查；首次开场白只检查可读非空输出与联系方式/遮盖占位符隐私风险，不执行事实或文案格式硬拒绝。
-- 额度预留、邀请码消费、任务认领和幂等状态使用数据库事务。
+- 额度预留、任务认领和幂等状态使用数据库事务。
 - OCR 与文本模型隔离：原图不会进入 TokenHub，降低二次外发范围。
 - 任务有 45 秒执行上限、10 分钟回收线和 24 小时幂等窗口。
 
@@ -70,7 +70,7 @@ Web v2.0 采用移动端优先的单体前端与三个 CloudBase 云函数：
 
 ### 3.1 Web 客户端
 
-使用 React、Vite、TypeScript、React Router、TanStack Query、CSS Modules 和 CloudBase Web SDK。认证会话由 CloudBase SDK 使用 `local` 持久化；TanStack Query 只使用内存缓存，不把业务响应持久化到 LocalStorage。文件选择后可以后台上传，但只有点击生成才创建 OCR/模型任务。
+使用 React、Vite、TypeScript、React Router、TanStack Query、CSS Modules 和 CloudBase Web SDK。首次通过 CloudBase 邮箱验证码登录，认证会话由 SDK 使用 `local` 持久化；同一浏览器有有效会话时自动恢复。TanStack Query 只使用内存缓存，不把业务响应持久化到 LocalStorage。文件选择后可以后台上传，但只有点击生成才创建 OCR/模型任务。
 
 ### 3.2 Legacy 微信原生小程序（冻结）
 

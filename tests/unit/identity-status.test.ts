@@ -17,7 +17,7 @@ const currentVersions = {
 const requestId = "123e4567-e89b-42d3-a456-426614174000";
 
 describe("auth.status and user.get", () => {
-  it("moves a normal user from agreement-required to invite-required", async () => {
+  it("moves a normal mini-program user from agreement-required to invite-required", async () => {
     const repository = new InMemoryIdentityRepository();
     const api = createIdentityAccessApi({
       repository,

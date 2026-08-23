@@ -1,6 +1,6 @@
 import { ApiResponseSchema, type ApiAction } from "../../../shared/src/api-contract";
 
-import { cloudbaseApp, ensureAnonymousIdentity } from "./cloudbase";
+import { cloudbaseApp, requireAuthenticatedIdentity } from "./cloudbase";
 
 export class WebApiError extends Error {
   constructor(
@@ -18,7 +18,7 @@ export async function callApi<T>(
   payload: Record<string, unknown>,
   requestId?: string,
 ): Promise<T> {
-  await ensureAnonymousIdentity();
+  await requireAuthenticatedIdentity();
   if (cloudbaseApp === undefined) {
     throw new Error("Web 测试环境尚未配置，请联系管理员。");
   }
