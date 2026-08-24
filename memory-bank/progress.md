@@ -101,13 +101,15 @@
 - 代码提交为 `f853769 feat: refresh landing product story`。2026-08-24 按产品负责人确认，把 `dist/web` 的 27 个文件全部部署到旧预发布静态托管根目录；API、Worker、cleanup 均未部署。
 - 线上默认域名实测显示新产品介绍和开发者标题；“邮件联系”解析为 `mailto:applymate67@gmail.com`，“GitHub 主页”解析为 `https://github.com/Yinzhi392`，页面不存在 `60%` 文案。默认访问地址保持不变。
 
-### 9. 账号页操作区修复（本地完成）
+### 9. 账号页操作区修复（旧预发布静态托管已部署）
 
 - 浏览器批注截图中的蓝色虚线和编号属于批注选区；页面自身的黑色实线来自 `.listRow` 复用于原生 `<button>` 时只设置了 `border-bottom`，未清除浏览器默认的其余边框。
 - `.listRow` 现在先执行 `border: 0` 再恢复设计系统底部分隔线；`button.listRow` 明确使用全宽、透明背景和左对齐，保留全局可访问 `:focus-visible` 轮廓。
 - 按产品确认移除账号页“导出我的数据”及浏览器导出模块加载，支持页不再宣称可下载 JSON；服务端 `user.export` 兼容契约暂时保留，不扩大为 API/云函数删除。
 - “退出登录”图标由符号箭头改为 `👋` emoji。新增先红后绿账号页契约，防止默认按钮黑边、导出入口和旧图标回归。
 - 本地完整门禁通过：118 个测试文件、596 项测试、生产构建和 7 项浏览器 E2E 全绿；HTML entry 主 JS gzip 90.23KB。
+- 修复提交为 `da65661 fix: clean up account actions`。27 个 `dist/web` 文件已部署到旧预发布静态托管根目录；API、Worker、cleanup 均未部署，未创建资源或触碰生产环境。
+- 线上登录态实测 `/app/account`：不存在“导出我的数据”，退出按钮包含 `👋`；按钮计算样式为透明背景，上/左/右边框均 `0px`，仅保留 `1px` 底部分隔线。`index.html`、账号页 chunk 与功能 CSS 的线上 SHA-256 分别为 `00ee7d6a430352c3b4ce5f1c5fc881aa7ec2bac80b21aefdde79a336abf332f1`、`741c936ebf20065a775c818ec9aaadb971cb83ac868fe085209742093d225d94`、`4aefa64c7f060b16c7376160bc0b5b55d592e9759e641a3ac57d4935ae80d8ce`，均与本地构建一致。
 
 ## 本地验证证据
 
