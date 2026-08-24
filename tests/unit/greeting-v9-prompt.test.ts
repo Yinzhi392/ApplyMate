@@ -181,4 +181,63 @@ describe("greeting prompt v9 product contract", () => {
       });
     }
   });
+
+  it("accepts a two-paragraph low match with positive foundation evidence", () => {
+    const lowFacts = [
+      {
+        factId: "fact_foundation",
+        sourceType: "project",
+        text: "在课程项目中使用表格整理用户反馈，并记录每次调整结果",
+      },
+      {
+        factId: "fact_low_availability",
+        sourceType: "preference",
+        text: "可连续实习三个月，每周到岗三天",
+      },
+    ];
+    const selection = {
+      jobTitle: "用户运营实习生",
+      companyName: "示例科技",
+      matchMode: "low",
+      directFactIds: [],
+      transferableEvidence: [
+        {
+          factId: "fact_foundation",
+          capability: "用户反馈整理与迭代记录基础",
+          wordingStrength: "foundation",
+        },
+      ],
+      supportingFactIds: ["fact_low_availability"],
+      gaps: ["缺少与核心职责完全对应的已确认经历"],
+      paragraphs: [
+        "您好，我是有用户反馈整理实践的在读学生，希望申请示例科技的用户运营实习生岗位；我在课程项目中使用表格整理用户反馈，并记录每次调整结果。",
+        "我可连续实习三个月，每周到岗三天。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_low_title", text: "用户运营实习生" },
+      companyName: { fieldId: "jd_low_company", text: "示例科技" },
+      responsibilities: [
+        { fieldId: "jd_low_responsibility", text: "负责用户反馈整理和运营复盘" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    expect(
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, lowFacts),
+    ).toMatchObject({
+      selection: {
+        matchMode: "low",
+        transferableEvidence: [
+          expect.objectContaining({ wordingStrength: "foundation" }),
+        ],
+      },
+      greetingPackage: {
+        body: expect.not.stringMatching(/缺少|不完全匹配|弥补不足/u),
+      },
+    });
+  });
 });
