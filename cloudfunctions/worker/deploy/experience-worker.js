@@ -969,24 +969,138 @@ function isJobDescriptionClause(clause, clauseRequirements) {
     /^(?:(?:该|此|这个)?岗位|贵司(?:的)?(?:这个)?岗位)(?:主要|重点|需要|要求|负责|关注|涉及)/u.test(clause);
 }
 
+const CHINESE_DIGIT_VALUES = Object.freeze({
+  零: 0,
+  〇: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+});
+const CHINESE_SMALL_UNIT_VALUES = Object.freeze({ 十: 10, 百: 100, 千: 1_000 });
+const CHINESE_LARGE_UNIT_VALUES = Object.freeze({ 万: 10_000, 亿: 100_000_000 });
+const ARABIC_NUMERIC_SOURCE = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?`;
+const CHINESE_INTEGER_SOURCE = "[零〇一二两三四五六七八九十百千万亿]+";
+const CHINESE_NUMERIC_SOURCE = `${CHINESE_INTEGER_SOURCE}(?:点[零〇一二两三四五六七八九]+)?`;
+const NUMERIC_ATOM_SOURCE = `(?:${ARABIC_NUMERIC_SOURCE}|${CHINESE_NUMERIC_SOURCE})`;
+const NUMERIC_PATTERN = new RegExp(
+  `百分之${NUMERIC_ATOM_SOURCE}|${NUMERIC_ATOM_SOURCE}[％%]?`,
+  "gu",
+);
+const NUMERIC_UNIT_PATTERN = /^\s*(?:余|多|约|近|超过|超)?\s*(年度|年|个月|月|周|天|小时|分钟|秒|条|次|份|项|人|名|家|页|篇|字|词|所|场|轮|组|万元|亿元|元)/u;
+const NUMERIC_RANGE_CONNECTOR_SOURCE = "(?:到|至|[-–—~～])";
+
+function chineseIntegerValue(value) {
+  const characters = Array.from(value);
+  const hasUnit = characters.some((character) =>
+    Object.hasOwn(CHINESE_SMALL_UNIT_VALUES, character) ||
+    Object.hasOwn(CHINESE_LARGE_UNIT_VALUES, character)
+  );
+  if (!hasUnit) {
+    const digits = characters.map((character) => CHINESE_DIGIT_VALUES[character]);
+    if (digits.some((digit) => digit === undefined)) return undefined;
+    return Number(digits.join(""));
+  }
+
+  let total = 0;
+  let section = 0;
+  let digit = 0;
+  for (const character of characters) {
+    if (Object.hasOwn(CHINESE_DIGIT_VALUES, character)) {
+      digit = CHINESE_DIGIT_VALUES[character];
+      continue;
+    }
+    if (Object.hasOwn(CHINESE_SMALL_UNIT_VALUES, character)) {
+      section += (digit || 1) * CHINESE_SMALL_UNIT_VALUES[character];
+      digit = 0;
+      continue;
+    }
+    if (Object.hasOwn(CHINESE_LARGE_UNIT_VALUES, character)) {
+      section += digit;
+      total += (section || 1) * CHINESE_LARGE_UNIT_VALUES[character];
+      section = 0;
+      digit = 0;
+      continue;
+    }
+    return undefined;
+  }
+  return total + section + digit;
+}
+
+function chineseNumericValue(value) {
+  const [integerPart, decimalPart] = String(value).split("点", 2);
+  const integer = chineseIntegerValue(integerPart);
+  if (!Number.isFinite(integer)) return undefined;
+  if (decimalPart === undefined) return integer;
+  const decimalDigits = Array.from(decimalPart)
+    .map((character) => CHINESE_DIGIT_VALUES[character]);
+  if (decimalDigits.length === 0 || decimalDigits.some((digit) => digit === undefined)) {
+    return undefined;
+  }
+  return Number(`${integer}.${decimalDigits.join("")}`);
+}
+
 function canonicalNumericToken(token) {
-  const value = String(token).replace(/,/gu, "");
-  const percent = value.endsWith("%");
-  const raw = percent ? value.slice(0, -1) : value;
-  const numeric = Number(raw);
+  const value = String(token).replace(/,/gu, "").replace(/％/gu, "%");
+  const percentPrefix = value.startsWith("百分之");
+  const percentSuffix = value.endsWith("%");
+  const percent = percentPrefix || percentSuffix;
+  const withoutPrefix = percentPrefix ? value.slice("百分之".length) : value;
+  const raw = percentSuffix ? withoutPrefix.slice(0, -1) : withoutPrefix;
+  const numeric = /[零〇一二两三四五六七八九十百千万亿点]/u.test(raw)
+    ? chineseNumericValue(raw)
+    : Number(raw);
   if (!Number.isFinite(numeric)) return value;
   return `${numeric}${percent ? "%" : ""}`;
 }
 
+function isNumericRangeEndpoint(text, matchIndex, matchLength) {
+  const before = text.slice(0, matchIndex);
+  const after = text.slice(matchIndex + matchLength);
+  const leftEndpointPattern = new RegExp(
+    `${NUMERIC_ATOM_SOURCE}[％%]?\\s*${NUMERIC_RANGE_CONNECTOR_SOURCE}\\s*$`,
+    "u",
+  );
+  const rightEndpointPattern = new RegExp(
+    `^\\s*${NUMERIC_RANGE_CONNECTOR_SOURCE}\\s*${NUMERIC_ATOM_SOURCE}[％%]?`,
+    "u",
+  );
+  return leftEndpointPattern.test(before) || rightEndpointPattern.test(after);
+}
+
 function numericTokens(value) {
   const text = String(value);
-  const numericPattern = /(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?/gu;
-  return Array.from(text.matchAll(numericPattern), (match) => {
+  return Array.from(text.matchAll(NUMERIC_PATTERN)).flatMap((match) => {
+    const matchIndex = match.index ?? 0;
     const rawUnit = text
-      .slice((match.index ?? 0) + match[0].length)
-      .match(/^\s*(年度|年|个月|月|周|天|小时|分钟|秒|条|次|份|项|人|名|家|页|篇|字|词|所|场|轮|组|万元|亿元|元)/u)?.[1] || "";
+      .slice(matchIndex + match[0].length)
+      .match(NUMERIC_UNIT_PATTERN)?.[1] || "";
+    const isChinese = /[零〇一二两三四五六七八九十百千万亿点]/u.test(match[0]);
+    const isPercent = match[0].startsWith("百分之") || /[％%]$/u.test(match[0]);
+    const canonicalNumber = canonicalNumericToken(match[0]);
+    const previousCharacter = text.slice(0, matchIndex).trimEnd().at(-1) || "";
+    if (
+      isChinese &&
+      (
+        previousCharacter === "第" ||
+        (canonicalNumber === "1" && rawUnit === "名") ||
+        (
+          !isPercent &&
+          !rawUnit &&
+          !isNumericRangeEndpoint(text, matchIndex, match[0].length)
+        )
+      )
+    ) {
+      return [];
+    }
     const unit = rawUnit === "年度" ? "年" : rawUnit;
-    return `${canonicalNumericToken(match[0])}|${unit}`;
+    return [`${canonicalNumber}|${unit}`];
   });
 }
 
@@ -1185,7 +1299,7 @@ function jdPrompt(text, facts) {
       text: compactText(maskProtectedText(factText), 280),
     }),
   );
-  return `你是中文求职开场白编辑。Prompt版本：experience-evidence-adaptive-v9.1。岗位路线：${roleFamily}。路线规则：${roleStrategy}
+  return `你是中文求职开场白编辑。Prompt版本：experience-evidence-adaptive-v9.2。岗位路线：${roleFamily}。路线规则：${roleStrategy}
 你必须在一次 JSON 响应中完成岗位理解、证据分层和正文写作，不输出解释、推理过程、Markdown 或产品层 AI 标识。
 判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；每个 JD 数组项目必须优先复制本次 JD 的原句片段，只能删除不必要文字，禁止同义改写或补充截图中没有的职责；不确定的辅助字段直接省略。coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
 证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。只选择与本次 JD 匹配度最高的2至3段经历，不按简历顺序罗列；只保留最有说服力的2至3个有来源数字。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
@@ -2149,7 +2263,7 @@ function disclosure() {
   return {
     mode: "real", providerName: "腾讯云 TokenHub", modelName: "腾讯混元",
     modelId: process.env.TOKENHUB_MODEL || "hy3",
-    promptVersion: "experience-evidence-adaptive-v9.1",
+    promptVersion: "experience-evidence-adaptive-v9.2",
     filingReference: process.env.TOKENHUB_FILING_REFERENCE || "腾讯云控制台公示的模型备案信息",
   };
 }
@@ -2377,7 +2491,7 @@ function createExperienceWorker({
           generationMode,
           renderMode: generationMode,
           ...(fallbackReason ? { fallbackReason } : {}),
-          serverPipelineVersion: "greeting-v9.1-target-reference",
+          serverPipelineVersion: "greeting-v9.2-numeric-equivalence",
           totalDurationMs: Date.now() - processingStartedAt,
         },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
@@ -2434,7 +2548,7 @@ function createExperienceWorker({
             validationDurationMs,
             fallbackDurationMs,
             ...inputMetrics,
-            serverPipelineVersion: "greeting-v9.1-target-reference",
+            serverPipelineVersion: "greeting-v9.2-numeric-equivalence",
             totalDurationMs: Date.now() - processingStartedAt,
             ...(validationDiagnostics ? { validation: validationDiagnostics } : {}),
           },

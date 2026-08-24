@@ -38,7 +38,7 @@ describe("greeting prompt v9 product contract", () => {
   it("defines the strong, partial, and low adaptive tiers", () => {
     const prompt = worker.jdPrompt("示例科技招聘AI产品实习生", baseFacts);
 
-    expect(prompt).toContain("Prompt版本：experience-evidence-adaptive-v9.1");
+    expect(prompt).toContain("Prompt版本：experience-evidence-adaptive-v9.2");
     expect(prompt).toMatch(/strong[^\n]*550至800[^\n]*4至5/u);
     expect(prompt).toMatch(/partial[^\n]*350至550[^\n]*3至4/u);
     expect(prompt).toMatch(/low[^\n]*180至350[^\n]*2至3/u);
@@ -252,6 +252,140 @@ describe("greeting prompt v9 product contract", () => {
         body: expect.stringContaining("申请AI产品实习生岗位"),
       },
     });
+  });
+
+  it("accepts Arabic rendering of sourced Chinese numerals without weakening units", () => {
+    const numericFacts = [
+      {
+        factId: "fact_numeric_project",
+        sourceType: "project",
+        text: "从零到一参与模型评测，完成三轮质量复核并整理五十余条Badcase，质量排名前百分之五",
+      },
+      {
+        factId: "fact_numeric_availability",
+        sourceType: "preference",
+        text: "可连续实习四个月，每周到岗四天",
+      },
+    ];
+    const selection = {
+      jobTitle: "AI产品实习生",
+      companyName: "示例科技",
+      matchMode: "strong",
+      directFactIds: ["fact_numeric_project"],
+      transferableEvidence: [],
+      supportingFactIds: ["fact_numeric_availability"],
+      gaps: [],
+      paragraphs: [
+        "您好，我是一名有模型评测实践的在读学生，希望申请示例科技的AI产品实习生岗位。",
+        "我从0-1参与模型评测，完成3轮质量复核并整理50余条Badcase，质量排名前5%，这段经历与岗位中的模型质量分析工作直接相关。",
+        "我可连续实习4个月，每周到岗4天。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_numeric_title", text: "AI产品实习生" },
+      companyName: { fieldId: "jd_numeric_company", text: "示例科技" },
+      responsibilities: [
+        { fieldId: "jd_numeric_responsibility", text: "负责模型质量分析" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    expect(
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, numericFacts),
+    ).toMatchObject({
+      greetingPackage: {
+        body: expect.stringContaining("完成3轮质量复核并整理50余条Badcase，质量排名前5%"),
+      },
+    });
+  });
+
+  it("keeps rejecting an unsourced number after Chinese numeral normalization", () => {
+    const numericFacts = [
+      {
+        factId: "fact_numeric_project",
+        sourceType: "project",
+        text: "参与模型评测并完成三轮质量复核",
+      },
+    ];
+    const selection = {
+      jobTitle: "AI产品实习生",
+      companyName: "示例科技",
+      matchMode: "partial",
+      directFactIds: ["fact_numeric_project"],
+      transferableEvidence: [],
+      supportingFactIds: [],
+      gaps: [],
+      paragraphs: [
+        "您好，我希望申请示例科技的AI产品实习生岗位。",
+        "我参与模型评测并完成4轮质量复核，这段经历与岗位中的模型质量分析工作直接相关。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_numeric_title", text: "AI产品实习生" },
+      companyName: { fieldId: "jd_numeric_company", text: "示例科技" },
+      responsibilities: [
+        { fieldId: "jd_numeric_responsibility", text: "负责模型质量分析" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    expect(() =>
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, numericFacts),
+    ).toThrow("MODEL_INVALID_OUTPUT");
+  });
+
+  it("keeps adjacent units bound when Chinese numeral values are swapped", () => {
+    const numericFacts = [
+      {
+        factId: "fact_numeric_availability",
+        sourceType: "preference",
+        text: "可连续实习三个月，每周到岗四天",
+      },
+    ];
+    const selection = {
+      jobTitle: "AI产品实习生",
+      companyName: "示例科技",
+      matchMode: "low",
+      directFactIds: [],
+      transferableEvidence: [
+        {
+          factId: "fact_numeric_availability",
+          capability: "稳定到岗",
+          wordingStrength: "foundation",
+        },
+      ],
+      supportingFactIds: [],
+      gaps: [],
+      paragraphs: [
+        "您好，我希望申请示例科技的AI产品实习生岗位。",
+        "我可连续实习4个月，每周到岗3天。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_numeric_title", text: "AI产品实习生" },
+      companyName: { fieldId: "jd_numeric_company", text: "示例科技" },
+      responsibilities: [],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    try {
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, numericFacts);
+      throw new Error("Expected swapped units to be rejected.");
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: "MODEL_INVALID_OUTPUT",
+        validationGate: "greeting_numeric_source",
+      });
+    }
   });
 
   it("accepts a two-paragraph low match with positive foundation evidence", () => {

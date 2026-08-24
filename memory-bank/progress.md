@@ -79,7 +79,15 @@
 - 目标引用失败诊断新增 `missingRoleMention`、`missingCompanyMention` 安全布尔项，公开提示改为具体的岗位称呼问题，不再误报“结构不完整”。
 - 修复提交为 `6491495 fix: accept natural greeting target references`。2026-08-24 按既有授权只部署旧预发布 `worker`；函数修改时间更新为 2026-08-24 11:41:50，状态 `Deployment completed`。只读健康检查 5ms，返回 `experience_real_ai_live`、`acceptsUserTraffic=true`，未调用 OCR 或模型。
 - 下载线上代码复核：`experience-worker.js` SHA-256 为 `976a3948132d48fd32edcf806e98ce3d28b558c25f141bd973b47dfd33e7df9c`；`greeting-calibration.js`、`index.js`、`budget-admission.js` 分别保持 `e172f6c5cb1a956a301e0278151b18141a98f14bcd7e0facd4f0f5e3304e614f`、`a9104722aafb0a3c662ee4ca250bfa1f8a581df5317402855dc73fed114d5005`、`95846f3a575b9f26355e7dab6259545dc2611d8871de66293c08dfd6652a3974`；四个线上文件均与本地逐字节一致。
-- 自动化、健康检查和哈希一致只证明部署与安全门正确，不代表真实文案质量通过。下一次真实任务必须按本人 `jobId` 核对 `serverPipelineVersion=greeting-v9.1-target-reference`、Prompt 披露、正文质量和耗时。
+- 自动化、健康检查和哈希一致只证明部署与安全门正确，不代表真实文案质量通过。v9.1 的目标称呼修复已经完成线上核验；下一次真实任务以最新版本记录为准，仍须按本人 `jobId` 核对 Prompt 披露、正文质量和耗时。
+
+### 7. 开场白 v9.2 数字等价校验修复（待旧预发布部署核验）
+
+- 真实任务 `job_generation_51130b78a3a8ce6b11af3f69` 使用 2 张完整 JD 截图，OCR/岗位识别/模型生成均完成；失败诊断为 `greeting_numeric_source`、`unsupportedNumericCount=3`。任务总耗时约 9.9 秒，故障不在截图数量、上传、OCR 或模型超时，而在模型结果返回后的本地真实性门。
+- 根因是旧门禁只识别阿拉伯数字：简历事实中的中文数词若被 Hy3 自然改写为阿拉伯数字，会被当成三个新数字。新增先红后绿回归稳定复现“三轮/五十条/四个月”被写成 `3轮/50条/4个月` 时的相同误杀。
+- 数字比较现先统一中文数词、阿拉伯数字、百分比和区间连接符，再绑定相邻单位；`百分之五`/`5%`、`零到一`/`0-1` 等价，而月/天互换及真正无来源数字仍失败。“第一”“一名学生”等中文语法成分不进入成果数字门。
+- Prompt/披露升级为 `experience-evidence-adaptive-v9.2`，server pipeline 升级为 `greeting-v9.2-numeric-equivalence`；模型、调用次数、2,200 token、14 秒超时和 temperature 0.1 均不变。
+- 部署、线上修改时间、健康检查和代码哈希证据将在旧预发布 Worker 核验完成后补记；本轮不部署 API/cleanup/Web，不创建资源且不触碰生产环境。
 
 ## 本地验证证据
 
@@ -88,7 +96,7 @@
 - `npm run typecheck`：通过。
 - `npm run web:typecheck`：通过。
 - `APPLYMATE_E2E_PORT=4187 npm run check`：完整通过；Playwright 配置支持任务级端口覆盖，避免占用用户正在使用的 4173 预览。
-- Vitest：118 个当前主线测试文件、592 项测试通过（Legacy 小程序测试退出主线后计数降低）。
+- Vitest：118 个当前主线测试文件、595 项测试通过（Legacy 小程序测试退出主线后计数降低）。
 - Web build：通过；HTML entry 主 JS gzip 71.67KB，CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
 - Playwright + 本机 Chrome：6 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
 - fixture 隔离、敏感信息、严格 TypeScript、Web TypeScript 与 deploy 目标语法/契约均通过。

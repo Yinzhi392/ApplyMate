@@ -182,7 +182,7 @@ describe("experience build real AI regression", () => {
     expect(generationResolver).not.toContain("buildFactMatches");
     expect(generationResolver).not.toContain("buildVerifiedGenericGreeting");
     expect(worker).toContain("classifyRoleFamily");
-    expect(worker).toContain("experience-evidence-adaptive-v9.1");
+    expect(worker).toContain("experience-evidence-adaptive-v9.2");
     expect(worker).toContain("maxTokens: 2_200");
     expect(worker).toContain("timeoutMs: 14_000");
     expect(worker).not.toContain('"omittedRequirements":[]');
@@ -193,7 +193,7 @@ describe("experience build real AI regression", () => {
     expect(worker).not.toContain("resumeCorrectionPrompt");
     expect(worker).not.toContain("parseResumeWithCorrection");
     expect(generationResolver).not.toContain("verified_generic_fallback");
-    expect(worker).toContain('serverPipelineVersion: "greeting-v9.1-target-reference"');
+    expect(worker).toContain('serverPipelineVersion: "greeting-v9.2-numeric-equivalence"');
     expect(worker).toContain("queueDurationMs");
     expect(worker).toContain("resolveGreetingGeneration");
     expect(worker).not.toContain("function renderGreetingPackage");
