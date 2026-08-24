@@ -64,7 +64,7 @@
 - 2026-08-24 经产品负责人单独授权，将提交 `bfd6840` 的 `worker` 部署到旧预发布环境。函数修改时间从 2026-08-23 15:34:18 更新为 2026-08-24 09:39:51，状态为 `Deployment completed`；只读健康检查 5ms，返回 `experience_real_ai_live`、`acceptsUserTraffic=true`，模型、OCR 与 CloudBase 凭证诊断均存在。
 - 部署后已把线上代码下载到临时目录核验：`experience-worker.js` SHA-256 为 `da748d2400109879342f42e9053fd0f56b5878c5f9f240121ee275b3ae35ab88`，与本地提交逐字节一致；`index.js`、`greeting-calibration.js`、`budget-admission.js` 也与本地一致。
 
-### 6. 开场白 v9.1 自适应质量规则（旧预发布待更新）
+### 6. 开场白 v9.1 自适应质量规则（旧预发布已部署，待真实质量复测）
 
 - 新增先红后绿回归：旧逻辑在三档篇幅、2–3 段经历/数字、gaps 内部化、教育优势门槛、到岗信息末段和 2,200 token 六类规则上按预期失败；实现后定向测试通过。
 - Prompt/披露升级为 `experience-evidence-adaptive-v9.1`，server pipeline 升级为 `greeting-v9.1-target-reference`；继续单次 `hy3` JSON 调用，模型预算 2,200 token、超时 14 秒、temperature 0.1，无备用模型或第二次自动调用。
@@ -77,6 +77,8 @@
 - 下载线上代码到临时目录核验：`experience-worker.js` SHA-256 `461850fde3412094550eb8b5c8524960074927e431cef6054197430d906c0d2f`，`greeting-calibration.js` `e172f6c5cb1a956a301e0278151b18141a98f14bcd7e0facd4f0f5e3304e614f`，`index.js` `a9104722aafb0a3c662ee4ca250bfa1f8a581df5317402855dc73fed114d5005`，`budget-admission.js` `95846f3a575b9f26355e7dab6259545dc2611d8871de66293c08dfd6652a3974`；四个文件均与本地逐字节一致。
 - 真实任务 `job_generation_f87c6fc5e6fb3d56c243fbd3` 首次暴露 `greeting_target_mention` 误杀：模型已生成 4 段、372 个可见字符，但旧诊断把“岗位未提及”和“公司未提及”合并为同一 gate，无法确认具体是哪一个字符串条件。新增先红后绿回归复现这一类问题后，岗位允许当前标题、自然简称或“该岗位”，公司允许已识别全称、规范化简称、“贵司”或省略；其他公司名和跨 JD 内容仍由真实性门拒绝。
 - 目标引用失败诊断新增 `missingRoleMention`、`missingCompanyMention` 安全布尔项，公开提示改为具体的岗位称呼问题，不再误报“结构不完整”。
+- 修复提交为 `6491495 fix: accept natural greeting target references`。2026-08-24 按既有授权只部署旧预发布 `worker`；函数修改时间更新为 2026-08-24 11:41:50，状态 `Deployment completed`。只读健康检查 5ms，返回 `experience_real_ai_live`、`acceptsUserTraffic=true`，未调用 OCR 或模型。
+- 下载线上代码复核：`experience-worker.js` SHA-256 为 `976a3948132d48fd32edcf806e98ce3d28b558c25f141bd973b47dfd33e7df9c`；`greeting-calibration.js`、`index.js`、`budget-admission.js` 分别保持 `e172f6c5cb1a956a301e0278151b18141a98f14bcd7e0facd4f0f5e3304e614f`、`a9104722aafb0a3c662ee4ca250bfa1f8a581df5317402855dc73fed114d5005`、`95846f3a575b9f26355e7dab6259545dc2611d8871de66293c08dfd6652a3974`；四个线上文件均与本地逐字节一致。
 - 自动化、健康检查和哈希一致只证明部署与安全门正确，不代表真实文案质量通过。下一次真实任务必须按本人 `jobId` 核对 `serverPipelineVersion=greeting-v9.1-target-reference`、Prompt 披露、正文质量和耗时。
 
 ## 本地验证证据
