@@ -108,6 +108,18 @@ describe("mobile Web application contract", () => {
     expect(source("web/src/ui/Dialog.tsx")).toContain("showModal()");
   });
 
+  it("keeps account actions borderless and exposes only the approved account controls", () => {
+    const account = source("web/src/features/account/AccountPages.tsx");
+    const featureStyles = source("web/src/features/Feature.module.css");
+    const support = source("web/src/features/public/SupportPage.tsx");
+    expect(account).not.toContain("导出我的数据");
+    expect(account).not.toContain("downloadUserExport");
+    expect(support).not.toMatch(/下载版本化 JSON|数据可以带走/u);
+    expect(account).toMatch(/<span className=\{styles\.icon\}>👋<\/span>[\s\S]*?<strong>退出登录<\/strong>/u);
+    expect(featureStyles).toMatch(/\.listRow\s*\{[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--line\);/su);
+    expect(featureStyles).toMatch(/button\.listRow\s*\{[^}]*width:\s*100%;[^}]*background:\s*transparent;/su);
+  });
+
   it("splits session, uploads and business API behind separate modules", () => {
     expect(source("web/src/lib/session.ts")).toContain("requestEmailVerification");
     expect(source("web/src/lib/temporary-upload.ts")).toContain("TemporaryUploadPort");

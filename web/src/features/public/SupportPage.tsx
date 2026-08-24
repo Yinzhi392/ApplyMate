@@ -13,8 +13,8 @@ export function SupportPage(): React.JSX.Element {
         <p className={styles.legalBody}>使用邮箱验证码开放注册。ApplyMate 不自建密码，也不会在业务数据库保存邮箱明文。</p>
       </Surface>
       <Surface>
-        <h2 className={styles.sectionTitle}>数据可以带走或删除吗？</h2>
-        <p className={styles.legalBody}>可以。登录后可下载版本化 JSON 数据，也可申请删除账号。删除申请会立即停用账号，并在 24 小时内清理可关联数据。</p>
+        <h2 className={styles.sectionTitle}>如何删除账号与数据？</h2>
+        <p className={styles.legalBody}>登录后进入“我的”，可以申请删除账号。删除申请会立即停用账号，并在 24 小时内清理可关联数据。</p>
       </Surface>
       <Surface>
         <h2 className={styles.sectionTitle}>服务会持续多久？</h2>

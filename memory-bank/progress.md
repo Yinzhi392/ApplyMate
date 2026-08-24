@@ -28,7 +28,7 @@
 - 修复 Web 存储上传把文件名字符串误传为 `filePath` 的问题；现在按 CloudBase Web 契约传入真实 `File`，失败会立即显示可理解错误并允许重试。
 - 路由和 PDF 解析按需加载，生产 source map 关闭；静态首屏 JS gzip 200KB 自动门禁。
 - 删除 manifest、Service Worker、PWA 安装和 AI 改写。
-- 新增退出登录、版本化数据导出、本地 JSON 下载。
+- 新增退出登录；账号页按最新产品确认取消数据导出入口，服务端兼容契约暂时保留但不向网页暴露。
 - 原生 prompt/confirm 已替换为可访问 `<dialog>` action sheet/confirm dialog。
 - JD 最多 5 图，Worker/Canvas 后台压缩和最多并发上传 3；点击生成才创建 AI 任务。
 - 实现 720/Q80、1080/Q78、1440/Q75 固定候选和机械 profile 选择。
@@ -49,7 +49,7 @@
 - `service_config/public` 或当月 `budget_periods` 缺失时 fail closed，但 auth.status 仍可解释暂停状态。
 - `generation.create` 用 CloudBase `runTransaction` 同时检查/写入任务、admission、每日成功额度槽和预算预留。
 - API 派发失败释放；worker 成功结算、失败释放；cleanup 超时竞争释放。
-- `user.export` 只导出当前用户记录并递归去身份；浏览器本地下载。
+- `user.export` 只导出当前用户记录并递归去身份；服务端兼容契约保留，但正式 Web 不再显示或加载浏览器导出入口。
 - `admin.stats` 增加预算和服务阶段，预算上限不可在网页提高。
 - cleanup 增加 24 小时草稿、180 天日志、账号 admission 释放和退休清单。
 - `retirementDelete` 固定返回 `DESTRUCTIVE_AUTHORIZATION_REQUIRED`，当前没有生产全量删除路径。
@@ -100,6 +100,14 @@
 - 新增浏览器回归覆盖产品文案、无 `60%`、邮件 `mailto:` 和 GitHub 链接；完整门禁为 118 个测试文件、595 项测试、生产构建和 7 项浏览器 E2E 全部通过。
 - 代码提交为 `f853769 feat: refresh landing product story`。2026-08-24 按产品负责人确认，把 `dist/web` 的 27 个文件全部部署到旧预发布静态托管根目录；API、Worker、cleanup 均未部署。
 - 线上默认域名实测显示新产品介绍和开发者标题；“邮件联系”解析为 `mailto:applymate67@gmail.com`，“GitHub 主页”解析为 `https://github.com/Yinzhi392`，页面不存在 `60%` 文案。默认访问地址保持不变。
+
+### 9. 账号页操作区修复（本地完成）
+
+- 浏览器批注截图中的蓝色虚线和编号属于批注选区；页面自身的黑色实线来自 `.listRow` 复用于原生 `<button>` 时只设置了 `border-bottom`，未清除浏览器默认的其余边框。
+- `.listRow` 现在先执行 `border: 0` 再恢复设计系统底部分隔线；`button.listRow` 明确使用全宽、透明背景和左对齐，保留全局可访问 `:focus-visible` 轮廓。
+- 按产品确认移除账号页“导出我的数据”及浏览器导出模块加载，支持页不再宣称可下载 JSON；服务端 `user.export` 兼容契约暂时保留，不扩大为 API/云函数删除。
+- “退出登录”图标由符号箭头改为 `👋` emoji。新增先红后绿账号页契约，防止默认按钮黑边、导出入口和旧图标回归。
+- 本地完整门禁通过：118 个测试文件、596 项测试、生产构建和 7 项浏览器 E2E 全绿；HTML entry 主 JS gzip 90.23KB。
 
 ## 本地验证证据
 

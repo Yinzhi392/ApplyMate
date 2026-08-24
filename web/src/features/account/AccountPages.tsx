@@ -7,7 +7,6 @@ import { callApi } from "../../lib/api";
 import { renderWebLegalText, WEB_CONTACT_EMAIL, WEB_EFFECTIVE_DATE, WEB_LEGAL_DOCUMENTS } from "../../lib/legal-documents";
 import { createRequestId } from "../../lib/request-id";
 import { signOut } from "../../lib/session";
-import { downloadUserExport } from "../../lib/user-export";
 import { ErrorNotice, Header, PrimaryButton, SecondaryButton, Surface } from "../../ui/ui";
 import { ConfirmDialog } from "../../ui/Dialog";
 import { ServiceBanner } from "../../ui/ServiceBanner";
@@ -54,7 +53,6 @@ export function AccountPage(): React.JSX.Element {
   const [error, setError] = useState("");
   const [deleteStep, setDeleteStep] = useState<"first" | "final" | null>(null);
   const [deleteToken, setDeleteToken] = useState("");
-  const [exporting, setExporting] = useState(false);
   async function requestAccountDeletion(): Promise<void> {
     try {
       const requested = await callApi<{ confirmationToken: string }>("user.delete", { operation: "request" }, createRequestId());
@@ -70,17 +68,6 @@ export function AccountPage(): React.JSX.Element {
       navigate("/login", { replace: true });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "删除申请失败。") }
   }
-  async function exportData(): Promise<void> {
-    setExporting(true);
-    setError("");
-    try {
-      await downloadUserExport();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "数据导出失败。");
-    } finally {
-      setExporting(false);
-    }
-  }
   async function leaveAccount(): Promise<void> {
     try {
       await signOut();
@@ -94,7 +81,7 @@ export function AccountPage(): React.JSX.Element {
     <div className={styles.stack}>
       <Header eyebrow="当前邮箱账号" title="我的 👋" />
       <ServiceBanner access={auth.status?.serviceAccess} />
-      <p className={styles.intro}>资料、偏好与数据权利都在这里。</p>
+      <p className={styles.intro}>资料、偏好与账号设置都在这里。</p>
       <section><h2 className={styles.sectionTitle}>求职资料</h2><Surface><div className={styles.list}>
         <Link className={styles.listRow} to="/app/resumes"><span className={styles.icon}>📄</span><div className={styles.rowMain}><strong>简历管理</strong><span>核对事实、设置默认简历</span></div><span className={styles.rowAction}>管理 →</span></Link>
         <Link className={styles.listRow} to="/app/preferences"><span className={styles.icon}>🎯</span><div className={styles.rowMain}><strong>求职偏好</strong><span>{query.data?.user.preferenceText || "还未补充长期偏好"}</span></div><span className={styles.rowAction}>编辑 →</span></Link>
@@ -105,8 +92,7 @@ export function AccountPage(): React.JSX.Element {
       <section><h2 className={styles.sectionTitle}>隐私与账号</h2><Surface><div className={styles.list}>
         <Link className={styles.listRow} to="/legal"><span className={styles.icon}>🔒</span><div className={styles.rowMain}><strong>协议与隐私</strong><span>用户协议、隐私政策和 AI 服务说明</span></div><span className={styles.rowAction}>查看 →</span></Link>
         {query.data?.user.isAdmin ? <Link className={styles.listRow} to="/app/admin"><span className={styles.icon}>🧭</span><div className={styles.rowMain}><strong>管理员</strong><span>用户、预算与服务阶段</span></div><span className={styles.rowAction}>进入 →</span></Link> : null}
-        <button className={styles.listRow} disabled={exporting} onClick={() => void exportData()} type="button"><span className={styles.icon}>⇩</span><div className={styles.rowMain}><strong>导出我的数据</strong><span>在当前浏览器组成版本化 JSON，不写回云存储</span></div><span className={styles.rowAction}>{exporting ? "准备中…" : "下载 →"}</span></button>
-        <button className={styles.listRow} onClick={() => void leaveAccount()} type="button"><span className={styles.icon}>↪</span><div className={styles.rowMain}><strong>退出登录</strong><span>清除当前浏览器的 CloudBase 会话</span></div><span className={styles.rowAction}>退出 →</span></button>
+        <button className={styles.listRow} onClick={() => void leaveAccount()} type="button"><span className={styles.icon}>👋</span><div className={styles.rowMain}><strong>退出登录</strong><span>清除当前浏览器的 CloudBase 会话</span></div><span className={styles.rowAction}>退出 →</span></button>
         <button className={styles.listRow} onClick={() => setDeleteStep("first")} type="button"><span className={styles.icon}>🗑️</span><div className={styles.rowMain}><strong className={styles.dangerText}>删除账号</strong><span>立即停用，并在 24 小时内删除可关联数据</span></div><span className={`${styles.rowAction} ${styles.dangerText}`}>删除 →</span></button>
       </div></Surface></section>
       {error === "" ? null : <ErrorNotice>{error}</ErrorNotice>}

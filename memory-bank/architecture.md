@@ -148,9 +148,9 @@ worker `finally` 删除处理过的临时输入，并移除 job 中仅处理时�
 
 `retirementInventory` 只返回集合计数、存储仍需独立盘点和 `deletionAuthorized: false`。`retirementDelete` 在部署入口固定返回 `DESTRUCTIVE_AUTHORIZATION_REQUIRED`；仓库当前没有生产全量删除实现。
 
-## 8. 用户导出
+## 8. 保留的导出兼容能力
 
-`user.export` 以 cursor/limit 分页，最大 200。服务端只读取当前 userId 的 users、resumes、applications、ai_jobs、feedback，并递归删除身份和删除确认材料。版本固定 `applymate-user-export-v1`。浏览器逐页取得记录、在本地生成 JSON Blob 和下载，不上传导出文件。
+`user.export` 以 cursor/limit 分页，最大 200。服务端只读取当前 userId 的 users、resumes、applications、ai_jobs、feedback，并递归删除身份和删除确认材料。版本固定 `applymate-user-export-v1`。当前正式 Web 账号页不暴露该入口，也不加载浏览器下载模块；服务端契约暂时保留，避免把一次账号页信息架构调整扩大成云端破坏性删除。
 
 ## 9. OCR、模型与隐私
 

@@ -323,7 +323,14 @@
   align-items: center;
   gap: 13px;
   padding: 13px 0;
+  border: 0;
   border-bottom: 1px solid var(--line);
+}
+
+button.listRow {
+  width: 100%;
+  background: transparent;
+  text-align: left;
 }
 
 .listRow:last-child {

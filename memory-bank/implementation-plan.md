@@ -25,7 +25,7 @@
 - [x] 路由、CloudBase SDK、PDF 按需加载；关闭 source map；首屏静态 JS gzip 200KB 硬门。
 - [x] 删除 PWA manifest、Service Worker 与安装入口；启动时注销历史 worker/cache。
 - [x] 删除正式 Web 的 AI 改写入口与调用。
-- [x] 增加退出登录、游标分页导出与浏览器本地 JSON 下载。
+- [x] 增加退出登录；按产品确认移除账号页的数据导出入口，服务端兼容契约暂不删除。
 - [x] 用可访问 `<dialog>` 操作菜单/确认框替换 `window.prompt/confirm`。
 - [x] 统一 active/read_only/retired 的页面守卫和只读交互。
 - [x] JD 最多 5 图、后台 Worker/Canvas 压缩、并发上传 3；点击生成才启动 OCR/模型。
