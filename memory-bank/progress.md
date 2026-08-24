@@ -122,7 +122,7 @@
 - 完整 `APPLYMATE_E2E_PORT=4189 npm run check` 通过：119 个测试文件、600 项测试和 7 项浏览器 E2E 全绿；首屏主 JS gzip 90.23KB。27 个 `dist/web` 文件已覆盖到旧预发布根目录，API、Worker、cleanup 均未部署。
 - 线上 `index.html` SHA-256 为 `4e48deb785d05610cc86db406701868f540b856c71bb69637dc8193d9bd8f2ec`，记录页 chunk 为 `d084d3ae60979597e8943775c8bbcd25b4d792ade99de73341b0779f20a61173`，均与本地构建一致；线上不存在记录实测已显示新错误页。
 
-### 11. GitHub 开源交付（本地准备）
+### 11. GitHub 开源交付（已公开）
 
 - 原仓库地址保持 `https://github.com/Yinzhi392/ApplyMate`；公开前只发现远程 `main`，当前 Web v3 分支比远程主线多 20 个线性提交。
 - 新增中英文 README、品牌 Hero、三张真实本地页面截图、MIT License、贡献指南、安全策略、行为准则、Roadmap 与 Changelog。
@@ -131,7 +131,11 @@
 - 工作树敏感扫描已通过；完整历史没有私钥、腾讯云 SecretId、GitHub Token 或通用 Secret 赋值命中。历史中的环境 ID/AppID 属于公开标识而非凭证，现行默认分支仍不再用真实值作为开箱配置。
 - `APPLYMATE_E2E_PORT=4193 npm run check` 完整通过：开源文档链接、fixture、敏感信息、严格类型、119 个 Vitest 文件/600 项测试、生产构建和 7 项 Chrome 移动端回归全部通过；首屏主 JS gzip 90.23KB。
 - 生产依赖 `npm audit --omit=dev --audit-level=high` 返回 0 个已知漏洞；CI 使用当前 GitHub 官方 Action 主版本 `checkout@v6`、`setup-node@v7` 与 `upload-artifact@v7`。
-- GitHub 远程可见性、README 渲染、CI、许可证、Topics 与最终 `main` 提交仍需在推送和 Public 切换后复验，本节在完成前不得写成已公开发布。
+- 开源准备提交 `5907e80e557439267bae70602919e485e36f955f` 已快进推送到远程 `main`；对应 GitHub Actions 运行 `32704013598` 在 1 分 55 秒内完成，完整质量门全部通过。
+- 2026-08-24 经产品负责人动作前确认，原仓库已由 Private 切换为 Public；连接器回读确认 `visibility=public`、默认分支为 `main`，仓库地址保持 `https://github.com/Yinzhi392/ApplyMate`。
+- GitHub 主页已复验中英文 README、品牌 Hero、三张产品截图、MIT License、贡献与安全入口可以渲染；仓库简介更新为“移动端求职开场白助手：用已确认的简历事实生成岗位专属开场白，隐私优先、事实可追溯。”
+- Topics 已设置为 `ai`、`career`、`chinese`、`cloudbase`、`job-search`、`mobile-web`、`privacy`、`react`、`resume`、`typescript`；Discussions 与 Private vulnerability reporting 已开启。
+- Dependabot 已创建 3 个初始版本更新 PR；未自动合并，继续按 CI、变更范围和兼容性逐个审阅。
 
 ## 本地验证证据
 
@@ -185,5 +189,7 @@
 ## 授权记录
 
 用户已批准“ApplyMate Web v3 正式公开站重构计划”以及本地代码和文档实施。该批准不包含域名购买、套餐开通、新环境创建、备案、密钥写入、生产部署或最终数据删除；这些动作继续要求逐项授权。付款、实名、验证码和密码始终由用户本人操作。
+
+2026-08-24 用户单独确认将 `Yinzhi392/ApplyMate` 由 Private 切换为 Public，并授权发布仓库简介、Topics、开启 Discussions 与 Private vulnerability reporting；原仓库 URL 和现有网站地址均保持不变。
 
 2026-08-24 用户单独授权部署提交 `bfd6840` 到旧预发布 `worker`，该部署和线上代码核验已完成；未部署 API/cleanup、未创建资源、未修改套餐或密钥。
