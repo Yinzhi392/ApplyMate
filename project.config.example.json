@@ -1,0 +1,17 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "description": "ApplyMate archived legacy mini-program local configuration",
+  "libVersion": "3.10.0",
+  "miniprogramRoot": "miniprogram/",
+  "packOptions": {
+    "ignore": []
+  },
+  "projectname": "applymate-legacy-miniprogram",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": true
+  }
+}

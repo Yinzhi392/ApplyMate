@@ -75,7 +75,7 @@ CloudBase 文档数据库不向浏览器开放业务集合。存储路径包含�
 
 - Legacy/预发布环境保留且不迁移数据。
 - 正式生产使用独立 CloudBase 环境，个人版作为待控制台复核的基线。
-- `cloudbaserc.json` 在生产环境创建前仍保留旧环境 ID，不代表生产配置。
+- 仓库只跟踪 `cloudbaserc.example.json`；含真实环境 ID 的本机 `cloudbaserc.json` 被 Git 忽略，不代表可公开或生产配置。
 - BrowserRouter 需要在 CloudBase 静态托管设置 4xx → `index.html`。
 - 正式环境默认关闭 AI；完成域名、HTTPS、备案、探针、隔离、质量、时延与合规门后才开放注册。
 

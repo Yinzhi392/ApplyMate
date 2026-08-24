@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: "./tests/browser",
   fullyParallel: true,
   forbidOnly: true,
-  outputDir: "/private/tmp/applymate-playwright-results",
+  outputDir: process.env.APPLYMATE_PLAYWRIGHT_OUTPUT_DIR ?? "test-results/playwright",
   retries: 0,
   reporter: "line",
   use: {

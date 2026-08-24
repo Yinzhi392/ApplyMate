@@ -176,10 +176,23 @@ worker `finally` 删除处理过的临时输入，并移除 job 中仅处理时�
 
 生产部署前还必须完成浏览器 E2E、三类真机、CloudBase 环境只读盘点、两邮箱隔离、30 次真实质量/时延验收和专业合规复核。本地通过不等于云端已配置或已上线。
 
-`cloudbaserc.json` 当前仍指向 Legacy 环境，只能用于旧环境预发布且不得在未授权时执行。新生产环境 ID、数据库集合、权限、触发器、托管、域名、环境变量和预算初始记录都必须在单独授权后配置；不得把新生产环境 ID 提前提交到仓库。
+仓库只跟踪不含真实环境 ID 的 `cloudbaserc.example.json`；本机 `cloudbaserc.json` 被 Git 忽略，仍只能用于已经授权的 Legacy 预发布操作。新生产环境 ID、数据库集合、权限、触发器、托管、域名、环境变量和预算初始记录都必须在单独授权后配置；不得把任何真实环境 ID 提交到仓库。
 
 ## 11. Legacy 云环境边界
 
 2026-08-23 的只读快照确认旧环境仍是小程序来源的体验版环境。它同时启用了邮箱、匿名和用户名登录，静态托管仍保留历史 PWA/source map 文件，cleanup 没有触发器，数据库也没有 v3 的 `service_config`、`budget_periods`、`ai_task_admissions`。2026-08-24 仅按授权为旧预发布托管设置了 `index.html` 错误文档，并覆盖当前 `dist/web` 的同名文件；这不会把它升级为正式生产。
 
 旧环境中没有执行资源删除、数据迁移、套餐变更或生产化权限改造。新生产环境必须独立创建，默认关闭 AI，并重新配置身份、集合、拒绝客户端直连的规则、cleanup 触发器、SPA fallback、窄 CORS、预算初始数据和密钥；任何这些云端动作都仍需单独授权。
+
+## 12. 公开仓库边界
+
+GitHub 默认分支以 MIT License 发布。根 README 提供中英文产品导览、当前状态、架构、快速开始和真实无个人数据截图；`CONTRIBUTING.md`、`SECURITY.md`、行为准则、Issue/PR 模板和 CI 共同定义社区入口。
+
+公开仓库只跟踪示例配置：
+
+- `web/.env.example` 只含浏览器可公开变量的占位值。
+- `cloudbaserc.example.json` 不含 CloudBase 环境 ID。
+- `project.config.example.json` 使用微信游客 AppID，仅用于打开 Legacy 归档。
+- 本机 `cloudbaserc.json`、`project.config.json`、`project.private.config.json` 和 `.env.*` 全部由 Git 忽略。
+
+源码开源不包含 CloudBase、腾讯 OCR、TokenHub 账号、凭证、额度、托管服务或合规许可。贡献者必须使用自己的资源与合成/脱敏数据；GitHub Actions 只运行本地门禁，不调用真实 OCR、模型或生产环境。

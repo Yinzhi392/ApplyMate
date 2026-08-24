@@ -8,7 +8,7 @@
 
 项目主方向已从微信小程序切换为只面向手机的公开 Web。没有推倒共享 Schema、OCR/脱敏、Hy3 worker、幂等和视觉语言；小程序最终版已用 `legacy-miniprogram-final` 标签归档，并退出根构建/测试。
 
-正式 v3 设计规格已在独立提交 `b9accb1` 固化。当前工作区包含 Web、共享契约、严格 TypeScript 领域服务和 CloudBase deploy 公开模式的实现；用户自有 `project.config.json` 与未跟踪 `project.private.config.json` 未被修改或纳入提交。
+正式 v3 设计规格已在独立提交 `b9accb1` 固化。当前工作区包含 Web、共享契约、严格 TypeScript 领域服务和 CloudBase deploy 公开模式的实现；用户本机 `project.config.json`、`project.private.config.json` 与 `cloudbaserc.json` 保留在本地，但退出 Git 跟踪并由示例配置替代。
 
 ## 已完成
 
@@ -121,6 +121,17 @@
 - 验收同时发现记录详情把 `application.get` 失败误判为 data 未到达，导致跨账号 `NOT_FOUND` 永久显示“正在读取记录”。已先补状态回归再调整分支顺序，线上现在显示不泄露资源存在性的“记录不存在或无权访问”并提供返回入口。
 - 完整 `APPLYMATE_E2E_PORT=4189 npm run check` 通过：119 个测试文件、600 项测试和 7 项浏览器 E2E 全绿；首屏主 JS gzip 90.23KB。27 个 `dist/web` 文件已覆盖到旧预发布根目录，API、Worker、cleanup 均未部署。
 - 线上 `index.html` SHA-256 为 `4e48deb785d05610cc86db406701868f540b856c71bb69637dc8193d9bd8f2ec`，记录页 chunk 为 `d084d3ae60979597e8943775c8bbcd25b4d792ade99de73341b0779f20a61173`，均与本地构建一致；线上不存在记录实测已显示新错误页。
+
+### 11. GitHub 开源交付（本地准备）
+
+- 原仓库地址保持 `https://github.com/Yinzhi392/ApplyMate`；公开前只发现远程 `main`，当前 Web v3 分支比远程主线多 20 个线性提交。
+- 新增中英文 README、品牌 Hero、三张真实本地页面截图、MIT License、贡献指南、安全策略、行为准则、Roadmap 与 Changelog。
+- 新增 Issue 表单、PR 模板、CODEOWNERS、Dependabot 和 GitHub Actions；CI 使用 Node.js 22，安装 Chrome 后运行完整 `npm run check`，不连接真实 OCR、模型或生产环境。
+- 本机 `cloudbaserc.json`、`project.config.json` 与 `project.private.config.json` 由 Git 忽略；仓库只保留无真实环境 ID/AppID 的示例文件，且不改变现有预发布网站地址或云端资源。
+- 工作树敏感扫描已通过；完整历史没有私钥、腾讯云 SecretId、GitHub Token 或通用 Secret 赋值命中。历史中的环境 ID/AppID 属于公开标识而非凭证，现行默认分支仍不再用真实值作为开箱配置。
+- `APPLYMATE_E2E_PORT=4193 npm run check` 完整通过：开源文档链接、fixture、敏感信息、严格类型、119 个 Vitest 文件/600 项测试、生产构建和 7 项 Chrome 移动端回归全部通过；首屏主 JS gzip 90.23KB。
+- 生产依赖 `npm audit --omit=dev --audit-level=high` 返回 0 个已知漏洞；CI 使用当前 GitHub 官方 Action 主版本 `checkout@v6`、`setup-node@v7` 与 `upload-artifact@v7`。
+- GitHub 远程可见性、README 渲染、CI、许可证、Topics 与最终 `main` 提交仍需在推送和 Public 切换后复验，本节在完成前不得写成已公开发布。
 
 ## 本地验证证据
 

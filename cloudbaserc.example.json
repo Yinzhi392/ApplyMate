@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
-  "envId": "applymate-mvp-d0g005nnw103af4c3",
+  "envId": "replace-with-your-cloudbase-env-id",
   "functionRoot": "cloudfunctions",
   "functions": [
     {
@@ -9,7 +9,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/api/deploy",
-      "description": "ApplyMate Legacy/pre-release API. Public Web v3 stays fail-closed unless explicitly configured in a separately authorized production environment.",
+      "description": "ApplyMate API. Public Web v3 stays fail-closed unless explicitly configured.",
       "installDependency": true
     },
     {
@@ -18,7 +18,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/worker/deploy",
-      "description": "ApplyMate Legacy/pre-release worker. Public Web v3 uses fixed hy3 plus budget admission only when explicitly enabled.",
+      "description": "ApplyMate async OCR, masking, generation and quality worker.",
       "installDependency": true
     },
     {
@@ -27,7 +27,7 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "dir": "cloudfunctions/cleanup/deploy",
-      "description": "ApplyMate Legacy/pre-release cleanup for timeouts, lifecycle cleanup and non-destructive retirement inventory.",
+      "description": "ApplyMate lifecycle cleanup and non-destructive retirement inventory.",
       "installDependency": true
     }
   ]

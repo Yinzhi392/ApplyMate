@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or privacy report
+    url: https://github.com/Yinzhi392/ApplyMate/security/policy
+    about: Report vulnerabilities privately. Do not publish personal data or credentials.
+  - name: Questions and ideas
+    url: https://github.com/Yinzhi392/ApplyMate/discussions
+    about: Start a discussion when the topic is not yet a concrete bug or feature proposal.

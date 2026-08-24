@@ -1,9 +1,9 @@
 {
   "name": "applymate",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "ApplyMate public mobile Web app and CloudBase service",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=20 <25",
     "npm": ">=10"
@@ -11,6 +11,7 @@
   "packageManager": "npm@11.12.1",
   "scripts": {
     "format:check": "node scripts/check-format.mjs",
+    "docs:check": "node scripts/check-open-source-docs.mjs",
     "fixtures:check": "node scripts/check-fixtures.mjs",
     "tokenhub:plan": "node scripts/run-phase0-tokenhub-benchmark.mjs --plan",
     "tokenhub:smoke": "node --env-file=.env.phase0.local scripts/run-phase0-tokenhub-benchmark.mjs --smoke",
@@ -37,7 +38,7 @@
     "test": "vitest run",
     "clean": "tsc -b --clean",
     "build": "tsc -b --pretty false && npm run web:build",
-    "check": "npm run format:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build && npm run test:e2e"
+    "check": "npm run format:check && npm run docs:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build && npm run test:e2e"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "3.7.1",

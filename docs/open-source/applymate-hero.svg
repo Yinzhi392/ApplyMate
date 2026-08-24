@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="780" viewBox="0 0 1600 780" role="img" aria-labelledby="title description">
+  <title id="title">ApplyMate open-source product banner</title>
+  <desc id="description">Warm cream and jade banner with the ApplyMate slogan, privacy labels, and a mobile product illustration.</desc>
+  <defs>
+    <linearGradient id="background" x1="80" y1="30" x2="1520" y2="750" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9EF" />
+      <stop offset="0.55" stop-color="#F8F3E9" />
+      <stop offset="1" stop-color="#DFEFE9" />
+    </linearGradient>
+    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#34877A" />
+      <stop offset="1" stop-color="#1F625A" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#173B36" flood-opacity="0.16" />
+    </filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#173B36" flood-opacity="0.1" />
+    </filter>
+  </defs>
+
+  <rect width="1600" height="780" rx="42" fill="url(#background)" />
+  <circle cx="1465" cy="92" r="190" fill="#F2B673" opacity="0.16" />
+  <circle cx="88" cy="726" r="240" fill="#5CA194" opacity="0.1" />
+  <path d="M1010 66C1195 170 1310 40 1542 184" fill="none" stroke="#26766C" stroke-width="2" stroke-dasharray="8 16" opacity="0.28" />
+
+  <g transform="translate(104 82)">
+    <g transform="translate(0 2)">
+      <circle cx="26" cy="26" r="26" fill="#26766C" />
+      <path d="M13 27C15 17 23 12 35 14C33 26 27 34 16 37" fill="none" stroke="#FFF9EF" stroke-width="5" stroke-linecap="round" />
+      <circle cx="35" cy="14" r="3.5" fill="#F4B16A" />
+    </g>
+    <text x="72" y="40" fill="#17242F" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="34" font-weight="800" letter-spacing="-1">ApplyMate</text>
+    <rect x="264" y="5" width="146" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.72" stroke="#26766C" stroke-opacity="0.2" />
+    <text x="337" y="33" text-anchor="middle" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="17" font-weight="700">OPEN SOURCE</text>
+
+    <text x="0" y="178" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="800" letter-spacing="3">移动端求职开场白助手</text>
+    <text x="0" y="264" fill="#17242F" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="66" font-weight="850" letter-spacing="-4">把真实经历，</text>
+    <text x="0" y="342" fill="#17242F" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="66" font-weight="850" letter-spacing="-4">写进每一次开场。</text>
+    <text x="0" y="408" fill="#5A6A70" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="24">确认简历事实 · 提交岗位 · 生成可核对的专属开场白</text>
+
+    <g transform="translate(0 470)">
+      <g>
+        <rect width="176" height="58" rx="29" fill="#E2F0EB" stroke="#26766C" stroke-opacity="0.18" />
+        <circle cx="30" cy="29" r="10" fill="#26766C" />
+        <path d="M25 29L29 33L36 24" fill="none" stroke="#FFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        <text x="52" y="37" fill="#234D47" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="700">事实可追溯</text>
+      </g>
+      <g transform="translate(194 0)">
+        <rect width="176" height="58" rx="29" fill="#FFF1DF" stroke="#D98642" stroke-opacity="0.2" />
+        <path d="M30 18L39 22V29C39 36 35 41 30 43C25 41 21 36 21 29V22L30 18Z" fill="#D98642" />
+        <path d="M26 29L29 32L35 25" fill="none" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        <text x="52" y="37" fill="#8A5429" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="700">隐私先脱敏</text>
+      </g>
+      <g transform="translate(388 0)">
+        <rect width="160" height="58" rx="29" fill="#FFFFFF" fill-opacity="0.72" stroke="#17242F" stroke-opacity="0.12" />
+        <rect x="22" y="16" width="17" height="27" rx="4" fill="none" stroke="#3F5960" stroke-width="2.5" />
+        <circle cx="30.5" cy="38.5" r="1.7" fill="#3F5960" />
+        <text x="52" y="37" fill="#3F5960" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="700">手机优先</text>
+      </g>
+    </g>
+
+    <text x="0" y="612" fill="#718087" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17">React 19  ·  TypeScript  ·  CloudBase  ·  MIT</text>
+  </g>
+
+  <g transform="translate(1038 68)" filter="url(#shadow)">
+    <rect width="420" height="680" rx="62" fill="#17242F" />
+    <rect x="14" y="14" width="392" height="652" rx="50" fill="#FBF8F1" />
+    <rect x="152" y="26" width="116" height="28" rx="14" fill="#17242F" />
+
+    <g transform="translate(42 82)">
+      <text x="0" y="28" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="800">◔ ApplyMate</text>
+      <rect x="271" y="1" width="67" height="37" rx="18.5" fill="#E4F0EC" />
+      <text x="304.5" y="26" text-anchor="middle" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700">生成中</text>
+
+      <text x="0" y="92" fill="#718087" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" letter-spacing="2">岗位专属开场</text>
+
+      <g transform="translate(0 116)" filter="url(#softShadow)">
+        <rect width="338" height="260" rx="26" fill="#FFFFFF" />
+        <rect x="22" y="22" width="80" height="26" rx="13" fill="#E3F0EC" />
+        <text x="62" y="40" text-anchor="middle" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="12" font-weight="800">事实已核对</text>
+        <rect x="22" y="72" width="278" height="10" rx="5" fill="#DDE5E2" />
+        <rect x="22" y="94" width="292" height="10" rx="5" fill="#DDE5E2" />
+        <rect x="22" y="116" width="246" height="10" rx="5" fill="#DDE5E2" />
+        <rect x="22" y="155" width="272" height="10" rx="5" fill="#DDE5E2" />
+        <rect x="22" y="177" width="286" height="10" rx="5" fill="#DDE5E2" />
+        <rect x="22" y="199" width="206" height="10" rx="5" fill="#DDE5E2" />
+        <circle cx="300" cy="226" r="16" fill="#26766C" />
+        <path d="M293 226L298 231L307 220" fill="none" stroke="#FFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      </g>
+
+      <g transform="translate(0 400)">
+        <rect width="162" height="82" rx="22" fill="#E3F0EC" />
+        <text x="20" y="28" fill="#5A6A70" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="12">引用事实</text>
+        <text x="20" y="59" fill="#26766C" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="850">3 项</text>
+      </g>
+      <g transform="translate(176 400)">
+        <rect width="162" height="82" rx="22" fill="#FFF0DD" />
+        <text x="20" y="28" fill="#725C46" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="12">隐私检查</text>
+        <text x="20" y="59" fill="#C87735" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="850">已通过</text>
+      </g>
+
+      <rect y="506" width="338" height="60" rx="20" fill="url(#jade)" />
+      <text x="169" y="544" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" font-weight="800">核对后复制</text>
+      <text x="169" y="593" text-anchor="middle" fill="#81908F" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="12">AI 生成内容，请核对真实性</text>
+    </g>
+  </g>
+</svg>
