@@ -1,5 +1,7 @@
+import { WEB_CONTACT_EMAIL } from "./public-contact";
+
 export const WEB_EFFECTIVE_DATE = "2026-08-23";
-export const WEB_CONTACT_EMAIL = "applymate67@gmail.com";
+export { WEB_CONTACT_EMAIL } from "./public-contact";
 
 export interface WebLegalDocument {
   title: string;

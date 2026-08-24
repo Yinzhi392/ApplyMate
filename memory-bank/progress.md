@@ -92,6 +92,13 @@
 - 下载线上代码到临时目录复核：`experience-worker.js` SHA-256 为 `63a537bf48bf318d4ed24357942c8e6e91385310a6a27cece445e44bda80bb02`；`greeting-calibration.js`、`index.js`、`budget-admission.js` 分别为 `e172f6c5cb1a956a301e0278151b18141a98f14bcd7e0facd4f0f5e3304e614f`、`a9104722aafb0a3c662ee4ca250bfa1f8a581df5317402855dc73fed114d5005`、`95846f3a575b9f26355e7dab6259545dc2611d8871de66293c08dfd6652a3974`；四个线上文件与本地逐字节一致。
 - 本地完整门禁为 118 个测试文件、595 项测试、生产构建和 6 项浏览器 E2E 全部通过。以上只证明部署与安全门行为，正文质量仍需用户创建新任务并按本人 `jobId` 验收 `serverPipelineVersion=greeting-v9.2-numeric-equivalence`。
 
+### 8. 首页产品介绍与开发者入口（待旧预发布静态托管核验）
+
+- 产品负责人确认把首页“隐私边界”卡替换为产品介绍，把“六个月服务周期”卡替换为开发者联系；隐私和服务周期信息继续保留在协议、支持页与页脚入口。
+- 产品介绍使用定性价值表达“提升获得 HR 回复和索要简历的机会”，不发布没有真实样本和 A/B 数据支持的“增加 60%”效果承诺。
+- 开发者入口使用已确认公开邮箱 `applymate67@gmail.com` 和 GitHub 个人主页 `https://github.com/Yinzhi392`；顶部次要入口改为页内“三步完成”的“看看怎么使用”。
+- 新增浏览器回归覆盖产品文案、无 `60%`、邮件 `mailto:` 和 GitHub 链接；部署证据将在旧预发布静态托管核验后补记。
+
 ## 本地验证证据
 
 最近一次分项验证：
@@ -100,10 +107,10 @@
 - `npm run web:typecheck`：通过。
 - `APPLYMATE_E2E_PORT=4187 npm run check`：完整通过；Playwright 配置支持任务级端口覆盖，避免占用用户正在使用的 4173 预览。
 - Vitest：118 个当前主线测试文件、595 项测试通过（Legacy 小程序测试退出主线后计数降低）。
-- Web build：通过；HTML entry 主 JS gzip 71.67KB，CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
-- Playwright + 本机 Chrome：6 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
+- Web build：通过；HTML entry 主 JS gzip 90.23KB，仍低于 200KB 硬门；CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
+- Playwright + 本机 Chrome：7 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、首页产品/开发者入口、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
 - fixture 隔离、敏感信息、严格 TypeScript、Web TypeScript 与 deploy 目标语法/契约均通过。
-- 独立端口 Playwright：6 项通过；本轮使用 4187 运行同一套配置后，完整 `npm run check` 全绿。
+- 独立端口 Playwright：7 项通过；本轮使用 4188 运行同一套配置后，完整 `npm run check` 全绿。
 
 ## 当前未完成或外部阻塞
 

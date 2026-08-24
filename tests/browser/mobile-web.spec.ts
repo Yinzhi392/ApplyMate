@@ -40,6 +40,28 @@ test("email form remains usable in a compact soft-keyboard viewport", async ({ p
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test("landing page explains the product and exposes verified developer contacts", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", {
+    name: "每个岗位，都值得一段有针对性的开场",
+  })).toBeVisible();
+  await expect(page.getByText("提升获得 HR 回复和索要简历的机会")).toBeVisible();
+  await expect(page.getByText(/60%/u)).toHaveCount(0);
+
+  await expect(page.getByRole("heading", {
+    name: "反馈问题，也欢迎一起完善 ApplyMate",
+  })).toBeVisible();
+  await expect(page.getByRole("link", { name: "邮件联系" })).toHaveAttribute(
+    "href",
+    "mailto:applymate67@gmail.com",
+  );
+  await expect(page.getByRole("link", { name: "GitHub 主页" })).toHaveAttribute(
+    "href",
+    "https://github.com/Yinzhi392",
+  );
+});
+
 test("BrowserRouter handles direct public routes, refresh and protected-route redirect", async ({ page }) => {
   await page.goto("/legal");
   await expect(page.getByRole("heading", { name: /协议与隐私/u })).toBeVisible();

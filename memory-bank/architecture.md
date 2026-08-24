@@ -48,6 +48,8 @@ mobile browser
 
 `web/src/app/AppRouter.tsx` 定义公开路由和 `/app/*`。公共首页、协议与支持页不等待 CloudBase SDK；登录或业务路由才动态加载认证模块。读写路由在 read_only/retired 阶段由客户端守卫，同时服务端再次强制执行。
 
+首页的主要信息层级是产品价值、三步流程、适用人群、产品介绍和开发者联系入口。产品效果只使用定性表述，不发布未经真实样本验证的提升百分比；隐私处理和六个月服务阶段仍保留在 `/legal`、`/support` 及页脚入口。开发者邮箱复用 `WEB_CONTACT_EMAIL`，GitHub 链接只指向公开个人主页。
+
 CloudBase 静态托管必须在控制台设置“4xx 错误页 → `/index.html`”，否则 BrowserRouter 的直达/刷新会失败。该配置属于生产环境创建后的独立部署步骤，仓库不能假装已配置。
 
 ### 3.2 平台 seam

@@ -20,6 +20,7 @@
 
 - [x] 改为 BrowserRouter；公开 `/`、`/login`、`/legal`、`/support`，业务统一 `/app/*`。
 - [x] 完成公开首页、支持页、移动居中画布和服务阶段 banner。
+- [x] 首页用产品介绍与开发者联系替换隐私/服务周期营销卡；邮箱复用公开联系常量，GitHub 指向个人主页，不展示未经验证的“提升 60%”效果承诺。
 - [x] 把 CloudBase 认证、临时上传和业务 API 拆成小 seam。
 - [x] 路由、CloudBase SDK、PDF 按需加载；关闭 source map；首屏静态 JS gzip 200KB 硬门。
 - [x] 删除 PWA manifest、Service Worker 与安装入口；启动时注销历史 worker/cache。
