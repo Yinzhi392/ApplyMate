@@ -38,7 +38,7 @@ describe("greeting prompt v9 product contract", () => {
   it("defines the strong, partial, and low adaptive tiers", () => {
     const prompt = worker.jdPrompt("示例科技招聘AI产品实习生", baseFacts);
 
-    expect(prompt).toContain("Prompt版本：experience-evidence-adaptive-v9");
+    expect(prompt).toContain("Prompt版本：experience-evidence-adaptive-v9.1");
     expect(prompt).toMatch(/strong[^\n]*550至800[^\n]*4至5/u);
     expect(prompt).toMatch(/partial[^\n]*350至550[^\n]*3至4/u);
     expect(prompt).toMatch(/low[^\n]*180至350[^\n]*2至3/u);
@@ -180,6 +180,78 @@ describe("greeting prompt v9 product contract", () => {
         validationGate: "greeting_availability_position",
       });
     }
+  });
+
+  it("accepts 贵司 when the JD contains a full company name", () => {
+    const selection = {
+      jobTitle: "AI产品实习生",
+      companyName: "示例科技有限公司",
+      matchMode: "strong",
+      directFactIds: ["fact_project"],
+      transferableEvidence: [],
+      supportingFactIds: ["fact_availability"],
+      gaps: [],
+      paragraphs: [
+        "您好，我是一名有AI产品和模型评测经验的在读学生，希望申请贵司的AI产品实习生岗位。",
+        "我参与AI对话数据质量复核，归纳Badcase并推动Prompt优化和A/B测试，这段经历与岗位中的AI产品质量评测工作直接相关。",
+        "我可连续实习四个月，每周到岗四天，也可远程配合。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_title", text: "AI产品实习生" },
+      companyName: { fieldId: "jd_company", text: "示例科技有限公司" },
+      responsibilities: [
+        { fieldId: "jd_responsibility", text: "负责AI产品质量评测" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    expect(
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, baseFacts),
+    ).toMatchObject({
+      greetingPackage: {
+        body: expect.stringContaining("贵司的AI产品实习生岗位"),
+      },
+    });
+  });
+
+  it("does not discard a truthful greeting only because it omits the company name", () => {
+    const selection = {
+      jobTitle: "AI产品实习生",
+      companyName: "示例科技有限公司",
+      matchMode: "strong",
+      directFactIds: ["fact_project"],
+      transferableEvidence: [],
+      supportingFactIds: ["fact_availability"],
+      gaps: [],
+      paragraphs: [
+        "您好，我是一名有AI产品和模型评测经验的在读学生，希望申请AI产品实习生岗位。",
+        "我参与AI对话数据质量复核，归纳Badcase并推动Prompt优化和A/B测试，这段经历与岗位中的AI产品质量评测工作直接相关。",
+        "我可连续实习四个月，每周到岗四天，也可远程配合。",
+      ],
+    };
+    const jd = {
+      jobTitle: { fieldId: "jd_title", text: "AI产品实习生" },
+      companyName: { fieldId: "jd_company", text: "示例科技有限公司" },
+      responsibilities: [
+        { fieldId: "jd_responsibility", text: "负责AI产品质量评测" },
+      ],
+      hardSkills: [],
+      experienceEducation: [],
+      locationWorkMode: [],
+      availabilityDuration: [],
+    };
+
+    expect(
+      worker.modelGreetingPackageWithLocalValidation(selection, jd, baseFacts),
+    ).toMatchObject({
+      greetingPackage: {
+        body: expect.stringContaining("申请AI产品实习生岗位"),
+      },
+    });
   });
 
   it("accepts a two-paragraph low match with positive foundation evidence", () => {

@@ -53,10 +53,13 @@ const AUTHENTICITY_VALIDATION_GATES = new Set([
 function publicProcessingError(error) {
   if (error?.message === "MODEL_INVALID_OUTPUT") {
     const authenticityFailure = AUTHENTICITY_VALIDATION_GATES.has(error?.validationGate);
+    const targetMentionFailure = error?.validationGate === "greeting_target_mention";
     return {
       code: "MODEL_INVALID_OUTPUT",
       message: authenticityFailure
         ? "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"
+        : targetMentionFailure
+          ? "AI 生成内容未自然提及当前岗位，系统已拦截，本次不扣额度。"
         : "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。",
       retryable: true,
     };
@@ -1007,11 +1010,20 @@ function normalizedTarget(value) {
 }
 
 function mentionsTarget(body, target, fallback) {
-  if (!target) return body.includes(fallback);
+  if (body.includes(fallback)) return true;
+  if (!target) return false;
   if (body.includes(target)) return true;
   const normalizedBody = normalizedTarget(body);
   const normalized = normalizedTarget(target);
   return normalized.length >= 2 && normalizedBody.includes(normalized);
+}
+
+function mentionsRoleTarget(body, target) {
+  if (mentionsTarget(body, target, "该岗位")) return true;
+  const normalizedRole = normalizedTarget(target)
+    .replace(/(?:实习生|实习岗?|岗位|职位|internship|intern|trainee)$/giu, "");
+  if (normalizedRole.length >= 2 && normalizedTarget(body).includes(normalizedRole)) return true;
+  return /(?:该|此|目标)?(?:岗位|职位)|实习岗/u.test(body);
 }
 
 const ROLE_STRATEGIES = Object.freeze({
@@ -1173,17 +1185,17 @@ function jdPrompt(text, facts) {
       text: compactText(maskProtectedText(factText), 280),
     }),
   );
-  return `你是中文求职开场白编辑。Prompt版本：experience-evidence-adaptive-v9。岗位路线：${roleFamily}。路线规则：${roleStrategy}
+  return `你是中文求职开场白编辑。Prompt版本：experience-evidence-adaptive-v9.1。岗位路线：${roleFamily}。路线规则：${roleStrategy}
 你必须在一次 JSON 响应中完成岗位理解、证据分层和正文写作，不输出解释、推理过程、Markdown 或产品层 AI 标识。
 判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；每个 JD 数组项目必须优先复制本次 JD 的原句片段，只能删除不必要文字，禁止同义改写或补充截图中没有的职责；不确定的辅助字段直接省略。coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
 证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。只选择与本次 JD 匹配度最高的2至3段经历，不按简历顺序罗列；只保留最有说服力的2至3个有来源数字。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
 matchMode与篇幅分档：strong 需要2至4段垂直度高的经历，正文550至800个可见字符、4至5个非空段落；partial 存在部分直接或可靠可迁移证据，正文350至550个可见字符、3至4个非空段落；low 只使用真实基础技能、可迁移能力、相关实践和有证据的学习行动，正文180至350个可见字符、2至3个非空段落。matchMode只用于内部选材和篇幅分档，绝不能在正文出现。
 gaps仅用于内部记录，绝不能写入正文。没有直接经验时，只积极且准确地呈现可迁移能力、相关实践和有证据的学习行动。禁止“虽然我没有……但是……”“缺少相关经验”“暂时没有对口经历”“不完全匹配”“希望弥补不足”等自曝缺点表达。
 ${educationPolicy}
-正文结构：简体中文；第一段自然包含“您好”，使用基于事实的身份定位，例如“我是金融科技专业本科生”或“我是一名有AI产品和模型评测经验的在读学生”；不得写用户真实姓名，也不固定用学校或GPA开头。中间每个段落只围绕一段最相关经历，依次说明做了什么、使用什么方法、解决什么问题、取得什么结果，再自然连接岗位职责。允许明确总结“这段经历与岗位中的……工作高度契合”，但不得超出证据强度。必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
+正文结构：简体中文；第一段自然包含“您好”，使用基于事实的身份定位，例如“我是金融科技专业本科生”或“我是一名有AI产品和模型评测经验的在读学生”；不得写用户真实姓名，也不固定用学校或GPA开头。中间每个段落只围绕一段最相关经历，依次说明做了什么、使用什么方法、解决什么问题、取得什么结果，再自然连接岗位职责。允许明确总结“这段经历与岗位中的……工作高度契合”，但不得超出证据强度。必须准确出现当前岗位名；公司称呼可省略，如需称呼只能使用已识别公司的全称、简称或自然称呼“贵司”，不得编造其他公司；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
 结尾规则：到岗时间、实习月数、每周到岗天数和远程或线下条件统一放在最后一个非空段落，言简意赅且只使用用户明确提供的事实。学习意愿只能通过已发生的学习或实践行动表达，禁止空泛写“学习能力强”或“愿意踏实学习”。
 表达规则：专业、自然、自信但不过度包装；保留真正有用的数字、方法和专业术语，不机械罗列所有事实。禁用“本人具备”“贵公司是行业领先者”“希望贴近真实工作”“愿意踏实学习”“学习能力强”“分析练习”“这些练习”“看到岗位主要围绕”“这些要求与我的经历和能力比较契合”“这段积累能支持我”。
-返回前检查：岗位名与当前 JD 一致；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；经历、数字、段落和可见字符数符合对应 matchMode；正文没有出现 matchMode、gaps 或任何缺点披露。服务端不会进行第二次模型调用，也不会用本地模板补写。
+返回前检查：岗位名与当前 JD 一致，公司若出现则只能是已识别公司或“贵司”；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；经历、数字、段落和可见字符数符合对应 matchMode；正文没有出现 matchMode、gaps 或任何缺点披露。服务端不会进行第二次模型调用，也不会用本地模板补写。
 只返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"coreFunctions":[{"requirementType":"responsibilities","requirementIndex":0,"summary":""},{"requirementType":"responsibilities","requirementIndex":1,"summary":""}],"domainContext":[],"matchMode":"strong","directFactIds":[],"transferableEvidence":[{"factId":"","capability":"","wordingStrength":"transferable"}],"supportingFactIds":[],"gaps":[],"paragraphs":[]}。
 JD：${maskProtectedText(text).slice(0, 6_000)}
 可引用事实：${JSON.stringify(safeFacts)}`;
@@ -1656,13 +1668,14 @@ function modelGreetingPackage(plan, jd, matches, facts) {
   const companyTarget = jd.companyName?.text;
   const role = roleTarget || "该岗位";
   const company = companyTarget || "贵司";
-  if (
-    !mentionsTarget(body, roleTarget, "该岗位") ||
-    !mentionsTarget(body, companyTarget, "贵司")
-  ) {
+  const hasRoleTarget = mentionsRoleTarget(body, roleTarget);
+  const hasCompanyTarget = mentionsTarget(body, companyTarget, "贵司");
+  if (!hasRoleTarget) {
     throw modelValidationFailure("greeting_target_mention", {
       visibleLength: outputVisibleLength,
       paragraphCount: paragraphs.length,
+      missingRoleMention: !hasRoleTarget,
+      missingCompanyMention: !hasCompanyTarget,
     });
   }
 
@@ -1897,13 +1910,14 @@ function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
       paragraphCount: paragraphs.length,
     });
   }
-  if (
-    !mentionsTarget(body, jd.jobTitle?.text, "该岗位") ||
-    !mentionsTarget(body, jd.companyName?.text, "贵司")
-  ) {
+  const hasRoleTarget = mentionsRoleTarget(body, jd.jobTitle?.text);
+  const hasCompanyTarget = mentionsTarget(body, jd.companyName?.text, "贵司");
+  if (!hasRoleTarget) {
     throw modelValidationFailure("greeting_target_mention", {
       visibleLength: outputVisibleLength,
       paragraphCount: paragraphs.length,
+      missingRoleMention: !hasRoleTarget,
+      missingCompanyMention: !hasCompanyTarget,
     });
   }
   const allowedNumbers = new Set(numericTokens([
@@ -2135,7 +2149,7 @@ function disclosure() {
   return {
     mode: "real", providerName: "腾讯云 TokenHub", modelName: "腾讯混元",
     modelId: process.env.TOKENHUB_MODEL || "hy3",
-    promptVersion: "experience-evidence-adaptive-v9",
+    promptVersion: "experience-evidence-adaptive-v9.1",
     filingReference: process.env.TOKENHUB_FILING_REFERENCE || "腾讯云控制台公示的模型备案信息",
   };
 }
@@ -2363,7 +2377,7 @@ function createExperienceWorker({
           generationMode,
           renderMode: generationMode,
           ...(fallbackReason ? { fallbackReason } : {}),
-          serverPipelineVersion: "greeting-v9.0-adaptive-quality",
+          serverPipelineVersion: "greeting-v9.1-target-reference",
           totalDurationMs: Date.now() - processingStartedAt,
         },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
@@ -2420,7 +2434,7 @@ function createExperienceWorker({
             validationDurationMs,
             fallbackDurationMs,
             ...inputMetrics,
-            serverPipelineVersion: "greeting-v9.0-adaptive-quality",
+            serverPipelineVersion: "greeting-v9.1-target-reference",
             totalDurationMs: Date.now() - processingStartedAt,
             ...(validationDiagnostics ? { validation: validationDiagnostics } : {}),
           },

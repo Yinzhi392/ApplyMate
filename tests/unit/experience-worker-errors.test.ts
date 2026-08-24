@@ -39,6 +39,7 @@ describe("experience worker public errors", () => {
   it.each([
     ["greeting_length", "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。"],
     ["match_plan_schema", "AI 返回结构不完整，系统已记录具体校验项，本次不扣额度。"],
+    ["greeting_target_mention", "AI 生成内容未自然提及当前岗位，系统已拦截，本次不扣额度。"],
     ["cross_jd_domain_term", "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"],
     ["evidence_strength_mismatch", "AI 生成内容包含无法由简历或岗位信息支持的表述，系统已拦截，本次不扣额度。"],
   ])("does not expose the %s validation gate or source content", (validationGate, message) => {
