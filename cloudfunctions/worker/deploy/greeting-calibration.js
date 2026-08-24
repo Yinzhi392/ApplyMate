@@ -360,8 +360,8 @@ function normalizeGreetingPlan(input, { facts, jd, rawJdText }) {
   if (
     matchMode === "low" &&
     (directFactIds.length > 0 ||
-      transferableEvidence.length > 0 ||
-      supportingFactIds.length === 0 ||
+      transferableEvidence.some(({ wordingStrength }) => wordingStrength !== "foundation") ||
+      (supportingFactIds.length === 0 && transferableEvidence.length === 0) ||
       gaps.length === 0)
   ) fail("low_evidence_invalid");
 
@@ -371,7 +371,7 @@ function normalizeGreetingPlan(input, { facts, jd, rawJdText }) {
       : result,
     value,
   );
-  const paragraphs = stringArray(input.paragraphs, 3, 4, "paragraph_count")
+  const paragraphs = stringArray(input.paragraphs, 2, 5, "paragraph_count")
     .map((paragraph) => replaceTarget(
       replaceTarget(
         paragraph,

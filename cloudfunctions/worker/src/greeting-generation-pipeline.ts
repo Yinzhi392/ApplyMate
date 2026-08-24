@@ -52,12 +52,20 @@ export class GreetingGenerationPipeline {
     signal?: AbortSignal,
   ): Promise<GreetingGenerationOutput> {
     const modelContext = {
-      promptVersion: "greeting-evidence-planned-v8",
+      promptVersion: "greeting-evidence-adaptive-v9",
       mode: request.mode,
       outputRules: {
         language: "simplified_chinese",
-        visibleCharacterRange: "350-450",
-        paragraphRange: "3-4",
+        visibleCharacterRange: {
+          strong: "550-800",
+          partial: "350-550",
+          low: "180-350",
+        },
+        paragraphRange: {
+          strong: "4-5",
+          partial: "3-4",
+          low: "2-3",
+        },
         oneModelCall: true,
         localFallback: false,
       },
@@ -85,7 +93,7 @@ export class GreetingGenerationPipeline {
       draft,
       generationDisclosure: {
         ...model,
-        promptVersion: "greeting-evidence-planned-v8",
+        promptVersion: "greeting-evidence-adaptive-v9",
       },
     }));
   }

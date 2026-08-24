@@ -233,7 +233,7 @@ describe("full generation chain", () => {
         providerName: "ApplyMate 本地演示适配器",
         modelName: "本地合成响应",
         modelId: "synthetic-model",
-        promptVersion: "greeting-evidence-planned-v8",
+        promptVersion: "greeting-evidence-adaptive-v9",
       },
     });
   });

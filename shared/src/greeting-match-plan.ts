@@ -54,7 +54,7 @@ export const GreetingMatchPlanSchema = z
     transferableEvidence: z.array(TransferableEvidenceSchema).max(4),
     supportingFactIds: z.array(FactIdSchema).max(4),
     gaps: z.array(z.string().trim().min(1).max(160)).max(5),
-    paragraphs: z.array(z.string().trim().min(1).max(2_000)).min(3).max(4),
+    paragraphs: z.array(z.string().trim().min(1).max(2_000)).min(2).max(5),
   })
   .strict()
   .superRefine((plan, ctx) => {
@@ -115,18 +115,18 @@ export const GreetingMatchPlanSchema = z
           message: "Low matches cannot include direct evidence",
         });
       }
-      if (plan.transferableEvidence.length > 0) {
+      if (plan.transferableEvidence.some(({ wordingStrength }) => wordingStrength !== "foundation")) {
         ctx.addIssue({
           code: "custom",
           path: ["transferableEvidence"],
-          message: "Low matches cannot include transferable evidence",
+          message: "Low matches can only include foundation-strength transferable evidence",
         });
       }
-      if (plan.supportingFactIds.length === 0) {
+      if (plan.supportingFactIds.length === 0 && plan.transferableEvidence.length === 0) {
         ctx.addIssue({
           code: "custom",
           path: ["supportingFactIds"],
-          message: "Low matches require supporting evidence",
+          message: "Low matches require supporting or foundation evidence",
         });
       }
       if (plan.gaps.length === 0) {

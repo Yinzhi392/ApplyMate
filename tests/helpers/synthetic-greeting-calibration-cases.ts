@@ -1,8 +1,12 @@
-function fitGoldParagraphs(paragraphs: string[], filler: string): string[] {
+function fitGoldParagraphs(
+  paragraphs: string[],
+  filler: string,
+  range: { minimum: number; maximum: number },
+): string[] {
   const visibleLength = (value: string) => value.replace(/\s+/gu, "").length;
   const fitted = [...paragraphs];
-  while (visibleLength(fitted.join("\n")) < 360) fitted[fitted.length - 1] += filler;
-  if (visibleLength(fitted.join("\n")) > 450) {
+  while (visibleLength(fitted.join("\n")) < range.minimum) fitted[fitted.length - 1] += filler;
+  if (visibleLength(fitted.join("\n")) > range.maximum) {
     throw new Error("Synthetic gold fixture exceeds the greeting limit.");
   }
   return fitted;
@@ -46,11 +50,11 @@ export const syntheticGreetingCalibrationCases = {
       supportingFactIds: ["fact_school", "fact_availability"],
       gaps: [],
       paragraphs: fitGoldParagraphs([
-        "您好，我是南方理工大学金融科技专业在读学生，专业排名前百分之五，希望加入澄明资本并应聘战略投资实习生。",
+        "您好，我是金融科技专业本科生，专业排名前百分之五，希望加入澄明资本并应聘战略投资实习生。",
         "我独立完成过星河食品的完整投资研究，从行业格局、公司基本面和财务预测出发，进一步搭建DCF估值框架、测算WACC并完成敏感性分析，最终输出投资报告。",
         "我也完成过海外上市公司的CAPM、Beta、PE与风险收益分析。",
         "我每周可稳定投入三天，并可连续实习四个月，希望有机会进一步沟通岗位中的研究任务和交付要求。",
-      ], "我会把财务预测、敏感性分析和投资判断整理成完整投资报告。"),
+      ], "我会把财务预测、敏感性分析和投资判断整理成完整投资报告。", { minimum: 550, maximum: 800 }),
     },
   },
   financialAiAgent: {
@@ -90,11 +94,11 @@ export const syntheticGreetingCalibrationCases = {
       supportingFactIds: ["fact_fintech"],
       gaps: [],
       paragraphs: fitGoldParagraphs([
-        "您好，我是南方理工大学金融科技专业在读学生，希望应聘远景科技的金融AI Agent产品实习生，我有模型评测和生成式AI产品实践经历。",
+        "您好，我是一名有模型评测和生成式AI产品实践的金融科技专业本科生，希望应聘远景科技的金融AI Agent产品实习生。",
         "我参与过五千余条合成对话Case的质量复核、模型评测、失败归因和Prompt A/B Test。",
         "我还独立完成过生成式AI消费分析产品，从需求拆解、Prompt设计到测试和部署完整推进。",
-        "我是南方理工大学金融科技专业在读学生，希望进一步了解团队当前的模型评测标准、Case迭代方式和Agent优化重点。",
-      ], "我会把质量复核、模型评测、失败归因和A/B Test结果整理成结构化记录。"),
+        "我参与过五千余条合成对话Case的质量复核、模型评测、失败归因和Prompt A/B Test，这些实践与岗位的模型评测、Case体系和Badcase归因职责高度契合。",
+      ], "我参与五千余条合成对话Case的质量复核、模型评测、失败归因和Prompt A/B Test。", { minimum: 550, maximum: 800 }),
     },
   },
   seo: {
@@ -111,8 +115,8 @@ export const syntheticGreetingCalibrationCases = {
       matchMode: "partial",
       directFactIds: [],
       transferableFactIds: ["fact_web", "fact_data", "fact_iteration"],
-      requiredPhrases: ["没有完整负责过SEO", "网站", "数据", "迁移"],
-      forbiddenPhrases: ["熟悉SEO", "独立开展关键词研究", "提升自然流量", "Google Search Console"],
+      requiredPhrases: ["Web产品", "数据", "业务指标", "A/B Test"],
+      forbiddenPhrases: ["熟悉SEO", "独立开展关键词研究", "提升自然流量", "Google Search Console", "缺少相关经验", "没有完整负责过SEO", "不完全匹配"],
     },
     modelOutput: {
       jobTitle: "SEO经理",
@@ -137,11 +141,11 @@ export const syntheticGreetingCalibrationCases = {
       supportingFactIds: ["fact_english"],
       gaps: ["没有完整负责过SEO项目和关键词研究"],
       paragraphs: fitGoldParagraphs([
-        "您好，我希望应聘远航网络的SEO经理。虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历。",
-        "我独立完成过Web产品的页面搭建、测试、修复和部署，但不会把这段经历表述成Technical SEO经验。",
-        "我也会使用SQL、表格和可视化工具分析数据，并在业务项目中根据指标定位问题、调整方案，再通过A/B Test验证结果。",
-        "此外，我能够检索和阅读英文资料。若团队接受需要继续补足SEO专项方法的候选人，希望有机会进一步沟通。",
-      ], "我会继续根据业务指标定位问题，并通过A/B Test验证优化结果，同时准确说明SEO经验缺口。"),
+        "您好，我希望应聘远航网络的SEO经理。我独立完成过Web产品页面搭建、测试、修复和部署。",
+        "我独立完成过Web产品页面搭建、测试、修复和部署。",
+        "我会使用SQL、表格和可视化工具进行数据分析；我也根据业务指标定位问题并通过A/B Test验证优化结果。岗位要求搜索数据监测和自然排名优化。",
+        "我具有英文资料检索和阅读能力，也根据业务指标定位问题并通过A/B Test验证优化结果。",
+      ], "我根据业务指标定位问题并通过A/B Test验证优化结果。", { minimum: 350, maximum: 550 }),
     },
   },
 } as const;

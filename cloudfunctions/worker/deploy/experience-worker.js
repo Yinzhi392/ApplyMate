@@ -746,13 +746,20 @@ function repairGreetingSelectionShape(input, facts) {
     supportingFactIds = Array.from(new Set([
       ...supportingFactIds,
       ...directFactIds,
-      ...transferableEvidence.map(({ factId }) => factId),
       ...inferredIds,
-    ])).slice(0, 4);
+    ])).filter((factId) => !transferableEvidence.some((item) => item.factId === factId)).slice(0, 4);
     directFactIds = [];
-    transferableEvidence = [];
+    transferableEvidence = transferableEvidence.map((item) => ({
+      ...item,
+      wordingStrength: "foundation",
+    }));
   }
-  if (supportingFactIds.length === 0 && directFactIds.length === 0 && knownFacts.size > 0) {
+  if (
+    supportingFactIds.length === 0 &&
+    directFactIds.length === 0 &&
+    transferableEvidence.length === 0 &&
+    knownFacts.size > 0
+  ) {
     supportingFactIds = [knownFacts.keys().next().value];
     matchMode = "low";
   }
@@ -1016,7 +1023,7 @@ const ROLE_STRATEGIES = Object.freeze({
   fundraising_execution: "主证据围绕公开信息整理、融资材料、财务分析和执行细节；AI或科技兴趣只能作为次要差异点。",
   seo_growth: Object.freeze({
     direct: "已有直接 SEO 证据时，按事实说明实际完成的关键词研究、自然排名或搜索数据监测工作；不得把相邻能力扩展为未提供的 SEO 能力。",
-    partial: "没有直接 SEO 证据时进入部分匹配；必须明确披露缺少直接 SEO 经验；只说明网站实操、数据分析和实验迭代如何迁移，不得改写成关键词研究、自然排名或 Technical SEO 经验。",
+    partial: "没有直接 SEO 证据时进入部分匹配；只积极说明网站实操、数据分析和实验迭代如何迁移，不得改写成关键词研究、自然排名或 Technical SEO 经验，也不得在正文自曝经验缺口。",
   }),
   general_product: "主证据围绕用户需求、方案设计、原型验证和版本迭代；辅证据选择沟通推进或数据分析。",
   general: "选择一条最强事实链作为主线，再用一项真正相关的差异点补充，不按简历顺序罗列。",
@@ -1136,9 +1143,29 @@ function rankFactsForText(facts, text, roleFamily = classifyRoleFamily(text)) {
   })).sort((left, right) => right.score - left.score || left.index - right.index).map(({ fact }) => fact);
 }
 
+function resolveEducationBackgroundPolicy(facts) {
+  const hasExplicitPreference = facts.some((fact) =>
+    fact?.sourceType === "preference" && (
+      /(?:教育背景|教育经历|学校|院校|专业|成绩).{0,12}(?:是|作为|属于|算作)?(?:我的)?(?:求职)?优势/iu.test(String(fact.text ?? "")) ||
+      /(?:突出|强调|重点写|优先写|展示).{0,12}(?:教育背景|教育经历|学校|院校|专业|成绩)/iu.test(String(fact.text ?? ""))
+    ),
+  );
+  if (hasExplicitPreference) {
+    return "教育背景策略：用户已明确标记教育背景为优势，可以基于可引用事实简短写学校、专业或成绩，但不得推测或评价中国学校层次。";
+  }
+  const hasExplicitAchievement = facts.some((fact) =>
+    /(?:专业|综合|年级)?排名前\s*(?:5\s*%|百分之五)|(?:国家奖学金|国家励志奖学金|一等奖学金|校长奖学金)/iu.test(String(fact?.text ?? "")),
+  );
+  if (hasExplicitAchievement) {
+    return "教育背景策略：事实中存在前5%或突出奖学金等明确优势，可以基于该事实简短写专业、排名或奖学金，但不得推测或评价中国学校层次。";
+  }
+  return "教育背景策略：不得写学校名称、GPA或学校层次评价；只可将已确认的专业和在读状态用于简洁身份定位。不得推测或评价中国学校层次。";
+}
+
 function jdPrompt(text, facts) {
   const roleFamily = classifyRoleFamily(text);
   const roleStrategy = resolveRoleStrategy(roleFamily, facts);
+  const educationPolicy = resolveEducationBackgroundPolicy(facts);
   const safeFacts = rankFactsForText(facts, text, roleFamily).slice(0, 10).map(
     ({ factId: id, sourceType, text: factText }) => ({
       factId: id,
@@ -1146,15 +1173,18 @@ function jdPrompt(text, facts) {
       text: compactText(maskProtectedText(factText), 280),
     }),
   );
-  return `你是中文求职开场白编辑。岗位路线：${roleFamily}。路线规则：${roleStrategy}
+  return `你是中文求职开场白编辑。Prompt版本：experience-evidence-adaptive-v9。岗位路线：${roleFamily}。路线规则：${roleStrategy}
 你必须在一次 JSON 响应中完成岗位理解、证据分层和正文写作，不输出解释、推理过程、Markdown 或产品层 AI 标识。
 判断顺序固定为：核心功能 > 行业背景 > 加分标签。先从 JD 提取六类字段；每个 JD 数组项目必须优先复制本次 JD 的原句片段，只能删除不必要文字，禁止同义改写或补充截图中没有的职责；不确定的辅助字段直接省略。coreFunctions 必须用 requirementType 和 requirementIndex 引用本次响应中对应 JD 数组的项目。金融、教育、消费等 domainContext 只能描述业务场景，不能覆盖核心功能。
-证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
-matchMode：strong 至少有一项核心直接证据；partial 用一句话诚实披露 JD 明确要求但缺少的直接经验，再说明可迁移证据；low 没有足够直接或可迁移证据，只写真实背景、相关基础和投入条件，不得声称高度匹配或能够快速上手。
-正文硬规则：简体中文；建议180至320个可见字符、2至3个非空段落，信息充分时可以更长但不得超过500个可见字符；第一段自然包含“您好”，优先写“您好，我是…”；结尾根据证据和匹配模式自然收束，不固定句式；必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
-表达规则：专业、自然、自信但不过度包装。通过事实让 HR 得出匹配结论；保留有用数字、方法和专业术语；不机械罗列所有事实。禁用“本人具备”“贵公司是行业领先者”“希望贴近真实工作”“愿意踏实学习”“分析练习”“这些练习”“看到岗位主要围绕”“这些要求与我的经历和能力比较契合”“这段积累能支持我”。
-返回前检查：岗位名与当前 JD 一致；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；正文不超过500个可见字符且为2至4个非空段落。服务端不会进行第二次模型调用，也不会用本地模板补写。
-只返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"coreFunctions":[{"requirementType":"responsibilities","requirementIndex":0,"summary":""},{"requirementType":"responsibilities","requirementIndex":1,"summary":""}],"domainContext":[],"matchMode":"strong","directFactIds":[],"transferableEvidence":[{"factId":"","capability":"","wordingStrength":"transferable"}],"supportingFactIds":[],"gaps":[],"paragraphs":["","",""]}。
+证据分层：directFactIds 只放真实完成过对应核心工作的事实；transferableEvidence 只放方法相似但业务对象不同的事实，并标明 transferable 或 foundation；supportingFactIds 只放专业、成绩、工具、行业理解和到岗条件。只选择与本次 JD 匹配度最高的2至3段经历，不按简历顺序罗列；只保留最有说服力的2至3个有来源数字。禁止把完整项目写成“练习、尝试、接触过”，也禁止把网站开发改名为 SEO、把数据分析改名为 SEO Analytics。
+matchMode与篇幅分档：strong 需要2至4段垂直度高的经历，正文550至800个可见字符、4至5个非空段落；partial 存在部分直接或可靠可迁移证据，正文350至550个可见字符、3至4个非空段落；low 只使用真实基础技能、可迁移能力、相关实践和有证据的学习行动，正文180至350个可见字符、2至3个非空段落。matchMode只用于内部选材和篇幅分档，绝不能在正文出现。
+gaps仅用于内部记录，绝不能写入正文。没有直接经验时，只积极且准确地呈现可迁移能力、相关实践和有证据的学习行动。禁止“虽然我没有……但是……”“缺少相关经验”“暂时没有对口经历”“不完全匹配”“希望弥补不足”等自曝缺点表达。
+${educationPolicy}
+正文结构：简体中文；第一段自然包含“您好”，使用基于事实的身份定位，例如“我是金融科技专业本科生”或“我是一名有AI产品和模型评测经验的在读学生”；不得写用户真实姓名，也不固定用学校或GPA开头。中间每个段落只围绕一段最相关经历，依次说明做了什么、使用什么方法、解决什么问题、取得什么结果，再自然连接岗位职责。允许明确总结“这段经历与岗位中的……工作高度契合”，但不得超出证据强度。必须准确出现当前公司称呼和岗位名；每个数字、专业、学校、经历、方法、工具和结果只能来自可引用事实。
+结尾规则：到岗时间、实习月数、每周到岗天数和远程或线下条件统一放在最后一个非空段落，言简意赅且只使用用户明确提供的事实。学习意愿只能通过已发生的学习或实践行动表达，禁止空泛写“学习能力强”或“愿意踏实学习”。
+表达规则：专业、自然、自信但不过度包装；保留真正有用的数字、方法和专业术语，不机械罗列所有事实。禁用“本人具备”“贵公司是行业领先者”“希望贴近真实工作”“愿意踏实学习”“学习能力强”“分析练习”“这些练习”“看到岗位主要围绕”“这些要求与我的经历和能力比较契合”“这段积累能支持我”。
+返回前检查：岗位名与当前 JD 一致；没有其他 JD 的职责和术语；direct、transferable、supporting 的措辞强度一致；经历、数字、段落和可见字符数符合对应 matchMode；正文没有出现 matchMode、gaps 或任何缺点披露。服务端不会进行第二次模型调用，也不会用本地模板补写。
+只返回 {"jobTitle":"","companyName":"","responsibilities":[],"hardSkills":[],"experienceEducation":[],"locationWorkMode":[],"availabilityDuration":[],"coreFunctions":[{"requirementType":"responsibilities","requirementIndex":0,"summary":""},{"requirementType":"responsibilities","requirementIndex":1,"summary":""}],"domainContext":[],"matchMode":"strong","directFactIds":[],"transferableEvidence":[{"factId":"","capability":"","wordingStrength":"transferable"}],"supportingFactIds":[],"gaps":[],"paragraphs":[]}。
 JD：${maskProtectedText(text).slice(0, 6_000)}
 可引用事实：${JSON.stringify(safeFacts)}`;
 }
@@ -1194,11 +1224,34 @@ function containsMechanicalGreetingPhrase(value) {
     /希望用[^。！？!?;；]{0,20}(?:练习|尝试)[^。！？!?;；]{0,20}贴近真实工作/iu,
     /这些练习/iu,
     /愿意[^。！？!?;；]{0,12}踏实学习/iu,
+    /学习能力强/iu,
+    /虽然[^。！？!?;；]{0,24}(?:没有|缺少|不具备)[^。！？!?;；]{0,24}(?:但是|但|不过)/iu,
+    /缺少(?:相关|直接|对口|该岗位)?[^。！？!?;；]{0,8}(?:经验|经历)/iu,
+    /暂时没有[^。！？!?;；]{0,12}(?:对口|相关|直接)?经历/iu,
+    /不完全匹配/iu,
+    /希望[^。！？!?;；]{0,12}弥补[^。！？!?;；]{0,8}不足/iu,
   ];
   return normalized.split(/[。！？!?;；]+/u).filter(Boolean).some((clause) =>
     patterns.some((pattern) => pattern.test(clause)) ||
     containsSelfDowngradingAnalysisPractice(clause)
   );
+}
+
+function assertAvailabilityOnlyInFinalParagraph(paragraphs, facts) {
+  if (paragraphs.length < 2) return;
+  const availabilityFacts = facts.filter((fact) =>
+    fact?.sourceType === "preference" &&
+    /(?:到岗|入职|实习.{0,8}(?:个月|月|周)|每周.{0,8}(?:天|日)|远程|线下|现场办公)/iu.test(String(fact.text ?? "")),
+  );
+  if (availabilityFacts.length === 0) return;
+  const appearsBeforeFinalParagraph = paragraphs.slice(0, -1).some((paragraph) =>
+    evidenceContributors(paragraph, availabilityFacts, (fact) => fact.text).length > 0,
+  );
+  if (appearsBeforeFinalParagraph) {
+    throw modelValidationFailure("greeting_availability_position", {
+      paragraphCount: paragraphs.length,
+    });
+  }
 }
 
 function resolveRewriteMatchMode(application) {
@@ -1618,6 +1671,7 @@ function modelGreetingPackage(plan, jd, matches, facts) {
       .filter(({ factId: id }) => collectGreetingFactIds(plan).includes(id))
       .map((fact) => [fact.factId, fact]),
   );
+  assertAvailabilityOnlyInFinalParagraph(paragraphs, Array.from(selectedFacts.values()));
   assertDomainTermsSupported(body, {
     jdText: JSON.stringify(jd),
     factTexts: Array.from(selectedFacts.values(), ({ text }) => text),
@@ -1694,6 +1748,13 @@ function modelGreetingPackage(plan, jd, matches, facts) {
       const isGapDisclosure = isGapDisclosureClause(clause, plan.gaps);
       const isJobDescription = isJobDescriptionClause(clause, clauseRequirements);
       const isRhetorical = isSalutation || isApplicationIntent || isClosing;
+      if (isGapDisclosure) {
+        throw modelValidationFailure("greeting_forbidden_content", {
+          visibleLength: outputVisibleLength,
+          paragraphCount: paragraphs.length,
+          paragraphIndex,
+        });
+      }
       if (clauseFacts.length === 0 && !isRhetorical && !isGapDisclosure && !isJobDescription && !isSupportedRepresentation) {
         throw modelValidationFailure("greeting_evidence_alignment", {
           visibleLength: outputVisibleLength,
@@ -1770,11 +1831,6 @@ function modelGreetingPackage(plan, jd, matches, facts) {
   });
 
   if (plan.matchMode === "partial") {
-    const hasStoredGapDisclosure = paragraphs.some((paragraph) =>
-      claimClauses(paragraph).some((clause) =>
-        isGapDisclosureClause(clause, plan.gaps)
-      )
-    );
     const transferableFactIds = new Set(
       (Array.isArray(plan.transferableEvidence) ? plan.transferableEvidence : [])
         .map((entry) => entry?.factId)
@@ -1785,11 +1841,10 @@ function modelGreetingPackage(plan, jd, matches, facts) {
         source.type === "fact" && transferableFactIds.has(source.factId)
       )
     );
-    if (!hasStoredGapDisclosure || !hasTransferableFactCitation) {
+    if (!hasTransferableFactCitation) {
       throw modelValidationFailure("greeting_partial_match_integrity", {
         visibleLength: outputVisibleLength,
         paragraphCount: paragraphs.length,
-        hasStoredGapDisclosure,
         hasTransferableFactCitation,
       });
     }
@@ -1875,6 +1930,7 @@ function modelGreetingPackageWithLocalValidation(rawSelection, jd, facts) {
       citedFactCount: 0,
     });
   }
+  assertAvailabilityOnlyInFinalParagraph(paragraphs, selectedFacts);
   const evidence = paragraphs.map((paragraph, paragraphIndex) => {
     const sources = [];
     const sourceKeys = new Set();
@@ -1931,8 +1987,8 @@ async function resolveGreetingGeneration({ rawText, facts, modelCall }) {
   let rawModelSelection;
   try {
     rawModelSelection = await modelCall(jdPrompt(rawText, facts), {
-      maxTokens: 1_300,
-      timeoutMs: 10_000,
+      maxTokens: 2_200,
+      timeoutMs: 14_000,
       temperature: 0.1,
     });
   } finally {
@@ -2079,7 +2135,7 @@ function disclosure() {
   return {
     mode: "real", providerName: "腾讯云 TokenHub", modelName: "腾讯混元",
     modelId: process.env.TOKENHUB_MODEL || "hy3",
-    promptVersion: "experience-evidence-planned-v8",
+    promptVersion: "experience-evidence-adaptive-v9",
     filingReference: process.env.TOKENHUB_FILING_REFERENCE || "腾讯云控制台公示的模型备案信息",
   };
 }
@@ -2307,7 +2363,7 @@ function createExperienceWorker({
           generationMode,
           renderMode: generationMode,
           ...(fallbackReason ? { fallbackReason } : {}),
-          serverPipelineVersion: "greeting-v8.19-low-latency",
+          serverPipelineVersion: "greeting-v9.0-adaptive-quality",
           totalDurationMs: Date.now() - processingStartedAt,
         },
         createdAt: now().toISOString(), updatedAt: now().toISOString(),
@@ -2364,7 +2420,7 @@ function createExperienceWorker({
             validationDurationMs,
             fallbackDurationMs,
             ...inputMetrics,
-            serverPipelineVersion: "greeting-v8.19-low-latency",
+            serverPipelineVersion: "greeting-v9.0-adaptive-quality",
             totalDurationMs: Date.now() - processingStartedAt,
             ...(validationDiagnostics ? { validation: validationDiagnostics } : {}),
           },

@@ -226,7 +226,7 @@ describe("experience worker privacy and case-calibrated output", () => {
       syntheticGreetingCalibrationCases.seo.facts,
     );
     expect(transferablePrompt).toContain("没有直接 SEO 证据时进入部分匹配");
-    expect(transferablePrompt).toContain("必须明确披露缺少直接 SEO 经验");
+    expect(transferablePrompt).toContain("不得在正文自曝经验缺口");
 
     const directPrompt = jdPrompt(syntheticGreetingCalibrationCases.seo.jd, [
       {
@@ -279,7 +279,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     );
   });
 
-  it("requests a compact evidence plan and adaptive three-to-four paragraph body", () => {
+  it("requests a compact evidence plan and adaptive match-tier body", () => {
     const prompt = jdPrompt("示例科技招聘 AI 产品实习生", facts);
     const partialSeoPrompt = jdPrompt(
       syntheticGreetingCalibrationCases.seo.jd,
@@ -298,8 +298,9 @@ describe("experience worker privacy and case-calibrated output", () => {
     expect(prompt).toContain('"transferableEvidence"');
     expect(prompt).toContain('"supportingFactIds"');
     expect(prompt).toContain('"gaps"');
-    expect(prompt).toContain("建议180至320个可见字符");
-    expect(prompt).toContain("2至3个非空段落");
+    expect(prompt).toContain("strong 需要2至4段垂直度高的经历，正文550至800个可见字符、4至5个非空段落");
+    expect(prompt).toContain("partial 存在部分直接或可靠可迁移证据，正文350至550个可见字符、3至4个非空段落");
+    expect(prompt).toContain("low 只使用真实基础技能、可迁移能力、相关实践和有证据的学习行动，正文180至350个可见字符、2至3个非空段落");
     expect(prompt).toContain("核心功能 > 行业背景 > 加分标签");
     expect(prompt).not.toContain("第一段必须以“您好！”开始");
     expect(prompt).not.toContain("第三段必须以“期待得到您的回复！”结尾");
@@ -565,15 +566,10 @@ describe("experience worker privacy and case-calibrated output", () => {
     claim,
   }) => {
     const calibrationCase = syntheticGreetingCalibrationCases[caseName];
-    const supportedFiller = caseName === "investment"
-      ? "我会把财务预测、敏感性分析和投资判断整理成完整投资报告。"
-      : "我会把质量复核、模型评测、失败归因和A/B Test结果整理成结构化记录。";
     const modelOutput = {
       ...calibrationCase.modelOutput,
-      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
-        paragraph.includes(supportedFiller)
-          ? paragraph.replace(supportedFiller, `${claim}。`)
-          : paragraph,
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index, all) =>
+        index === all.length - 1 ? `${paragraph}${claim}。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
@@ -600,12 +596,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     const modelOutput = {
       ...calibrationCase.modelOutput,
       paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
-        index === 0
-          ? paragraph.replace(
-              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
-              claim,
-            )
-          : paragraph,
+        index === 0 ? `${paragraph}${claim}。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
@@ -624,12 +615,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     const modelOutput = {
       ...calibrationCase.modelOutput,
       paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
-        index === 0
-          ? paragraph.replace(
-              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
-              `${claim}。我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历`,
-            )
-          : paragraph,
+        index === 0 ? `${paragraph}${claim}。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
@@ -651,12 +637,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     const modelOutput = {
       ...calibrationCase.modelOutput,
       paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
-        index === 0
-          ? paragraph.replace(
-              "虽然我没有完整负责过SEO项目和关键词研究，但我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
-              `${claim}。我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历`,
-            )
-          : paragraph,
+        index === 0 ? `${paragraph}${claim}。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
@@ -721,12 +702,7 @@ describe("experience worker privacy and case-calibrated output", () => {
     const modelOutput = {
       ...calibrationCase.modelOutput,
       paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
-        index === 3
-          ? paragraph.replace(
-              "若团队接受需要继续补足SEO专项方法的候选人",
-              claim,
-            )
-          : paragraph,
+        index === 3 ? `${paragraph}${claim}。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
@@ -736,19 +712,21 @@ describe("experience worker privacy and case-calibrated output", () => {
     ).toThrow("MODEL_INVALID_OUTPUT");
   });
 
-  it("accepts complete gap terms that are present in the locked plan or JD", () => {
+  it("rejects gap disclosures even when the terms are present in the internal plan", () => {
     const calibrationCase = syntheticGreetingCalibrationCases.seo;
     const modelOutput = {
       ...calibrationCase.modelOutput,
-      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) => paragraph
-        .replace("Technical SEO经验", "关键词研究经验")
-        .replace("SEO专项方法", "关键词研究")),
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 0
+          ? `${paragraph}我没有完整负责过SEO项目和关键词研究。`
+          : paragraph,
+      ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);
 
     expect(() =>
       modelGreetingPackage(plan, jdSnapshot, matches, [...calibrationCase.facts]),
-    ).not.toThrow();
+    ).toThrow("MODEL_INVALID_OUTPUT");
   });
 
   it("does not treat one controlled technical term as full proposition support", () => {
@@ -1142,11 +1120,8 @@ describe("experience worker privacy and case-calibrated output", () => {
     const calibrationCase = syntheticGreetingCalibrationCases.seo;
     const modelOutput = {
       ...calibrationCase.modelOutput,
-      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph) =>
-        paragraph.replace(
-          "我有实际的网站页面搭建和部署、SQL数据分析与A/B Test验证经历",
-          "我已经独立负责过完整SEO策略",
-        ),
+      paragraphs: calibrationCase.modelOutput.paragraphs.map((paragraph, index) =>
+        index === 1 ? `${paragraph}我已经独立负责过完整SEO策略。` : paragraph,
       ),
     };
     const { jdSnapshot, matches, plan } = preparedCase(calibrationCase, modelOutput);

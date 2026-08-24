@@ -64,18 +64,27 @@
 - 2026-08-24 经产品负责人单独授权，将提交 `bfd6840` 的 `worker` 部署到旧预发布环境。函数修改时间从 2026-08-23 15:34:18 更新为 2026-08-24 09:39:51，状态为 `Deployment completed`；只读健康检查 5ms，返回 `experience_real_ai_live`、`acceptsUserTraffic=true`，模型、OCR 与 CloudBase 凭证诊断均存在。
 - 部署后已把线上代码下载到临时目录核验：`experience-worker.js` SHA-256 为 `da748d2400109879342f42e9053fd0f56b5878c5f9f240121ee275b3ae35ab88`，与本地提交逐字节一致；`index.js`、`greeting-calibration.js`、`budget-admission.js` 也与本地一致。
 
+### 6. 开场白 v9 自适应质量规则（实施中）
+
+- 新增先红后绿回归：旧逻辑在三档篇幅、2–3 段经历/数字、gaps 内部化、教育优势门槛、到岗信息末段和 2,200 token 六类规则上按预期失败；实现后定向测试通过。
+- Prompt/披露升级为 `experience-evidence-adaptive-v9`，server pipeline 升级为 `greeting-v9.0-adaptive-quality`；继续单次 `hy3` JSON 调用，模型预算 2,200 token、超时 14 秒、temperature 0.1，无备用模型或第二次自动调用。
+- strong/partial/low 分别建议 550–800/350–550/180–350 可见字符和 4–5/3–4/2–3 段；长度仍不是独立失败门。结构化契约允许 2–5 段，low 可保留 `foundation` 级可迁移证据。
+- `gaps` 只保留在内部计划，正文硬门拒绝缺点披露；到岗、实习周期、每周天数和远程/线下若写入正文，只能位于最后一段。
+- 教育背景复用现有可追溯 `PreferenceFact`：只有用户明确写明教育背景是优势/请突出教育，或确认事实含前 5%/突出奖学金时才允许展开；否则只用专业和在读状态定位，禁止推断学校层次。
+- 合成金标准已覆盖高/中匹配自适应篇幅、正向可迁移表达、2–3 段事实选择、关键数字和既有真实性门。云端部署与真实 JD 文案质量复测仍待本轮后续步骤，不能以本地测试替代。
+
 ## 本地验证证据
 
 最近一次分项验证：
 
 - `npm run typecheck`：通过。
 - `npm run web:typecheck`：通过。
-- `npm run check`：完整通过。
-- Vitest：117 个当前主线测试文件、574 项测试通过（Legacy 小程序测试退出主线后计数降低）。
+- `APPLYMATE_E2E_PORT=4187 npm run check`：完整通过；Playwright 配置支持任务级端口覆盖，避免占用用户正在使用的 4173 预览。
+- Vitest：118 个当前主线测试文件、588 项测试通过（Legacy 小程序测试退出主线后计数降低）。
 - Web build：通过；HTML entry 主 JS gzip 71.67KB，CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
 - Playwright + 本机 Chrome：6 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
 - fixture 隔离、敏感信息、严格 TypeScript、Web TypeScript 与 deploy 目标语法/契约均通过。
-- 独立端口 Playwright：6 项通过；原 `npm run check` 的 E2E 子步骤仅因用户当前预览已占用 4173 无法启动第二个服务器，改用 4174 运行同一套配置后全部通过。
+- 独立端口 Playwright：6 项通过；本轮使用 4187 运行同一套配置后，完整 `npm run check` 全绿。
 
 ## 当前未完成或外部阻塞
 

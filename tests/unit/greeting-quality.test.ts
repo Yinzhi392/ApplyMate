@@ -129,7 +129,14 @@ function productionMatchPlan(matchMode: "strong" | "partial" | "low" = "strong")
 }
 
 function productionNaturalDraft(): string {
-  return productionBasePlan.paragraphs.join("\n");
+  const paragraphs = productionBasePlan.paragraphs.slice(0, 3);
+  paragraphs.push(
+    "我参与过五千余条合成对话Case的质量复核、模型评测、失败归因和Prompt A/B Test。",
+  );
+  while (countVisibleCharacters(paragraphs.join("\n")) < 360) {
+    paragraphs[3] += "我参与五千余条合成对话Case的质量复核和模型评测。";
+  }
+  return paragraphs.join("\n");
 }
 
 function validDraft() {
@@ -509,6 +516,12 @@ describe("AI greeting quality gate", () => {
     "这些练习让我对岗位产生兴趣",
     "愿意踏实学习岗位要求",
     "愿意在岗位中踏实学习",
+    "虽然我没有直接经验，但是我会努力",
+    "我缺少相关经验",
+    "我暂时没有对口经历",
+    "我的经历与岗位不完全匹配",
+    "希望弥补不足",
+    "学习能力强",
   ])("rejects self-downgrading language: %s", (sentence) => {
     const draft = draftContaining(sentence);
 
@@ -624,7 +637,7 @@ describe("AI greeting quality gate", () => {
     expect(application).toEqual(before);
   });
 
-  it("rejects a partial rewrite that removes the stored gap disclosure", () => {
+  it("accepts a partial rewrite that keeps gaps internal", () => {
     const { application } = partialProductionContext();
     const jd = application.jdSnapshot as {
       jobTitle: { fieldId: string };
@@ -683,9 +696,7 @@ describe("AI greeting quality gate", () => {
       ],
     };
 
-    expect(() => normalizeRewriteModel(value, application)).toThrow(
-      "MODEL_INVALID_OUTPUT",
-    );
+    expect(() => normalizeRewriteModel(value, application)).not.toThrow();
   });
 
   it("rejects a partial rewrite whose gap is present but cites no transferable fact", () => {

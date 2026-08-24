@@ -56,6 +56,7 @@
 - [x] CloudBase deploy 契约覆盖公开模式邮箱门、动作门、事务预留、幂等和退休清单不删除。
 - [x] Web 契约覆盖 BrowserRouter、公开/业务路由、无 PWA、无改写、平台 seam、dialog 和图片 worker。
 - [x] 当前主线 typecheck、Web typecheck、Vitest 和生产构建通过。
+- [x] 开场白 v9 自适应 Prompt：三档篇幅、最相关经历/数字上限、教育优势显式偏好、gaps 内部化、禁止自曝缺点和到岗信息末段硬门；保持单次 Hy3 JSON 调用。
 - [x] 引入 Playwright + 本机 Chrome E2E，覆盖 320/390/430px、触控、软键盘压缩高度、横向溢出、直达/刷新和无 SW 缓存。
 - [ ] 对 iOS Safari、Android Chrome、微信内置浏览器进行真机验收。
 - [ ] 两邮箱完成数据库与文件租户隔离测试。

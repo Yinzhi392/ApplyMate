@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createPreferenceFacts } from "../../shared/src/index.js";
+import {
+  createPreferenceFacts,
+  isEducationHighlightPreferenceText,
+} from "../../shared/src/index.js";
 
 describe("preference facts", () => {
   it("splits confirmed sentences, semicolons, and newlines", () => {
@@ -32,5 +35,12 @@ describe("preference facts", () => {
 
   it("returns an empty list for empty input", () => {
     expect(createPreferenceFacts(" \n；。 ")).toEqual([]);
+  });
+
+  it("recognizes only an explicit request to highlight education", () => {
+    expect(isEducationHighlightPreferenceText("教育背景是我的求职优势，请简短突出")).toBe(true);
+    expect(isEducationHighlightPreferenceText("请重点写我的专业和成绩")).toBe(true);
+    expect(isEducationHighlightPreferenceText("每周可到岗四天，可连续实习四个月")).toBe(false);
+    expect(isEducationHighlightPreferenceText("就读于示例大学，GPA 3.6")).toBe(false);
   });
 });

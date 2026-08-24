@@ -110,6 +110,25 @@ describe("GreetingMatchPlanSchema", () => {
     ).toBe(true);
   });
 
+  it("accepts foundation-strength transferable evidence for a low match", () => {
+    expect(
+      GreetingMatchPlanSchema.safeParse({
+        ...validPlan,
+        matchMode: "low",
+        directFactIds: [],
+        transferableEvidence: [
+          {
+            factId: "fact_product_project",
+            capability: "结构化拆解与复盘",
+            wordingStrength: "foundation",
+          },
+        ],
+        supportingFactIds: ["fact_fintech_education"],
+        gaps: ["缺少与核心职责完全对应的已确认经历"],
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects a low match without supporting evidence and a gap", () => {
     expect(
       GreetingMatchPlanSchema.safeParse({
@@ -123,7 +142,7 @@ describe("GreetingMatchPlanSchema", () => {
     ).toBe(false);
   });
 
-  it("accepts three or four paragraphs and rejects two", () => {
+  it("accepts two to five paragraphs and rejects one or six", () => {
     expect(GreetingMatchPlanSchema.safeParse(validPlan).success).toBe(true);
     expect(
       GreetingMatchPlanSchema.safeParse({
@@ -135,6 +154,18 @@ describe("GreetingMatchPlanSchema", () => {
       GreetingMatchPlanSchema.safeParse({
         ...validPlan,
         paragraphs: validPlan.paragraphs.slice(0, 2),
+      }).success,
+    ).toBe(true);
+    expect(
+      GreetingMatchPlanSchema.safeParse({
+        ...validPlan,
+        paragraphs: validPlan.paragraphs.slice(0, 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      GreetingMatchPlanSchema.safeParse({
+        ...validPlan,
+        paragraphs: [...validPlan.paragraphs, "第四段。", "第五段。", "第六段。"],
       }).success,
     ).toBe(false);
   });

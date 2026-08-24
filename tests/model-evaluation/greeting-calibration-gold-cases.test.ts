@@ -156,11 +156,7 @@ function runInvalidSyntheticMutation(
   mutateParagraph(
     modelOutput.paragraphs,
     1,
-    (paragraph) =>
-      paragraph.replace(
-        "但不会把这段经历表述成Technical SEO经验",
-        "、独立负责过完整SEO策略",
-      ),
+    (paragraph) => `${paragraph}我独立负责过完整SEO策略。`,
   );
   return evaluateOutput(calibrationCase, modelOutput);
 }
@@ -171,13 +167,9 @@ function expectRequiredWording(
   matchMode: "strong" | "partial" | "low",
 ) {
   if (phrase === "迁移") {
-    // “迁移”是锁定样本中的语义标签，而不是要求正文机械出现该词。
-    // partial 正文必须同时保留能力边界和待补足的 SEO 缺口，才能证明可迁移而非直接经验。
     expect(matchMode).toBe("partial");
-    expect(body).toMatch(
-      /(?:不会|不能|不把).{0,24}(?:表述成|包装成|视为|当作).{0,24}SEO.{0,8}经验/iu,
-    );
-    expect(body).toMatch(/(?:补足|学习|积累).{0,16}SEO.{0,16}(?:方法|能力|经验)/iu);
+    expect(body).toMatch(/(?:可以|能够|可)[^。！？]{0,24}迁移/iu);
+    expect(body).not.toMatch(/(?:没有|缺少|不足|不完全匹配)/iu);
     return;
   }
   expect(body.replace(/\s+/gu, "")).toContain(phrase.replace(/\s+/gu, ""));
@@ -226,7 +218,6 @@ function expectedParagraphSources(
       jd.responsibilities[0],
       "responsibilities[0]",
     );
-    const hardSkill0 = requiredFieldId(jd.hardSkills[0], "hardSkills[0]");
     const hardSkill1 = requiredFieldId(jd.hardSkills[1], "hardSkills[1]");
     const education = requiredFieldId(
       jd.experienceEducation[0],
@@ -234,18 +225,15 @@ function expectedParagraphSources(
     );
     return [
       {
-        factIds: ["fact_eval", "fact_product", "fact_fintech"],
-        jdFieldIds: [jobTitle, companyName, responsibility0, hardSkill1, education],
+        factIds: ["fact_product", "fact_fintech"],
+        jdFieldIds: [jobTitle, companyName, hardSkill1, education],
       },
       { factIds: ["fact_eval"], jdFieldIds: [responsibility0] },
       { factIds: ["fact_product"], jdFieldIds: [hardSkill1] },
       {
-        factIds: ["fact_eval", "fact_fintech"],
+        factIds: ["fact_eval"],
         jdFieldIds: [
           responsibility0,
-          education,
-          hardSkill0,
-          hardSkill1,
           requiredFieldId(jd.responsibilities[1], "responsibilities[1]"),
           requiredFieldId(jd.responsibilities[2], "responsibilities[2]"),
         ],
@@ -262,7 +250,11 @@ function expectedParagraphSources(
     { factIds: ["fact_web"], jdFieldIds: [hardSkill0] },
     {
       factIds: ["fact_data", "fact_iteration"],
-      jdFieldIds: [hardSkill0, hardSkill1],
+      jdFieldIds: [
+        hardSkill0,
+        hardSkill1,
+        requiredFieldId(jd.responsibilities[1], "responsibilities[1]"),
+      ],
     },
     {
       factIds: ["fact_iteration", "fact_english"],
@@ -343,6 +335,16 @@ describe("greeting calibration gold cases", () => {
       expect(plan.transferableEvidence.map(({ factId }) => factId)).toEqual(
         calibrationCase.expected.transferableFactIds,
       );
+      const visibleLength = result.body.replace(/\s+/gu, "").length;
+      const range = plan.matchMode === "strong"
+        ? { minimum: 550, maximum: 800, paragraphMinimum: 4, paragraphMaximum: 5 }
+        : plan.matchMode === "partial"
+          ? { minimum: 350, maximum: 550, paragraphMinimum: 3, paragraphMaximum: 4 }
+          : { minimum: 180, maximum: 350, paragraphMinimum: 2, paragraphMaximum: 3 };
+      expect(visibleLength).toBeGreaterThanOrEqual(range.minimum);
+      expect(visibleLength).toBeLessThanOrEqual(range.maximum);
+      expect(plan.paragraphs.length).toBeGreaterThanOrEqual(range.paragraphMinimum);
+      expect(plan.paragraphs.length).toBeLessThanOrEqual(range.paragraphMaximum);
       for (const phrase of calibrationCase.expected.requiredPhrases) {
         expectRequiredWording(result.body, phrase, plan.matchMode);
       }
@@ -362,7 +364,7 @@ describe("greeting calibration gold cases", () => {
   it.each([
     ["unsourced_number", "greeting_numeric_source"],
     ["cross_jd_domain_term", "cross_jd_domain_term"],
-    ["transferable_as_direct", "evidence_strength_mismatch"],
+    ["transferable_as_direct", "greeting_evidence_alignment"],
   ] as const)("rejects the %s mutation at %s", (mutation, expectedGate) => {
     let failure: (Error & { validationGate?: string }) | undefined;
     try {

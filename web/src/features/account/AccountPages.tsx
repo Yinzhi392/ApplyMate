@@ -39,8 +39,8 @@ export function PreferencesPage(): React.JSX.Element {
     <div className={styles.stack}>
       <Header eyebrow="长期生效" title="求职偏好" />
       <ServiceBanner access={auth.status?.serviceAccess} />
-      <p className={styles.intro}>例如远程、到岗时间、每周天数和实习周期。最多 500 字，后续每个岗位都会参考。</p>
-      <Surface><label className={styles.field}><span>偏好内容</span><textarea className={styles.textarea} maxLength={500} onChange={(event) => { setDraft(event.target.value); setMessage(""); }} placeholder="例如：目前人在海外，只考虑远程；每周可到岗 3–4 天，可连续实习 3–6 个月。" value={draft ?? query.data?.user.preferenceText ?? ""} /></label></Surface>
+      <p className={styles.intro}>例如远程、到岗时间、每周天数、实习周期，以及是否希望简短突出教育背景。最多 500 字，后续每个岗位都会参考。</p>
+      <Surface><label className={styles.field}><span>偏好内容</span><textarea className={styles.textarea} maxLength={500} onChange={(event) => { setDraft(event.target.value); setMessage(""); }} placeholder="例如：每周可到岗 3–4 天，可连续实习 3–6 个月；教育背景是我的求职优势，请简短突出。" value={draft ?? query.data?.user.preferenceText ?? ""} /></label></Surface>
       {message === "" ? null : <p className={styles.intro}>{message}</p>}
       <PrimaryButton disabled={!writable || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中…" : writable ? "保存偏好" : "只读期不可修改"}</PrimaryButton>
     </div>
