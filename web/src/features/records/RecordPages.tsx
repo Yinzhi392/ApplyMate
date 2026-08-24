@@ -9,6 +9,7 @@ import { createRequestId } from "../../lib/request-id";
 import { EmptyState, ErrorNotice, Header, PrimaryButton, SecondaryButton, Surface } from "../../ui/ui";
 import { ConfirmDialog } from "../../ui/Dialog";
 import { ServiceBanner } from "../../ui/ServiceBanner";
+import { resolveRecordDetailLoadState } from "./record-detail-state";
 import styles from "../Feature.module.css";
 
 export function RecordsPage(): React.JSX.Element {
@@ -64,6 +65,11 @@ export function RecordDetailPage(): React.JSX.Element {
     onError: (cause) => setError(cause instanceof Error ? cause.message : "保存失败。"),
   });
   const application = query.data?.application;
+  const loadState = resolveRecordDetailLoadState({
+    hasApplication: application !== undefined,
+    hasError: query.error !== null,
+    isLoading: query.isLoading,
+  });
   const writable = auth.status?.serviceAccess?.phase !== "read_only" &&
     auth.status?.serviceAccess?.phase !== "retired";
   useEffect(() => {
@@ -71,7 +77,16 @@ export function RecordDetailPage(): React.JSX.Element {
     setRating(query.data.feedback.rating);
     setFeedbackNote(query.data.feedback.note ?? "");
   }, [query.data?.feedback]);
-  if (query.isLoading || application === undefined) return <div className={styles.skeleton}>正在读取记录…</div>;
+  if (loadState === "error") {
+    return (
+      <div className={styles.stack}>
+        <Header eyebrow="访问受限" title="无法读取记录" />
+        <ErrorNotice>记录不存在或无权访问。</ErrorNotice>
+        <SecondaryButton onClick={() => navigate("/app/records", { replace: true })}>返回记录</SecondaryButton>
+      </div>
+    );
+  }
+  if (loadState === "loading" || application === undefined) return <div className={styles.skeleton}>正在读取记录…</div>;
   return (
     <div className={styles.stack}>
       <Header eyebrow={application.companyName ?? "未填写公司"} title={application.jobTitle ?? "该岗位"} />

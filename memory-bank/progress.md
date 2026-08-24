@@ -111,6 +111,17 @@
 - 修复提交为 `da65661 fix: clean up account actions`。27 个 `dist/web` 文件已部署到旧预发布静态托管根目录；API、Worker、cleanup 均未部署，未创建资源或触碰生产环境。
 - 线上登录态实测 `/app/account`：不存在“导出我的数据”，退出按钮包含 `👋`；按钮计算样式为透明背景，上/左/右边框均 `0px`，仅保留 `1px` 底部分隔线。`index.html`、账号页 chunk 与功能 CSS 的线上 SHA-256 分别为 `00ee7d6a430352c3b4ce5f1c5fc881aa7ec2bac80b21aefdde79a336abf332f1`、`741c936ebf20065a775c818ec9aaadb971cb83ac868fe085209742093d225d94`、`4aefa64c7f060b16c7376160bc0b5b55d592e9759e641a3ac57d4935ae80d8ce`，均与本地构建一致。
 
+### 10. SPA 刷新与双邮箱隔离（旧预发布已验收）
+
+- 修复前，旧预发布 `/app`、`/app/account`、`/app/jobs/new`、`/legal`、`/support` 直达均返回默认 404，BrowserRouter 无法启动。CloudBase 托管配置当时为 `indexDocument=index.html`、错误文档为空。
+- 2026-08-24 按产品负责人授权，把旧预发布托管错误文档设置为 `index.html`；未新增路由规则、资源、套餐或生产配置。配置回读确认 `errorDocument=index.html`。
+- CloudBase CDN 实测会保留 HTTP 404 同时返回 SPA `index.html`；浏览器直达并刷新 `/app/account` 可正常启动 React、恢复邮箱会话和原深链。新增 `npm run hosting:spa:check -- <baseUrl>`，对五个关键深链同时检查 HTML、标题和 root，并明确记录该 404-with-SPA-entry 行为。
+- 自动化新增两可信邮箱身份隔离：不同内部 userId、伪造客户端身份递归删除、简历/记录/任务按当前身份过滤、跨账号 get 返回 `NOT_FOUND`、外账号临时上传路径被拒绝，且原始可信 UID 不落库。
+- 真实云端顺序验收通过：账号 A 有 2 份已确认简历、5 条记录、剩余 15 次；账号 B 为 0 份简历、0 条记录、剩余 20 次，无法读取账号 A 的两个已知任务；重新登录 A 后 2/5/15 状态完整恢复，没有账号错位。
+- 验收同时发现记录详情把 `application.get` 失败误判为 data 未到达，导致跨账号 `NOT_FOUND` 永久显示“正在读取记录”。已先补状态回归再调整分支顺序，线上现在显示不泄露资源存在性的“记录不存在或无权访问”并提供返回入口。
+- 完整 `APPLYMATE_E2E_PORT=4189 npm run check` 通过：119 个测试文件、600 项测试和 7 项浏览器 E2E 全绿；首屏主 JS gzip 90.23KB。27 个 `dist/web` 文件已覆盖到旧预发布根目录，API、Worker、cleanup 均未部署。
+- 线上 `index.html` SHA-256 为 `4e48deb785d05610cc86db406701868f540b856c71bb69637dc8193d9bd8f2ec`，记录页 chunk 为 `d084d3ae60979597e8943775c8bbcd25b4d792ade99de73341b0779f20a61173`，均与本地构建一致；线上不存在记录实测已显示新错误页。
+
 ## 本地验证证据
 
 最近一次分项验证：
@@ -118,7 +129,7 @@
 - `npm run typecheck`：通过。
 - `npm run web:typecheck`：通过。
 - `APPLYMATE_E2E_PORT=4187 npm run check`：完整通过；Playwright 配置支持任务级端口覆盖，避免占用用户正在使用的 4173 预览。
-- Vitest：118 个当前主线测试文件、595 项测试通过（Legacy 小程序测试退出主线后计数降低）。
+- Vitest：119 个当前主线测试文件、600 项测试通过（Legacy 小程序测试退出主线后计数降低）。
 - Web build：通过；HTML entry 主 JS gzip 90.23KB，仍低于 200KB 硬门；CloudBase SDK 与 PDF 为动态 chunk，未生成 source map。
 - Playwright + 本机 Chrome：7 项通过，覆盖 320/390/430px、截图附件、44px 主触控目标、软键盘压缩高度、无横向溢出、首页产品/开发者入口、BrowserRouter 直达/刷新/未登录重定向，以及无 manifest、Service Worker 和 cache。
 - fixture 隔离、敏感信息、严格 TypeScript、Web TypeScript 与 deploy 目标语法/契约均通过。
@@ -139,17 +150,17 @@
 - 2026-08-23 已完成一轮旧 CloudBase 环境元数据只读盘点；盘点中后段 CLI 身份再次失效，集合计数、索引/数据库 ACL、函数环境变量名和 OCR/TokenHub 套餐仍待补齐。
 - 当前只发现 Legacy 环境 `applymate-mvp-d0g005nnw103af4c3`：上海、小程序来源、体验版、预付费、状态正常，到期日 2027-02-10；数据库和存储在线。
 - api/worker/cleanup 均为 Node.js 20.19、256MB、45 秒、Active；三者均没有触发器，因此 cleanup 当前没有定时执行证据。
-- 旧静态托管在线但错误页未设为 `index.html`；仍存在 `manifest.webmanifest`、`sw.js`、旧约 1.125MB JS 和最高约 3.7MB source map。未对这些旧文件做删除或覆盖。
+- 旧静态托管在线且错误文档已设为 `index.html`；仍存在 `manifest.webmanifest`、`sw.js`、旧约 1.125MB JS 和最高约 3.7MB source map。未删除这些历史文件，新 Web 本身不注册或引用它们。
 - 旧身份配置同时启用邮箱、匿名和用户名登录；存储为 PRIVATE/创建者和管理员读写，无自定义存储规则；CORS 仍包含旧域名、平台默认项和通配配置，没有正式产品域名。
 - 已只读定位本地 Web 截图上传失败：当前安全域名列表没有 `127.0.0.1`/`localhost`，而测试页来源是 `http://127.0.0.1:4173`。CloudBase Web SDK 直传对象存储因此被 CORS 拒绝并包装为 `OPERATION_FAIL [storage]`。产品负责人已单独授权新增 `127.0.0.1`，但旧体验套餐返回 `CreateAuthDomain: 当前套餐无法执行此操作`；安全域名列表未改变，也没有升级、付费或扩大域名范围。
-- 产品负责人随后单独授权把当前 `dist/web` 部署到旧环境静态托管根目录。27 个构建文件已全部更新，默认托管域名的首页和邮箱登录页实测可打开且无浏览器 warning/error；旧 manifest、Service Worker、历史哈希资源/source map 未删除，错误页仍为空。真实 JD 上传验证等待产品负责人在该新来源完成邮箱验证码登录。
+- 产品负责人随后单独授权把当前 `dist/web` 部署到旧环境静态托管根目录。默认托管域名的首页、邮箱登录和真实 JD 生成均已完成后续验证；旧 manifest、Service Worker、历史哈希资源/source map 未删除。错误文档已在本轮改为 `index.html`，详见第 10 节。
 - 该托管预览随后出现一次“AI 返回内容未通过真实性或格式检查”失败。旧任务 jobId 未提供，因此没有读取该用户任务记录或执行跨用户日志扫描；误杀修复现已部署并完成线上代码核验，仍须由用户在托管域名完成邮箱验证码登录后，用其已确认默认简历和指定两张 JD 截图创建新任务，按该用户自己的 jobId 完成真实 OCR/Hy3 验收。
 - 当前账期为 2026-08-10 至 2026-09-10，套餐内资源点 126.44/3000，资源包和按量费用均显示 0；资源点主要来自 NoSQL 47.42、函数 38.28、API 35.46、存储 5.28。该快照不等于 OCR/TokenHub 独立账单。
 - 旧数据库存在 users、invites、resumes、applications、ai_jobs、daily_usage、feedback、audit_logs；不存在 v3 所需 service_config、budget_periods、ai_task_admissions。未读取或导出任何用户记录。
 - 未购买套餐、未创建新生产环境、未创建集合/权限/触发器、未部署。
 - 未购买域名、未配置 HTTPS、未备案。
 - 未配置生产 OCR/TokenHub/密钥或公开注册。
-- 未完成两邮箱真云隔离、三类真机、30 次质量/隐私/时延验收和专业合规复核。
+- 两邮箱真云隔离已完成；仍未完成三类真机、30 次质量/隐私/时延验收和专业合规复核。
 - 未执行任何生产数据删除。
 
 ## 下一执行顺序

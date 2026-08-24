@@ -6,7 +6,9 @@ import { runInNewContext } from "node:vm";
 const { createLiveApiHandler, hashBootstrapToken, hashTrustedIdentity, stripClientIdentity } = require("../../cloudfunctions/api/deploy/live-api.js") as {
   createLiveApiHandler(input: {
     database: { collection(name: string): unknown };
+    dispatchExperienceJob?(): Promise<unknown>;
     dispatchReliabilityProbe?(jobId: string): Promise<void>;
+    experienceEnabled?: boolean;
     publicWebV3?: boolean;
     readBootstrapTokenHash?(): string | undefined;
     readTrustedIdentity?(): Promise<{ value: string; namespace: string } | null>;
@@ -455,6 +457,109 @@ describe("CloudBase live identity and invite handler", () => {
       data: { user: { activationStatus: "active" } },
     });
     expect(JSON.stringify(state.documents("users"))).not.toContain("email-identity-uid");
+  });
+
+  it("isolates resumes, records, jobs, and temporary uploads between two email identities", async () => {
+    const state = createDatabase();
+    const createEmailHandler = (uid: string) => createLiveApiHandler({
+      database: state.database,
+      experienceEnabled: true,
+      readTrustedIdentity: async () => ({ value: uid, namespace: "web-email-uid-v1" }),
+      now: () => new Date("2026-08-24T04:00:00.000Z"),
+    });
+    const emailA = createEmailHandler("email-test-a");
+    const emailB = createEmailHandler("email-test-b");
+
+    await emailA({ action: "agreement.accept", payload: AGREEMENTS });
+    await emailB({ action: "agreement.accept", payload: AGREEMENTS });
+
+    const userA = state.documents("users").find((document) =>
+      document.identityHash === hashTrustedIdentity("email-test-a", "web-email-uid-v1")
+    );
+    const userB = state.documents("users").find((document) =>
+      document.identityHash === hashTrustedIdentity("email-test-b", "web-email-uid-v1")
+    );
+    const userAId = String(userA?.userId ?? "");
+    const userBId = String(userB?.userId ?? "");
+    expect(userAId).not.toBe("");
+    expect(userBId).not.toBe("");
+    expect(userAId).not.toBe(userBId);
+
+    const createdAt = "2026-08-24T04:00:00.000Z";
+    for (const [suffix, ownerId] of [["a", userAId], ["b", userBId]] as const) {
+      state.documents("resumes").push({
+        _id: `resume_email_${suffix}`,
+        recordType: "resume",
+        resumeId: `resume_email_${suffix}`,
+        userId: ownerId,
+        status: "confirmed",
+        isDefault: true,
+        profile: JSON.stringify({ resumeId: `resume_email_${suffix}`, confirmed: true }),
+        createdAt,
+        updatedAt: createdAt,
+      });
+      state.documents("applications").push({
+        _id: `application_email_${suffix}`,
+        recordType: "application",
+        applicationId: `application_email_${suffix}`,
+        userId: ownerId,
+        greetingBody: `email-${suffix}-only`,
+        status: "not_applied",
+        createdAt,
+        updatedAt: createdAt,
+      });
+      state.documents("ai_jobs").push({
+        _id: `job_generation_email_${suffix}`,
+        recordType: "ai_job",
+        jobId: `job_generation_email_${suffix}`,
+        userId: ownerId,
+        kind: "greeting_generate",
+        status: "queued",
+        statusHistory: [{ status: "queued", enteredAt: createdAt }],
+        createdAt,
+        updatedAt: createdAt,
+      });
+    }
+
+    await expect(emailA({
+      action: "resume.list",
+      payload: { userId: userBId, email: "forged@example.com" },
+    })).resolves.toMatchObject({
+      ok: true,
+      data: { resumes: [{ resumeId: "resume_email_a" }] },
+    });
+    await expect(emailB({ action: "resume.list", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { resumes: [{ resumeId: "resume_email_b" }] },
+    });
+
+    await expect(emailA({ action: "application.list", payload: {} })).resolves.toMatchObject({
+      ok: true,
+      data: { applications: [{ applicationId: "application_email_a" }] },
+    });
+    await expect(emailB({
+      action: "application.get",
+      payload: { applicationId: "application_email_a" },
+    })).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+
+    await expect(emailA({
+      action: "job.get",
+      payload: { jobId: "job_generation_email_b" },
+    })).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+
+    const foreignObjectPath = `temporary/web/${userBId}/foreign-jd.jpg`;
+    await expect(emailA({
+      action: "generation.create",
+      payload: {
+        inputType: "images",
+        fileIds: [`cloud://test.bucket/${foreignObjectPath}`],
+        fileAccessUrls: [`https://bucket.tcb.qcloud.la/${foreignObjectPath}`],
+        resumeId: "resume_email_a",
+      },
+      requestId: "e1234567-1234-4123-8123-123456789abc",
+    })).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+
+    expect(JSON.stringify(state.documents("users"))).not.toMatch(/email-test-[ab]/u);
   });
 
   it("bootstraps exactly one trusted administrator after agreement acceptance", async () => {

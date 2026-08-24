@@ -50,7 +50,9 @@ mobile browser
 
 首页的主要信息层级是产品价值、三步流程、适用人群、产品介绍和开发者联系入口。产品效果只使用定性表述，不发布未经真实样本验证的提升百分比；隐私处理和六个月服务阶段仍保留在 `/legal`、`/support` 及页脚入口。开发者邮箱复用 `WEB_CONTACT_EMAIL`，GitHub 链接只指向公开个人主页。
 
-CloudBase 静态托管必须在控制台设置“4xx 错误页 → `/index.html`”，否则 BrowserRouter 的直达/刷新会失败。该配置属于生产环境创建后的独立部署步骤，仓库不能假装已配置。
+CloudBase 静态托管必须把错误文档设置为 `index.html`，否则 BrowserRouter 的直达/刷新会失败。旧预发布环境在 2026-08-24 已按单独授权完成该配置；实测 CDN 会在返回 `index.html` 正文时保留 HTTP 404，但浏览器仍能启动 React 并恢复原深链。仓库用 `scripts/check-spa-fallback.mjs` 同时校验内容类型与 SPA entry，不把单独的 200 状态当作唯一成功条件。新生产环境仍需在创建后单独配置并复验。
+
+记录详情必须先处理 React Query 的失败状态，再判断 application 是否存在；否则跨用户 `NOT_FOUND` 会因 data 为空而永久落入加载骨架。错误页统一显示“记录不存在或无权访问”，既不给出资源是否真实存在的差异信息，也提供返回记录入口。
 
 ### 3.2 平台 seam
 
@@ -178,6 +180,6 @@ worker `finally` 删除处理过的临时输入，并移除 job 中仅处理时�
 
 ## 11. Legacy 云环境边界
 
-2026-08-23 的只读快照确认旧环境仍是小程序来源的体验版环境。它同时启用了邮箱、匿名和用户名登录，静态托管保留旧 PWA/source map 且未配置 BrowserRouter 错误页，cleanup 没有触发器，数据库也没有 v3 的 `service_config`、`budget_periods`、`ai_task_admissions`。因此它只能作为 Legacy/预发布参考，不能通过切换环境变量直接升级为正式生产。
+2026-08-23 的只读快照确认旧环境仍是小程序来源的体验版环境。它同时启用了邮箱、匿名和用户名登录，静态托管仍保留历史 PWA/source map 文件，cleanup 没有触发器，数据库也没有 v3 的 `service_config`、`budget_periods`、`ai_task_admissions`。2026-08-24 仅按授权为旧预发布托管设置了 `index.html` 错误文档，并覆盖当前 `dist/web` 的同名文件；这不会把它升级为正式生产。
 
-旧环境中没有执行删除、部署、规则修改或数据迁移。新生产环境必须独立创建，默认关闭 AI，并重新配置身份、集合、拒绝客户端直连的规则、cleanup 触发器、SPA fallback、窄 CORS、预算初始数据和密钥；任何这些云端动作都仍需单独授权。
+旧环境中没有执行资源删除、数据迁移、套餐变更或生产化权限改造。新生产环境必须独立创建，默认关闭 AI，并重新配置身份、集合、拒绝客户端直连的规则、cleanup 触发器、SPA fallback、窄 CORS、预算初始数据和密钥；任何这些云端动作都仍需单独授权。

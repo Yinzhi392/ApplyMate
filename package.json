@@ -27,6 +27,7 @@
     "web:dev": "vite --config web/vite.config.mts",
     "web:typecheck": "tsc -p web/tsconfig.json --pretty false",
     "web:build": "vite build --config web/vite.config.mts",
+    "hosting:spa:check": "node scripts/check-spa-fallback.mjs",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.check.json --pretty false",
     "test:unit": "vitest run tests/unit",
