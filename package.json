@@ -41,16 +41,16 @@
     "check": "npm run format:check && npm run docs:check && npm run fixtures:check && npm run sensitive:check && npm run typecheck && npm run web:typecheck && npm test && npm run build && npm run test:e2e"
   },
   "dependencies": {
-    "@cloudbase/js-sdk": "3.7.1",
+    "@cloudbase/js-sdk": "3.8.2",
     "@cloudbase/signature-nodejs": "2.0.0",
-    "@tanstack/react-query": "^5.101.4",
-    "mammoth": "1.12.0",
+    "@tanstack/react-query": "^5.102.8",
+    "mammoth": "1.12.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2",
-    "sharp": "0.35.3",
-    "unpdf": "1.8.0",
-    "zod": "4.4.3"
+    "react-router-dom": "^7.18.3",
+    "sharp": "0.35.4",
+    "unpdf": "1.8.1",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@cloudbase/cli": "3.7.1",
