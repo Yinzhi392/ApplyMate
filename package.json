@@ -53,18 +53,18 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@cloudbase/cli": "3.7.1",
-    "@playwright/test": "^1.62.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.6",
-    "@types/node": "24.13.3",
+    "@cloudbase/cli": "3.8.4",
+    "@playwright/test": "^1.63.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "26.6.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.1.0",
-    "jsdom": "^30.0.1",
-    "miniprogram-api-typings": "5.2.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.1.1",
+    "miniprogram-api-typings": "5.2.3",
     "typescript": "7.0.2",
-    "vite": "^8.2.2",
-    "vitest": "4.1.10"
+    "vite": "^8.3.1",
+    "vitest": "5.0.2"
   }
 }
